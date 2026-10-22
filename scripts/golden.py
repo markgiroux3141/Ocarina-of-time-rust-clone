@@ -358,6 +358,15 @@ CASES = [
     ("sapphire", S, ["--entrance", "ENTR_JABU_JABU_BOSS_0", "--child", "--preset", "barinade-beaten", "--script", "sapphire", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("sapphire_ruto", S, ["--entrance", "ENTR_JABU_JABU_BOSS_0", "--child", "--preset", "barinade-beaten", "--script", "sapphire", "--frames", "700", "--screenshot", "{shot}"]),
     ("sapphire_fountain", S, ["--entrance", "ENTR_JABU_JABU_BOSS_0", "--child", "--preset", "barinade-beaten", "--script", "sapphire", "--frames", "1600", "--screenshot", "{shot}"]),
+    # GAME-10 milestone 7: Zelda's escape (the run; shots of Zelda and Impa riding out and of the
+    # ocarina sinking in the moat) and the Ocarina of Time (the run; shots of the dive and of the
+    # Temple of Time's lesson).
+    ("zelda_escape", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zora-sapphire", "--script", "zelda-escape", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("zelda_escape_riders", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zora-sapphire", "--script", "zelda-escape", "--frames", "900", "--screenshot", "{shot}"]),
+    ("zelda_escape_moat", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zora-sapphire", "--script", "zelda-escape", "--frames", "1000", "--screenshot", "{shot}"]),
+    ("ocarina_of_time", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ocarina_of_time_dive", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--frames", "250", "--screenshot", "{shot}"]),
+    ("ocarina_of_time_temple", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--frames", "1300", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

@@ -268,6 +268,7 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Obj_Comb", "Beehive", Group::Object),
     ("Bg_Spot07_Taki", "Zora's Domain waterfall", Group::SetPiece),
     ("Item_Etcetera", "Item lying out (Ruto's letter)", Group::Item),
+    ("Item_Ocarina", "Ocarina of Time (in the moat)", Group::Item),
     ("Bg_Spot06_Objects", "Lake Hylia set pieces", Group::SetPiece),
     ("En_Mk", "Lakeside professor", Group::Character),
     ("En_Ms", "Bean seller", Group::Character),
@@ -289,6 +290,7 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Obj_Kibako", "Small crate", Group::Object),
     ("Obj_Roomtimer", "Room clear (timer)", Group::Trigger),
     ("En_Ru1", "Ruto, child", Group::Character),
+    ("En_Ganon_Mant", "Ganondorf's cape", Group::SetPiece),
 ];
 
 /// An actor the editor can place.

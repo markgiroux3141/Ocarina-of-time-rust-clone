@@ -229,6 +229,11 @@ pub enum BakeSegment {
     /// bone `bones[k]` (`EffectBlure`'s vertices, each at the origin under its own). Only for
     /// display lists.
     Matrices(Vec<eng_gfx::BoneId>),
+    /// A vertex array from the XMLs (`gSPSegment(seg, array)`) whose vertices the draw code
+    /// rewrites every frame (`En_Ganon_Mant`'s cape, `gMant1Vtx`): vertex `k` (at `k * 16` in the
+    /// segment) follows bone `bones[k]` (`DrawCmd::bones`), from its place in the file. Only for
+    /// display lists.
+    BonedVertices { file: String, symbol: String, bones: Vec<eng_gfx::BoneId> },
     /// The matrices `SkelAnime_DrawFlex*` of skeleton `symbol` (in `file`) leaves on the segment,
     /// one per limb with a list in draw order: a list drawn after the skeleton that loads one of
     /// them (Link's bracelet, `gLinkChildGoronBraceletDL`) follows that limb's bone, the

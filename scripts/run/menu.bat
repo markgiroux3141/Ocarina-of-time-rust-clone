@@ -173,6 +173,9 @@ echo   159  sandbox-jabu-runs    The Jabu-Jabu runs' traces and screenshots (the
 echo   160  game-barinade        Barinade's room (asks: or fight, beaten, fountain, sapphire)
 echo   161  test-barinade        Barinade, Ruto's warp, the Sapphire's cutscene and the runs (cargo test)
 echo   162  sandbox-barinade     The Barinade and Sapphire runs' traces and screenshots, into out\run
+echo   163  game-ocarina-of-time Hyrule Field short of the drawbridge (asks: or escape, moat, temple, field)
+echo   164  test-ocarina-of-time The Ocarina of Time, Ganondorf's cape and the runs (cargo test)
+echo   165  sandbox-ocarina-of-time The escape and Ocarina of Time runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -345,6 +348,9 @@ if "%pick%"=="159" set "script=sandbox-jabu-runs"
 if "%pick%"=="160" goto barinade
 if "%pick%"=="161" set "script=test-barinade"
 if "%pick%"=="162" set "script=sandbox-barinade"
+if "%pick%"=="163" goto ocarinaoftime
+if "%pick%"=="164" set "script=test-ocarina-of-time"
+if "%pick%"=="165" set "script=sandbox-ocarina-of-time"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -398,6 +404,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:ocarinaoftime
+set "which="
+set /p "which=Which (empty: the field short of the drawbridge; escape, moat, temple or field): "
+call "%~dp0game-ocarina-of-time.bat" %which%
+echo game-ocarina-of-time finished (exit code %errorlevel%).
 pause
 goto menu
 

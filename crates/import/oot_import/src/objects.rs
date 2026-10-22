@@ -280,8 +280,18 @@ impl ObjectSegments {
         let mut builtin = vec![(0x0C, cull_back_builtin())];
         let mut dynamic = 0u16;
         let mut matrices: Vec<(u8, Vec<eng_gfx::BoneId>)> = Vec::new();
+        let mut vertex_bones: Vec<(u8, std::sync::Arc<[eng_gfx::BoneId]>)> = Vec::new();
         for (seg, s) in &bake.segments {
             match s {
+                BakeSegment::BonedVertices { file: f, symbol, bones } => {
+                    anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: boned vertices outside display lists", bake.name);
+                    let (sym_file, sym) = symbol_in(p, f, symbol)?;
+                    let buf = files.get(&sym_file.name).with_context(|| format!("{f} not in the ROM"))?;
+                    // Data, not the builtin (segment 0x0C's culling list).
+                    builtin.retain(|b| b.0 != *seg);
+                    bindings.push(Binding { segment: *seg, buf, base: sym.offset as usize });
+                    vertex_bones.push((*seg, bones.as_slice().into()));
+                }
                 BakeSegment::Texture { file: f, symbol } => {
                     let (sym_file, sym) = symbol_in(p, f, symbol)?;
                     let buf = files.get(&sym_file.name).with_context(|| format!("{f} not in the ROM"))?;
@@ -359,6 +369,10 @@ impl ObjectSegments {
                 // A matrix the draw sets: the list's gSPMatrix of it puts the vertices on its bone.
                 for (seg, bones) in &matrices {
                     it.segments[*seg as usize & 0xF] = Some(Segment::Matrices(bones.clone()));
+                }
+                // Vertices the draw rewrites: each on its own bone.
+                for (seg, bones) in &vertex_bones {
+                    it.vertex_bones[*seg as usize & 0xF] = Some(bones.clone());
                 }
                 it.apply_setup_dl_25();
                 it.dynamic_segments = dynamic;

@@ -18,11 +18,17 @@
 //! The horses' shadow (`ActorShadow_DrawHorse`, 20) is the shape's (`ActorShape_Init`'s): never
 //! drawn, as nothing looks for their floor (no `Actor_UpdateBgCheckInfo`: `floorPoly` stays NULL).
 //!
+//! The Ganondorfs' cape (`En_Ganon_Mant`, params 35) is spawned by each one's init and kept as
+//! the C keeps it (`sGanondorfCape`, the overlay's static: the last one spawned). After the
+//! skeleton's draw (types 3, 5, 7 and 8), `EnViewer_UpdateGanondorfCape` writes its settings and
+//! its forearms from the neck (`sGanondorfNeckWorldPos`), for type 5 only: type 3's (the
+//! nightmare, Zelda's escape) is never written and stays a cape of no width at the world's origin
+//! (see `en_ganon_mant`'s docs); 7's, 8's and 9's likewise.
+//!
 //! Not ported: the adult Ganondorf's draw (type 9:
-//! the crazed eyes on XLU and the jewel's `gGanondorfEyesDL`), and the cape's settings
-//! `EnViewer_UpdateGanondorfCape` writes for type 5 into `En_Ganon_Mant` (its neck position is
-//! kept), and the fire of type 5 (`EnViewer_DrawFireEffects`, run from its update: its state and
-//! its `Rand_ZeroOne` calls are, its flames aren't drawn).
+//! the crazed eyes on XLU and the jewel's `gGanondorfEyesDL`), and the fire of type 5
+//! (`EnViewer_DrawFireEffects`, run from its update: its state and its `Rand_ZeroOne` calls are,
+//! its flames aren't drawn).
 //!
 //! Params: `type` bits 8 to 15 (`PARAMS_GET_NOMASK(params, 8)`, `EnViewerType`: 0 Zelda's horse, 1
 //! Impa, 2 Zelda, 3 Ganondorf on horseback, 4 Ganondorf's horse rearing, 5 Ganondorf riding, 6
@@ -40,7 +46,7 @@ use eng_gfx::{DrawCmd, DrawParams, MeshKey};
 use eng_math::{smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
-use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
+use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
 use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::sfx::*;
@@ -401,12 +407,16 @@ pub fn bakes() -> Vec<MeshBake> {
     v
 }
 
-/// The overlay's statics: `sHorseSfxPlayed`, `sTimer`, `sGanondorfNeckWorldPos`.
+/// The overlay's statics: `sHorseSfxPlayed`, `sTimer`, `sGanondorfCape` (the cape the last
+/// Ganondorf's init spawned: one for every Ganondorf, the C keeping only the last),
+/// `sGanondorfNeckWorldPos`, and `EnViewer_UpdateGanondorfCape`'s `yOscillationPhase`.
 #[derive(Debug, Default)]
-struct Statics {
-    horse_sfx_played: bool,
-    timer: i16,
-    ganondorf_neck_world_pos: Vec3,
+pub struct Statics {
+    pub horse_sfx_played: bool,
+    pub timer: i16,
+    pub ganondorf_cape: Option<ActorHandle>,
+    pub ganondorf_neck_world_pos: Vec3,
+    pub y_oscillation_phase: i16,
 }
 
 /// `EnViewerFireEffect`.
@@ -473,9 +483,11 @@ impl EnViewer {
         let ty = TYPE.get(actor.params) as u8;
         if matches!(ty, ENVIEWER_TYPE_3_GANONDORF | ENVIEWER_TYPE_5_GANONDORF | ENVIEWER_TYPE_7_GANONDORF | ENVIEWER_TYPE_8_GANONDORF | ENVIEWER_TYPE_9_GANONDORF) {
             // sGanondorfCape = Actor_SpawnAsChild(.., ACTOR_EN_GANON_MANT, 0, 0, 0, 0, 0, 0, 35).
-            if let Err(e) = play.actor_spawn_as_child(&mut actor, ACTOR_EN_GANON_MANT, Vec3::ZERO, [0; 3], 35) {
+            let cape = play.actor_spawn_as_child(&mut actor, ACTOR_EN_GANON_MANT, Vec3::ZERO, [0; 3], 35);
+            if let Err(e) = &cape {
                 log::debug!("En_Viewer: En_Ganon_Mant: {e:?}");
             }
+            play.overlay_static::<Statics>(ACTOR_EN_VIEWER).ganondorf_cape = cape.ok();
         }
         Box::new(EnViewer { actor, action: Action::InitImpl, ty, skel: None, model: Model::None, draw_func_index: 0, state: 0, is_visible: false, fire_effects: [FireEffect::default(); 20] })
     }
@@ -983,6 +995,47 @@ impl EnViewer {
         let open = self.ty == ENVIEWER_TYPE_3_GANONDORF && if play.save.scene_layer == 4 { play.cs_ctx.frames >= 400 } else { (1510..=1650).contains(&play.cs_ctx.frames) };
         (eyes, open)
     }
+
+    /// `EnViewer_UpdateGanondorfCape`, from `EnViewer_DrawGanondorf` (types 3, 5, 7 and 8, after
+    /// the skeleton): only for type 5. The cape's settings (`BREG(54)`, `BREG(60)`, `BREG(55)`,
+    /// `BREG(67)` and `KREG(16)` to `KREG(20)` read as 0: no push, back sway 0.25, side sway -4.5,
+    /// no floor or distance, gravity -1), and its forearms 13 to either side, 3 up and 10 back of
+    /// the neck (`sGanondorfNeckWorldPos`) turned by Ganondorf's yaw. The oscillation's phase goes
+    /// on 0x2000 a frame (its sine times `KREG(20)`, 0).
+    pub fn update_ganondorf_cape(&self, play: &mut PlayState) {
+        const BREG_54: f32 = 0.0;
+        const BREG_55: f32 = 0.0;
+        const BREG_60: f32 = 0.0;
+        const BREG_67: f32 = 0.0;
+        const KREG_16: f32 = 0.0;
+        const KREG_17: f32 = 0.0;
+        const KREG_18: f32 = 0.0;
+        const KREG_19: i16 = 0;
+        const KREG_20: f32 = 0.0;
+        if self.ty != ENVIEWER_TYPE_5_GANONDORF {
+            return;
+        }
+        let st = play.overlay_static::<Statics>(ACTOR_EN_VIEWER);
+        let (cape, neck, phase) = (st.ganondorf_cape, st.ganondorf_neck_world_pos, st.y_oscillation_phase);
+        let mut forearm_model_offset = Vec3::new(KREG_16 - 13.0, KREG_17 + 3.0 + eng_math::sin_s(phase) * KREG_20, KREG_18 - 10.0);
+        st.y_oscillation_phase = phase.wrapping_add(KREG_19.wrapping_mul(0x1000).wrapping_add(0x2000));
+        // Matrix_RotateY(BINANG_TO_RAD_ALT(shape.rot.y), MTXMODE_NEW).
+        let mut m = oot_game::sys_matrix::MtxF::IDENTITY;
+        m.rotate_y((self.actor.shape_rot.y as f32 / 32768.0) * std::f32::consts::PI);
+        let right = neck + m.mult_vec3f(forearm_model_offset);
+        forearm_model_offset.x = -(KREG_16 - 13.0);
+        let left = neck + m.mult_vec3f(forearm_model_offset);
+        // sGanondorfCape->...: the cape the last Ganondorf spawned.
+        let Some(c) = cape.and_then(|h| play.actors.downcast_mut::<crate::en_ganon_mant::EnGanonMant>(h)) else { return };
+        c.back_push = BREG_54 / 10.0;
+        c.back_sway_magnitude = (BREG_60 + 25.0) / 100.0;
+        c.side_sway_magnitude = (BREG_55 - 45.0) / 10.0;
+        c.min_y = -10000.0;
+        c.min_dist = 0.0;
+        c.gravity = (BREG_67 - 10.0) / 10.0;
+        c.right_forearm_pos = right;
+        c.left_forearm_pos = left;
+    }
 }
 
 impl ActorImpl for EnViewer {
@@ -1005,7 +1058,8 @@ impl ActorImpl for EnViewer {
     }
 
     /// `EnViewer_GanondorfPostLimbDrawUpdateCapeVec`: the head limb's origin
-    /// (`sGanondorfNeckWorldPos`) as the young Ganondorf's draw finds it.
+    /// (`sGanondorfNeckWorldPos`) as the young Ganondorf's draw finds it; then
+    /// `EnViewer_UpdateGanondorfCape` (types 3, 5, 7 and 8; it writes only for 5).
     fn draw_update(&mut self, play: &mut PlayState) {
         if self.draw_func_index != ENVIEWER_DRAW_GANONDORF || self.ty == ENVIEWER_TYPE_9_GANONDORF || !self.drawn(play) {
             return;
@@ -1016,6 +1070,7 @@ impl ActorImpl for EnViewer {
             let m = actor_draw_matrix(&RenderState::of(&self.actor)) * *head;
             play.overlay_static::<Statics>(ACTOR_EN_VIEWER).ganondorf_neck_world_pos = m.transform_point3(Vec3::ZERO);
         }
+        self.update_ganondorf_cape(play);
     }
 
     fn render_state(&self) -> RenderState {

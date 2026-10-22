@@ -619,6 +619,20 @@ pub enum Step {
     SapphireOver,
     /// Zora's Fountain (`ENTR_ZORAS_FOUNTAIN_0`: in the water by Jabu-Jabu), Link free.
     ZorasFountain,
+    /// Zelda's escape started: Hyrule Field's layer 5 (`gHyruleFieldZeldaEscapeCs`) running.
+    EscapeStarted,
+    /// Zelda's escape over: its terminator (33) back to Hyrule Field's layer 1, Link free.
+    Escaped,
+    /// The Ocarina of Time taken from the moat's bottom (`EVENTCHKINF_43`) and Link surfaced.
+    OcarinaTaken,
+    /// The ocarina's text closed: `gHyruleFieldZeldaSongOfTimeCs` running.
+    SongOfTimeCs,
+    /// The Temple of Time's layer 11 (`gTempleOfTimeSongOfTimeCs`) running.
+    TempleOfTime,
+    /// The Song of Time played back (`MSGMODE_SONG_PLAYBACK_SUCCESS`).
+    SongOfTimePlayed,
+    /// Hyrule Field at `ENTR_HYRULE_FIELD_16` after `gHyruleFieldGetOoTCs`, Link free.
+    FieldAfterOcarina,
 }
 
 impl Step {
@@ -862,6 +876,13 @@ impl Step {
             Step::RutoWarpTalked => "ruto_warp_talked",
             Step::SapphireOver => "sapphire_over",
             Step::ZorasFountain => "zoras_fountain",
+            Step::EscapeStarted => "escape_started",
+            Step::Escaped => "escaped",
+            Step::OcarinaTaken => "ocarina_taken",
+            Step::SongOfTimeCs => "song_of_time_cs",
+            Step::TempleOfTime => "temple_of_time",
+            Step::SongOfTimePlayed => "song_of_time_played",
+            Step::FieldAfterOcarina => "field_after_ocarina",
         }
     }
 }
@@ -1157,6 +1178,16 @@ pub enum Route {
     /// Sapphire), `gZorasFountainSapphireCs` on Zora's Fountain's layer 4 to its terminator, and the
     /// fountain: Phase 11's exit, part 1.
     Sapphire,
+    /// GAME-10 milestone 7: Hyrule Field with the three stones (`zora-sapphire`, a debug start short
+    /// of the drawbridge): onto `Bg_Spot00_Hanebasi`'s trigger, Zelda's escape
+    /// (`gHyruleFieldZeldaEscapeCs`, layer 5: Impa throws the Ocarina of Time into the moat) to its
+    /// terminator, and the field's layer 1 again.
+    Escape,
+    /// GAME-10 milestone 7: from the moat's edge after the escape (`zelda-fled`): into the water, the
+    /// dive to the Ocarina of Time (`Item_Ocarina` 0x0003), its text, `gHyruleFieldZeldaSongOfTimeCs`,
+    /// the Temple of Time's `gTempleOfTimeSongOfTimeCs` (the Song of Time taught and played back),
+    /// and Hyrule Field after `gHyruleFieldGetOoTCs`: Phase 11's exit, part 2 (Phase 12's start).
+    OcarinaOfTime,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2000,6 +2031,60 @@ fn sapphire_tasks() -> Vec<Task> {
     ]
 }
 
+/// `SCENE_HYRULE_FIELD` (`scene_table.h`: 0x51) and `SCENE_TEMPLE_OF_TIME` (0x43).
+const SCENE_FIELD: u16 = 0x51;
+const SCENE_TEMPLE_OF_TIME: u16 = 0x43;
+/// `ENTR_HYRULE_FIELD_16` (`entrance_table.h`: 0x50F): where `gTempleOfTimeSongOfTimeCs`'s
+/// terminator (53) leaves Link, `gHyruleFieldGetOoTCs`'s entrance.
+const ENTR_HYRULE_FIELD_16: u16 = 0x50F;
+
+/// Where the `Escape` route starts Link: on the field 450 south of spawn 0 (160, 0, 1415), short of
+/// `Bg_Spot00_Hanebasi`'s trigger (x within 450, z 1080 to 1700), facing the drawbridge (north).
+pub const ESCAPE_START: (Vec3, i16) = (Vec3::new(160.0, 0.0, 1865.0), -0x8000);
+/// Where the `OcarinaOfTime` route starts Link: on the moat's south bank (floor 0 to z 1090; the
+/// water's surface -60, its floor -140) south of the ocarina (299, -136, 884), facing it (north).
+pub const MOAT_START: (Vec3, i16) = (Vec3::new(299.0, 0.0, 1160.0), -0x8000);
+/// `Item_Ocarina` 0x0003's placement (`spot00` layer 1) and the moat's water surface over it.
+const MOAT_OCARINA: Vec3 = Vec3::new(299.0, -136.0, 884.0);
+const MOAT_SURFACE: f32 = -60.0;
+
+/// `Route::Escape`'s tasks: north onto the drawbridge's trigger (`EVENTCHKINF_ZELDA_FLED_CASTLE`
+/// and `_82`, `ENTR_HYRULE_FIELD_0` with 0xFFF1: layer 5), Zelda's escape to its terminator (33,
+/// `ENTR_HYRULE_FIELD_0`: layer 1), Link free at spawn 0.
+fn escape_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::WalkUntil(vec![Vec3::new(160.0, 0.0, 1500.0)], |w| w.scene_id == SCENE_FIELD && w.save.scene_layer == 5 && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::EscapeStarted),
+        Task::Texts(
+            |w| w.scene_id == SCENE_FIELD && w.save.scene_layer == 1 && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF && !w.player_in_cs_mode(),
+            Step::Escaped,
+        ),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::OcarinaOfTime`'s tasks: off the bank into the moat, the dive to the ocarina (the floor
+/// at -140 is within any scale's dive; its offer within 30 across and 50 up or down: Player takes it
+/// from the bottom and surfaces holding it up), A through its text (0x3A): its close starts
+/// `gHyruleFieldZeldaSongOfTimeCs`; its terminator (52) to the Temple of Time (`CS_INDEX_7`: layer
+/// 11, `gTempleOfTimeSongOfTimeCs`): Zelda's Song of Time taught and played back; its terminator
+/// (53) to `ENTR_HYRULE_FIELD_16`, `gHyruleFieldGetOoTCs`, and Link free in the field.
+fn ocarina_of_time_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(MOAT_OCARINA.x, 0.0, 1040.0), Vec3::new(MOAT_OCARINA.x, MOAT_SURFACE, 960.0)]),
+        Task::DiveFor(MOAT_OCARINA, |w| w.save.get_event_chk_inf(crate::item_ocarina::EVENTCHKINF_43), Step::OcarinaTaken),
+        Task::Texts(|w| w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::SongOfTimeCs),
+        Task::Texts(|w| w.scene_id == SCENE_TEMPLE_OF_TIME && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::TempleOfTime),
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_TIME, false, Step::SongOfTimePlayed),
+        Task::Texts(
+            |w| w.scene_id == SCENE_FIELD && w.save.entrance_index == ENTR_HYRULE_FIELD_16 && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF && !w.player_in_cs_mode(),
+            Step::FieldAfterOcarina,
+        ),
+        Task::Settle(None),
+    ]
+}
+
 /// Ruto's blue warp (`Door_Warp1` `WARP_BLUE_RUTO`), if it's there.
 fn ruto_warp(w: &PlayState) -> Option<&crate::door_warp1::DoorWarp1> {
     use crate::door_warp1::{DoorWarp1, WARP_BLUE_RUTO};
@@ -2667,6 +2752,8 @@ impl Route {
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => "ENTR_JABU_JABU_0",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
+            // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
+            Route::Escape | Route::OcarinaOfTime => "ENTR_HYRULE_FIELD_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2722,6 +2809,8 @@ impl Route {
             Route::JabuCrystal => Some("jabu-crystal"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
+            Route::Escape => Some("zora-sapphire"),
+            Route::OcarinaOfTime => Some("zelda-fled"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2740,6 +2829,8 @@ impl Route {
             Route::BlueWarp => Some(BLUE_WARP_START),
             Route::BossRoom => Some((Vec3::new(-660.0, -1880.0, -620.0), -0x8000)),
             Route::Field => Some(FIELD_START),
+            Route::Escape => Some(ESCAPE_START),
+            Route::OcarinaOfTime => Some(MOAT_START),
             Route::FieldNight => Some(FIELD_NIGHT_START),
             Route::Ocarina => Some(OCARINA_START),
             // On the cliff above the cavern, east of its Bomb Flower, facing west.
@@ -3001,6 +3092,8 @@ impl Route {
             Route::JabuCrystal => "jabu-crystal",
             Route::Barinade => "barinade",
             Route::Sapphire => "sapphire",
+            Route::Escape => "zelda-escape",
+            Route::OcarinaOfTime => "ocarina-of-time",
         }
     }
 
@@ -3063,6 +3156,8 @@ impl Route {
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => 3000,
             Route::Barinade => 3000,
             Route::Sapphire => 5000,
+            Route::Escape => 4000,
+            Route::OcarinaOfTime => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3070,12 +3165,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3139,6 +3234,9 @@ enum Task {
     Exit(&'static str, Option<Step>),
     /// Steer through the points, each passed within `WAYPOINT_RADIUS`.
     Walk(Vec<Vec3>),
+    /// `Walk` on until the condition holds (a trigger on the way that takes Link before he gets
+    /// there: the drawbridge's), then the step; A through any text on the way.
+    WalkUntil(Vec<Vec3>, fn(&PlayState) -> bool, Step),
     /// Steer at the point (up a climbable wall, a ledge) until Link stands at its height, settled.
     ClimbTo(Vec3, Step),
     /// From the point, at the actor until it offers a talk, then its C button (0 C-Left): the item
@@ -3197,6 +3295,9 @@ enum Task {
     /// go until Link is back at the water's surface (this height, within 40): under a wall that
     /// stops short of the bottom.
     DiveUnder(Vec3, f32, Step),
+    /// Swimming: the dive (A pressed at the surface, held under it) steering at the point until the
+    /// condition holds (an item taken from the bottom: the Ocarina of Time's), then the step.
+    DiveFor(Vec3, fn(&PlayState) -> bool, Step),
     /// Into a crawlspace and through it: walk to the first point, lined up with the mouth;
     /// towards the mouth (the second point) until A says "Enter" (`PLAYER_STATE2_DO_ACTION_ENTER`); A; the
     /// stick forward until Link is out and standing.
@@ -3850,6 +3951,8 @@ impl Playthrough {
             Route::JabuCrystal => jabu_crystal_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
+            Route::Escape => escape_tasks(),
+            Route::OcarinaOfTime => ocarina_of_time_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -4314,6 +4417,23 @@ impl Playthrough {
                 _ => self.settle(w, step),
             },
             Task::Walk(points) => self.walk(w, &points, RUN),
+            Task::WalkUntil(points, until, step) => {
+                self.wait += 1;
+                if self.wait > 3000 {
+                    self.failure = Some(format!("walked {points:?} without the condition holding"));
+                    return None;
+                }
+                if w.message_state() == TEXT_STATE_NONE && until(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                if w.message_state() != TEXT_STATE_NONE {
+                    return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+                }
+                let link = w.player().actor.world_pos;
+                let target = points.iter().copied().find(|&p| Self::xz_dist(link, p) >= WAYPOINT_RADIUS).unwrap_or(*points.last().unwrap());
+                Some(stick_towards(w, target, RUN))
+            }
             Task::Lift(near, step) => self.lift(w, near, step),
             Task::LiftBombFlower(near, step) => self.lift_bomb_flower(w, near, step),
             Task::PutDown(points, face, step) => self.put_down(w, &points, face, step),
@@ -4417,6 +4537,23 @@ impl Playthrough {
             }
             Task::Hurry(points) => self.walk(w, &points, FULL),
             Task::DiveUnder(to, surface, step) => self.dive_under(w, to, surface, step),
+            Task::DiveFor(to, until, step) => {
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some(format!("the dive for {to} never got it (at {})", w.player().actor.world_pos));
+                    return None;
+                }
+                if until(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                let mut pad = stick_towards(w, to, FULL);
+                // Pressed until the dive starts (a press at the surface), then held under it (the hold
+                // keeps it going down): held once Link is in the dive or near the point's depth.
+                let link = w.player().actor.world_pos;
+                pad.button = if w.player().action == crate::player::Action::Dive || link.y < to.y + 40.0 { BTN_A } else { self.press(BTN_A).button };
+                Some(pad)
+            }
             Task::Sneak(points) => self.sneak(w, &points),
             Task::WaitGuards(ready, what) => {
                 self.wait += 1;

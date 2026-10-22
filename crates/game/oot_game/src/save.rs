@@ -938,6 +938,16 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: zora_sapphire,
     },
     SavePreset {
+        name: "zelda-fled",
+        about: "zora-sapphire, and GAME-10 milestone 7's escape run over: the drawbridge's trigger (EVENTCHKINF_ZELDA_FLED_CASTLE and EVENTCHKINF_82), gHyruleFieldZeldaEscapeCs seen: the Ocarina of Time in the moat (the ocarina run's start)",
+        apply: zelda_fled,
+    },
+    SavePreset {
+        name: "ocarina-of-time",
+        about: "zelda-fled, and GAME-10 milestone 7's ocarina run over: the Ocarina of Time taken from the moat (EVENTCHKINF_43, Hyrule Field's switch flag 3, ITEM_OCARINA_OF_TIME in the Fairy Ocarina's slot), the Song of Time taught in the Temple of Time (QUEST_SONG_TIME) and gHyruleFieldGetOoTCs seen (EVENTCHKINF_A9): Phase 11's exit, part 2; Phase 12's start, in Hyrule Field",
+        apply: ocarina_of_time,
+    },
+    SavePreset {
         name: "boomerang",
         about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
         apply: |s| {
@@ -1281,6 +1291,28 @@ fn zora_sapphire(s: &mut SaveContext) {
     s.health = s.health_capacity;
     s.set_event_chk_inf(0x37);
     crate::item::item_give(s, None, crate::item::ITEM_ZORA_SAPPHIRE);
+}
+
+/// `zelda-fled`'s save (`Route::Escape`'s end): `Bg_Spot00_Hanebasi`'s trigger set
+/// `EVENTCHKINF_ZELDA_FLED_CASTLE` (0x80) and `EVENTCHKINF_82`.
+fn zelda_fled(s: &mut SaveContext) {
+    zora_sapphire(s);
+    s.set_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE);
+    s.set_event_chk_inf(0x82);
+}
+
+/// `ocarina-of-time`'s save (`Route::OcarinaOfTime`'s end): `ItemOcarina_WaitInWater` taken
+/// (`EVENTCHKINF_43`, `Flags_SetSwitch(play, 3)` in `SCENE_HYRULE_FIELD`, 0x51), its get-item
+/// (`Item_Give(ITEM_OCARINA_OF_TIME)`: the Fairy Ocarina's slot), the Temple of Time's playback
+/// (`Item_Give(ITEM_SONG_TIME)`) and `gHyruleFieldGetOoTCs` (`sEntranceCutsceneTable`'s
+/// `EVENTCHKINF_A9`).
+fn ocarina_of_time(s: &mut SaveContext) {
+    zelda_fled(s);
+    s.set_event_chk_inf(0x43);
+    s.scene_flags[0x51].swch |= 1 << 3;
+    crate::item::item_give(s, None, crate::item::ITEM_OCARINA_OF_TIME);
+    crate::item::item_give(s, None, crate::item::ITEM_SONG_TIME);
+    s.set_event_chk_inf(0xA9);
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

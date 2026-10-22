@@ -992,3 +992,118 @@ scripts\run\sandbox-barinade.bat
    tread water by Jabu-Jabu.
 4. `fountain`: the Sapphire's cutscene alone. `sapphire`: the fountain afterwards (the three stones
    on the pause menu's quest page, if it's drawn).
+
+## Milestone 7: The Ocarina of Time and the Song of Time
+
+**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
+[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+
+**The answer:** `Item_Ocarina` whole (every type) and `En_Ganon_Mant` whole (by a helper), and the
+cutscenes from the drawbridge to the field after the Song of Time played through with what was
+already ported; two scripted runs from debug starts, no fights:
+
+- **Zelda's escape** (`Route::Escape`, from `zora-sapphire` at (160, 0, 1865), short of the
+  drawbridge's trigger): Link walks north onto the bridge's way (x within 450, z 1080 to 1700);
+  `Bg_Spot00_Hanebasi` sets `EVENTCHKINF_ZELDA_FLED_CASTLE` and `_82` and fades to layer 5, where
+  `gHyruleFieldZeldaEscapeCs` runs (frame 91 of the run): Zelda and Impa ride out, Ganondorf
+  follows with his cape, Impa throws the Ocarina of Time (`Item_Ocarina` type 0 at the script's
+  frame 845) into the moat; its terminator (33) back to layer 1, Link free at spawn 0 (frame 2900).
+- **The Ocarina of Time** (`Route::OcarinaOfTime`, from `zelda-fled` on the moat's south bank at
+  (299, 0, 1160)): off the bank into the water, the dive to the ocarina (taken at frame 311:
+  `EVENTCHKINF_43`, switch 3), its text (0x3A) closed: `gHyruleFieldZeldaSongOfTimeCs` (464), its
+  terminator (52) to the Temple of Time's layer 11 (525), `gTempleOfTimeSongOfTimeCs`: Zelda
+  teaches the Song of Time and Link plays it back (1488); its terminator (53) to
+  `ENTR_HYRULE_FIELD_16`, `gHyruleFieldGetOoTCs`, and Link free in the field (2187). **Phase 11's
+  exit, part 2; Phase 12's start.**
+
+Scripts: `scripts\run\game-ocarina-of-time.bat` (menu 163: empty, `escape`, `moat`, `temple`,
+`field`), `test-ocarina-of-time.bat` (164), `sandbox-ocarina-of-time.bat` (165).
+
+### What was built
+
+- **`Item_Ocarina`** whole (`item_ocarina.rs`, ADR 0085): type 0 (Impa's throw in the escape: tossed
+  up, spun, put at (250, 60, 1075) and thrown at frame 881, into the water at 897 with a ripple, a
+  splash and `NA_SE_EV_BOMB_DROP_WATER`, a second ripple at 906, then sinking), type 1 (the other
+  layer's throw, re-thrown at frame 220), type 2 (nothing), type 3 (the moat's: killed until Zelda
+  has fled and once taken; Navi's `Elf_Msg2` 0x3800; the offer within 30 across and 50 up or down
+  with its bubbles; taken, `EVENTCHKINF_43`, switch 3, undrawn; the text's close starts
+  `gHyruleFieldZeldaSongOfTimeCs`), any other killed.
+- **`En_Ganon_Mant`** whole, by a helper (`en_ganon_mant.rs`): the twelve strands of twelve joints
+  (sway, push, gravity, the floor and the minimum distance, the speed clamp but with params 0x23),
+  the attach timers' endpoints, the tear on the cape's own copy of `gMantTex`, the double-buffered
+  vertices drawn from the overlay's `gMantDL` (each vertex a bone of its own:
+  `BakeSegment::BonedVertices`, new). `En_Viewer`'s `EnViewer_UpdateGanondorfCape` (type 5's
+  forearms from the neck) ported; types 3, 7, 8 and 9 never write the cape, so in the nightmare and
+  the escape it stays a cape of no width at the world's origin, as written (`sGanondorfCape` kept in
+  `En_Viewer`'s overlay statics).
+- **The runs' tasks:** `Task::WalkUntil` (walking on until a condition holds: the drawbridge's
+  trigger halts Link short of any point) and `Task::DiveFor` (the dive held until a condition: the
+  ocarina taken from the bottom).
+- **The presets:** `zelda-fled` (`Route::Escape`'s end, the ocarina run's start) and
+  `ocarina-of-time` (`Route::OcarinaOfTime`'s end: `EVENTCHKINF_43`, Hyrule Field's switch 3, the
+  Ocarina of Time in the Fairy Ocarina's slot, the Song of Time, `EVENTCHKINF_A9`; Phase 12's
+  start), each checked against its run.
+
+### Results
+
+- Tests: `item_ocarina` (3: the moat's ocarina and its kills, Navi and the bubbles; a dive takes it
+  and its text starts the Song of Time's cutscene, the Ocarina of Time given; Impa's throws by the
+  cutscene's frames, types 2 and 4); the helper's `en_ganon_mant` (11: the strands under gravity,
+  the speed clamp and params 0x23, the minimum distances and the floor, the attach timers, the
+  double buffer, the vertices through `sVerticesMap`, the tear, `En_Viewer` type 5's forearms, the
+  unwritten cape, the bakes, the draw); `ocarina_of_time_runs` (2: the two runs, each end checked
+  against its preset; in the escape the cape spawned and the throw's place at frames 846, 881, 897
+  and 906: at 897 it stops at (274, -60, 907), the C's own second ripple's spot).
+- 1,699 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings. The pack is still
+  format 30, re-imported into `out/data27` for the cape's bakes.
+- Goldens: all 314 of `out/golden_base35`'s hashes the same (the nightmare's cape is never written,
+  so it draws nothing). 8 new hashes in 6 cases (`zelda_escape`, `zelda_escape_riders`,
+  `zelda_escape_moat`, `ocarina_of_time`, `ocarina_of_time_dive`, `ocarina_of_time_temple`): 322
+  hashes, 241 cases (`out/golden_base36`).
+- COVERAGE: Phase 11 30 of 35 (`En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Tp`, `En_Vali` left, the
+  milestones 8 and 9); `En_Ganon_Mant` ported; 214 ported overall.
+
+### Corrections
+
+- The moat (`ootx`'s probe): the south bank is at y 0 to about z 1090, the water's surface -60, its
+  floor -140; the ocarina lies 4 over the floor, 76 under the surface: any dive reaches it (the
+  silver scale isn't needed).
+- Entering Hyrule Field at `ENTR_HYRULE_FIELD_0` with the three stones puts Link (spawn 0, (160, 0,
+  1415)) inside the drawbridge's trigger: leaving the market starts the escape at once, as in the
+  game. The run starts short of it.
+- The Temple of Time's playback leaves the Ocarina of Time where the Fairy Ocarina was; no C button
+  changes (the save had no ocarina on a C button).
+
+### Known gaps
+
+- `En_Ganon_Mant`'s normals are written 30 long (of 127), dimmer under the N64's lighting; the
+  renderer normalises them, so a written cape may look brighter than the game's. No cape this
+  milestone shows is written (type 5's is the ending's).
+
+### How to check
+
+```
+scripts\run\test-ocarina-of-time.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-ocarina-of-time.bat
+```
+
+### By hand
+
+`scripts\run\game-ocarina-of-time.bat` (menu 163):
+
+1. Empty (the field short of the drawbridge, by day, with the three stones): the storm as you face
+   the bridge; walk north onto its way: the fade, then Zelda's escape: Zelda and Impa on the white
+   horse out over the bridge, Zelda's look back and the ocarina thrown, Ganondorf on his black horse
+   (look at his cape: the C never writes it in this scene), the questions, back in the field (the
+   bridge down, the rain over).
+2. `escape`: the escape's cutscene alone (watch the ocarina's arc into the moat, the splash and the
+   ripples).
+3. `moat`: walk off the bank into the moat; bubbles rise over the ocarina; C-Up (Navi's message by
+   it); dive (A) for it: Link takes it from the bottom, surfaces holding it up, its text; Zelda's
+   Song of Time message in the field, then the Temple of Time: Zelda teaches the Song of Time; play
+   it back (C-Right, A, C-Down, C-Right, A, C-Down); back to the field.
+4. `temple`: the Temple of Time's cutscene alone. `field`: the field afterwards (the Ocarina of Time
+   on the item page, the Song of Time on the quest page).

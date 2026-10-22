@@ -238,7 +238,9 @@ is done; milestone 5 (to Barinade: Ruto whole, the tentacles, barriers, crates a
 [ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) is done, its hand test owed
 ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)); milestone 6 (Barinade and the Sapphire,
 [ADR 0084](adr/0084-barinade-rutos-warp-and-the-zoras-sapphire.md)) is done, its hand test owed;
-milestone 7 (the Ocarina of Time and the Song of Time) is next.
+milestone 7 (the Ocarina of Time and the Song of Time, [ADR 0085](adr/0085-the-ocarina-of-time-and-the-song-of-time.md))
+is done, its hand test owed; milestones 8 and 9 (the rest of Jabu-Jabu, the frogs and
+scarecrows) are next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -790,8 +792,11 @@ and the cow, room 11's stick to room 7's web, and room 5's crystal to Barinade's
 (committed 2026-10-21; the hand test deferred by the user, owed: [HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)). **Milestone 6**
 (2026-10-21, ADR 0084: `Boss_Va` whole, `Door_Warp1`'s Ruto warp, the fountain's Sapphire cutscene;
 the runs Barinade's intro and the Sapphire; the three stones at `zora-sapphire`) **done** (committed
-2026-10-21; the hand test deferred by the user, owed). Next: milestone 7 (the Ocarina of Time) from
-`zora-sapphire`. Found: in MQ neither Ruto nor Big Octo is on the way to
+2026-10-21; the hand test deferred by the user, owed). **Milestone 7** (2026-10-21, ADR 0085:
+`Item_Ocarina` and `En_Ganon_Mant` whole; the runs Zelda's escape and the Ocarina of Time through
+the Temple of Time's Song of Time; the presets `zelda-fled` and `ocarina-of-time`, Phase 12's
+start) **done** (committed 2026-10-21; the hand test deferred by the user, owed). Next: milestone 8
+(the rest of Jabu-Jabu). Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 
