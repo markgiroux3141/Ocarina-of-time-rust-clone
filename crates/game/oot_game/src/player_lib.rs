@@ -126,10 +126,14 @@ impl PlayerRules {
         let t = |n: &str| self.model_type(n);
         let shield_max = self.shields.len();
 
-        let mut left = g.left;
-        if left == t("LH_BOOMERANG") && lo.boomerang_thrown {
+        // leftHandDLists (the group's, or a cutscene's), chosen by the group's leftHandType.
+        let mut left = lo.left_hand.unwrap_or(g.left);
+        let mut left_variant = 0;
+        if g.left == t("LH_BGS") && lo.knife_broken {
+            left_variant = 1;
+        } else if g.left == t("LH_BOOMERANG") && lo.boomerang_thrown {
             left = t("LH_OPEN");
-        } else if left == t("LH_OPEN") && lo.moving_fast {
+        } else if g.left == t("LH_OPEN") && lo.moving_fast {
             left = t("LH_CLOSED");
         }
 
@@ -162,11 +166,31 @@ impl PlayerRules {
         }
 
         vec![
-            (LIMB_L_HAND, self.pick(left, 0, lo.age, lod)),
+            (LIMB_L_HAND, self.pick(left, left_variant, lo.age, lod)),
             (LIMB_R_HAND, self.pick(right, right_variant, lo.age, lod)),
             (LIMB_SHEATH, self.pick(sheath, sheath_variant, lo.age, lod)),
             (LIMB_WAIST, self.pick(g.waist, 0, lo.age, lod)),
         ]
+    }
+
+    /// `sLeftHandType` and `sRightHandType` once the hands are drawn
+    /// (`Player_OverrideLimbDrawGameplayDefault`): the group's types, the left open for a thrown
+    /// boomerang, either closed into a fist at speed, the right `RH_SHIELD` while guarding
+    /// (`Player_SetModelsForHoldingShield`). The adult's gauntlet plates are picked by them.
+    pub fn hand_types(&self, lo: &Loadout) -> (usize, usize) {
+        let g = &self.model_groups[lo.model_group.min(self.model_groups.len() - 1)];
+        let t = |n: &str| self.model_type(n);
+        let mut left = g.left;
+        if left == t("LH_BOOMERANG") && lo.boomerang_thrown {
+            left = t("LH_OPEN");
+        } else if left == t("LH_OPEN") && lo.moving_fast {
+            left = t("LH_CLOSED");
+        }
+        let mut right = if lo.holding_shield { t("RH_SHIELD") } else { g.right };
+        if right == t("RH_OPEN") && lo.moving_fast {
+            right = t("RH_CLOSED");
+        }
+        (left, right)
     }
 
     /// `Player_OverrideLimbDrawGameplayFirstPerson` aiming (`unk_6AD` 2): every limb but the arms
@@ -198,6 +222,12 @@ impl PlayerRules {
     }
 }
 
+/// The segment whose display list sets Link's tunic colour (`Player_DrawImpl`'s
+/// `gDPSetEnvColor(sTunicColors[tunic])` before the skeleton), a dynamic segment of his meshes:
+/// the bakes hold the loadout's tunic, and the draw gives `currentTunic`'s (a port-only segment:
+/// the game's draws don't use 0x0F).
+pub const SEG_TUNIC: u8 = 0x0F;
+
 /// The equipment state that decides Player's limb display lists.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Loadout {
@@ -221,6 +251,14 @@ pub struct Loadout {
     /// `PLAYER_STATE1_BOOMERANG_THROWN`: the boomerang's left hand drawn open.
     #[serde(default)]
     pub boomerang_thrown: bool,
+    /// `leftHandDLists` set over the model group's (a `PLAYER_MODELTYPE_*` index into
+    /// `PlayerRules::model_types`): the Master Sword's pedestal (`func_80851A50`).
+    #[serde(default)]
+    pub left_hand: Option<usize>,
+    /// `swordHealth <= 0`: the Giant's Knife broken, drawn in the left hand of the groups holding
+    /// it (`PLAYER_MODELTYPE_LH_BGS`, its lists' second half).
+    #[serde(default)]
+    pub knife_broken: bool,
 }
 
 impl Loadout {
@@ -241,6 +279,8 @@ impl Loadout {
             holding_shield: false,
             first_person: false,
             boomerang_thrown: false,
+            left_hand: None,
+            knife_broken: false,
         }
     }
 }

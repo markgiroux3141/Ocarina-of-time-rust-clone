@@ -179,6 +179,9 @@ echo   165  sandbox-ocarina-of-time The escape and Ocarina of Time runs' traces 
 echo   166  game-frogs           Zora's River on the frogs' log (asks: or choir, lake, longsong, bonooru, pierre)
 echo   167  test-frogs           The frogs, the scarecrows, the ocarina's recording and the runs (cargo test)
 echo   168  sandbox-frogs        The frogs' and Bonooru's runs' traces and screenshots, into out\run
+echo   169  game-master-sword    The Temple of Time's pedestal, a child (asks: or back, door)
+echo   170  test-master-sword    The age switch, the pedestal, time travel and the runs (cargo test)
+echo   171  sandbox-master-sword The pull's and the way back's runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -357,6 +360,9 @@ if "%pick%"=="165" set "script=sandbox-ocarina-of-time"
 if "%pick%"=="166" goto frogs
 if "%pick%"=="167" set "script=test-frogs"
 if "%pick%"=="168" set "script=sandbox-frogs"
+if "%pick%"=="169" goto mastersword
+if "%pick%"=="170" set "script=test-master-sword"
+if "%pick%"=="171" set "script=sandbox-master-sword"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -410,6 +416,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:mastersword
+set "which="
+set /p "which=Which (empty: a child at the pedestal; back or door): "
+call "%~dp0game-master-sword.bat" %which%
+echo game-master-sword finished (exit code %errorlevel%).
 pause
 goto menu
 

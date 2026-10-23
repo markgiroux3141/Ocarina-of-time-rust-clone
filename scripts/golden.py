@@ -380,6 +380,12 @@ CASES = [
     ("frogs_game", S, ["--entrance", "ENTR_ZORAS_RIVER_0", "--child", "--preset", "ocarina-c", "--script", "frogs", "--frames", "3650", "--screenshot", "{shot}"]),
     ("bonooru", S, ["--entrance", "ENTR_LAKE_HYLIA_0", "--child", "--preset", "ocarina-c", "--script", "bonooru", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("bonooru_recording", S, ["--entrance", "ENTR_LAKE_HYLIA_0", "--child", "--preset", "ocarina-c", "--script", "bonooru", "--frames", "250", "--screenshot", "{shot}"]),
+    # GAME-11 milestone 1: the Master Sword pulled (the child holding it in the cutscene, the adult's
+    # arrival) and put back (the adult on the pedestal, the child's arrival).
+    ("master_sword_pull", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "master-sword", "--script", "master-sword-pull", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("master_sword_pull_cs", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "master-sword", "--script", "master-sword-pull", "--frames", "140", "--screenshot", "{shot}"]),
+    ("master_sword_back", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "master-sword-adult", "--script", "master-sword-back", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("master_sword_back_adult", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "master-sword-adult", "--script", "master-sword-back", "--frames", "112", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

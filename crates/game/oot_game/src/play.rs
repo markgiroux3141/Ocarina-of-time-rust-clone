@@ -368,6 +368,12 @@ pub struct PlayState {
     pub object_ctx: ObjectContext,
     /// Link's object for his age (`Scene_CommandPlayerEntryList`).
     pub link_object_id: i16,
+    /// `linkAgeOnLoad` (`LINK_AGE_ADULT` or `LINK_AGE_CHILD`): the age the next scene loads with.
+    /// `Scene_CommandPlayerEntryList` sets it to `linkAge`; the cutscene destinations that
+    /// change Link's age set it, `Play_Destroy` swaps the equips when it differs
+    /// ([`crate::save::SaveContext::inventory_swap_age_equipment`]), and `Player_Destroy` makes it
+    /// the save's age (docs/adr/0088-the-age-switch.md).
+    pub link_age_on_load: u8,
     /// `transiActorCtx.list`: the scene's transition actors (an entry's id is negated while
     /// its actor exists).
     pub transi_actors: Vec<TransitionActorEntry>,
@@ -555,6 +561,7 @@ impl PlayState {
             room_ram: Default::default(),
             object_ctx: ObjectContext::default(),
             link_object_id: 0,
+            link_age_on_load: if adult { crate::save::LINK_AGE_ADULT } else { crate::save::LINK_AGE_CHILD },
             transi_actors: Vec::new(),
             setup_actors: Vec::new(),
             flags: SceneFlags::default(),

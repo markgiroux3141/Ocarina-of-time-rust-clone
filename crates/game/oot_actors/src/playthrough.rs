@@ -679,6 +679,13 @@ pub enum Step {
     BonooruRemembers,
     /// Talked to, he plays the spawn song back (`OCARINA_MODE_0F`); the box closed.
     BonooruPlayback,
+    /// The Master Sword taken from its pedestal: `gPullMasterSwordCs` started.
+    SwordPulled,
+    /// The Master Sword put back in its pedestal: `gPlaceMasterSwordCs` started.
+    SwordPutBack,
+    /// Arrived by time travel (`ENTR_TEMPLE_OF_TIME_2`, start mode 1): off the pedestal
+    /// (`Player_Action_TimeTravelEnd` over), Link standing.
+    TimeTravelled,
 }
 
 impl Step {
@@ -953,6 +960,9 @@ impl Step {
             Step::BonooruSong => "bonooru_song",
             Step::BonooruRemembers => "bonooru_remembers",
             Step::BonooruPlayback => "bonooru_playback",
+            Step::SwordPulled => "sword_pulled",
+            Step::SwordPutBack => "sword_put_back",
+            Step::TimeTravelled => "time_travelled",
         }
     }
 }
@@ -1278,6 +1288,14 @@ pub enum Route {
     /// ocarina out to him (0x40A4), eight new notes recorded (the spawn song set: 0x40A5), then
     /// talked to: he plays it back (0x40A0).
     Bonooru,
+    /// The Master Sword pulled (GAME-11 milestone 1, `master-sword`: the child on the pedestal's
+    /// step in room 0, entered by the hall): `gPullMasterSwordCs`, terminator 8 (the age changes: the
+    /// equips swapped), the adult's arrival on the pedestal at `ENTR_TEMPLE_OF_TIME_2`.
+    MasterSwordPull,
+    /// The Master Sword put back (GAME-11 milestone 1, `master-sword-adult`, `MasterSwordPull`'s end:
+    /// the adult arriving on the pedestal at `ENTR_TEMPLE_OF_TIME_2`): `gPlaceMasterSwordCs`,
+    /// terminator 8, the child's arrival.
+    MasterSwordBack,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2288,6 +2306,9 @@ fn frogs_tasks() -> Vec<Task> {
 /// 70 in front of Bonooru (`En_Kakasi3` at (-154, -1293, 2888), facing +z).
 pub const BONOORU_FRONT: Vec3 = Vec3::new(-154.0, -1293.0, 2958.0);
 
+/// Room 0's spawn 4 (`ENTR_TEMPLE_OF_TIME_4`'s), on the pedestal's step: the pull's debug start.
+pub const MASTER_SWORD_STEP: Vec3 = Vec3::new(0.0, 70.0, 46.0);
+
 /// `Route::Bonooru`'s tasks: the ocarina out in front of him, his 0x40A4 read, eight notes (A,
 /// C-Down, A, C-Up twice over: none of the songs in them); his 0x40A5 read, the song set; then a
 /// talk: 0x40A0 and his playback (one-point 2280) to `OCARINA_MODE_0F`.
@@ -2993,6 +3014,13 @@ impl Route {
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal | Route::JabuSwitch | Route::JabuOcto => "ENTR_JABU_JABU_0",
             Route::Frogs => "ENTR_ZORAS_RIVER_0",
             Route::Bonooru => "ENTR_LAKE_HYLIA_0",
+            // The hall's entrance (room 1; the intro seen), then room 0 (the debug start). Not
+            // ENTR_TEMPLE_OF_TIME_4, the adult's from the Chamber: with it the pull's time warp
+            // (Demo_Effect 0xFF0F) is drawn before the pull (DemoEffect_DrawTimeWarp), and a child
+            // never enters by it.
+            Route::MasterSwordPull => "ENTR_TEMPLE_OF_TIME_0",
+            // Spawn 2, room 0: start mode 1 (Player_StartMode_TimeTravel), on the pedestal.
+            Route::MasterSwordBack => "ENTR_TEMPLE_OF_TIME_2",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3052,6 +3080,8 @@ impl Route {
             Route::JabuCrystal => Some("jabu-crystal"),
             Route::JabuSwitch | Route::JabuOcto => Some("jabu-room-7"),
             Route::Frogs | Route::Bonooru => Some("ocarina-c"),
+            Route::MasterSwordPull => Some("master-sword"),
+            Route::MasterSwordBack => Some("master-sword-adult"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
             Route::Escape => Some("zora-sapphire"),
@@ -3129,6 +3159,8 @@ impl Route {
             // 70 in front of Bonooru (-154, -1293, 2888), facing him (within 80 he marks Link as
             // one to play to him: PLAYER_STATE2_23).
             Route::Bonooru => Some((BONOORU_FRONT, -0x8000)),
+            // Spawn 4's place on the pedestal's step, facing as it does.
+            Route::MasterSwordPull => Some((MASTER_SWORD_STEP, -3641)),
             _ => None,
         }
     }
@@ -3195,6 +3227,7 @@ impl Route {
             Route::JabuWeb => Some(11),
             Route::JabuCrystal => Some(1),
             Route::JabuSwitch | Route::JabuOcto => Some(3),
+            Route::MasterSwordPull => Some(0),
             _ => None,
         }
     }
@@ -3356,6 +3389,8 @@ impl Route {
             Route::JabuOcto => "jabu-octo",
             Route::Frogs => "frogs",
             Route::Bonooru => "bonooru",
+            Route::MasterSwordPull => "master-sword-pull",
+            Route::MasterSwordBack => "master-sword-back",
         }
     }
 
@@ -3424,6 +3459,7 @@ impl Route {
             Route::JabuOcto => 6000,
             Route::Frogs => 8000,
             Route::Bonooru => 3000,
+            Route::MasterSwordPull | Route::MasterSwordBack => 2000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3436,7 +3472,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3476,6 +3512,9 @@ enum Task {
     /// `Task::Lift` for the actor: towards it until it offers itself to Link's lift, A, until he
     /// stands carrying it.
     LiftWho(Who, Step),
+    /// The Master Sword's pedestal (`Bg_Toki_Swd`): towards it until it offers itself (Player's
+    /// `interactRangeActor`), A, until its cutscene starts (the pull or the putting back).
+    Pedestal(Step),
     /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
     /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
     Throw(Vec3, Step),
@@ -4245,6 +4284,8 @@ impl Playthrough {
             Route::JabuOcto => jabu_octo_tasks(),
             Route::Frogs => frogs_tasks(),
             Route::Bonooru => bonooru_tasks(),
+            Route::MasterSwordPull => vec![Task::Pedestal(Step::SwordPulled), Task::NewScene(Step::TimeTravelled)],
+            Route::MasterSwordBack => vec![Task::Settle(None), Task::Pedestal(Step::SwordPutBack), Task::NewScene(Step::TimeTravelled)],
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -4731,6 +4772,7 @@ impl Playthrough {
                 Some(stick_towards(w, target, RUN))
             }
             Task::Lift(near, step) => self.lift(w, near, step),
+            Task::Pedestal(step) => self.pedestal(w, step),
             Task::LiftWho(who, step) => {
                 if self.carried.is_none() {
                     self.carried = Self::find(w, who);
@@ -7573,6 +7615,33 @@ impl Playthrough {
     }
 
     /// `Task::Lift`.
+    /// `Task::Pedestal`.
+    fn pedestal(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the pedestal never taken (Link {:?} at {})", w.player().action, w.player().actor.world_pos));
+            return None;
+        }
+        // (Its object loads a few frames after Play_Init.)
+        let Some(h) = w.actors.all().into_iter().find(|&h| w.actors.downcast::<crate::bg_toki_swd::BgTokiSwd>(h).is_some()) else {
+            return Some(PadState::default());
+        };
+        let sword = w.actors.downcast::<crate::bg_toki_swd::BgTokiSwd>(h).unwrap();
+        if sword.action != crate::bg_toki_swd::Action::Func808BAF40 && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            self.finish(Some(step));
+            return None;
+        }
+        let p = w.player();
+        if self.sub == 0 {
+            if p.interact_range_actor == Some(h) {
+                self.sub = 1;
+                return Some(self.press(BTN_A));
+            }
+            return Some(stick_towards(w, sword.actor.world_pos, SLOW));
+        }
+        Some(PadState::default())
+    }
+
     fn lift(&mut self, w: &PlayState, near: Vec3, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         self.wait += 1;

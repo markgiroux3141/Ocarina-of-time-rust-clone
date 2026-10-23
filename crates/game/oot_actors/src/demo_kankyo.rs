@@ -17,8 +17,7 @@
 //! for `draw`; the warp-in sparkles' sound is played in `draw_sfx`.
 //!
 //! Not ported: `player->actor.draw = NULL` at the warp-out's white-out (Player has no draw to
-//! take away: logged). The Door of Time's child is `Door_Toki`, a placeholder until the Temple of Time
-//! (Phase 8).
+//! take away: logged). The Door of Time's child is `Door_Toki` (its collision, `door_toki.rs`).
 //!
 //! Params: `params` whole, the type (`DemoKankyoType`: 0 and 1 the blue rain, 2 to 6 Din's rocks
 //! on cue channels 0 to 4, 7 the clouds, 8 to 0xC removed, 0xD the Door of Time, 0xE the light

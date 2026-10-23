@@ -504,6 +504,8 @@ impl PlayState {
         }
         let entrance = ld.entrances.get(spawn).copied().with_context(|| format!("{scene_file}: no entrance-list entry {spawn}"))?;
         let link_entry: ActorEntry = *ld.spawns.get(entrance.spawn as usize).with_context(|| format!("{scene_file}: no spawn {}", entrance.spawn))?;
+        // play->linkAgeOnLoad = linkAge.
+        play.link_age_on_load = if save.adult { crate::save::LINK_AGE_ADULT } else { crate::save::LINK_AGE_CHILD };
         play.link_object_id = if save.adult { OBJECT_LINK_BOY } else { OBJECT_LINK_CHILD };
         play.object_ctx.spawn(play.link_object_id);
         play.transi_actors = ld.transition_actors.clone();
@@ -664,6 +666,14 @@ impl PlayState {
     /// the save, the pad, the camera choice and the debug switches.
     pub(crate) fn reinit(&mut self) {
         let Some(assets) = self.assets.clone() else { return };
+        // Play_Destroy (z_play.c:300-303): a new age's equips, while the old age is still
+        // current (Player_Destroy makes linkAgeOnLoad the age as the actors go, below).
+        let age = if self.save.adult { crate::save::LINK_AGE_ADULT } else { crate::save::LINK_AGE_CHILD };
+        if age != self.link_age_on_load {
+            log::info!("Play_Destroy: linkAge {age} -> {}: Inventory_SwapAgeEquipment", self.link_age_on_load);
+            self.save.inventory_swap_age_equipment();
+            self.player_set_equipment_data();
+        }
         // Play_Destroy → Actor_CleanupContext (func_80031C3C): every actor deleted, category by
         // category, each list from its head (Actor_Delete: its sounds stopped, its destroy run,
         // so a destroy's flags are kept, as Bg_Relay_Objects' EVENTCHKINF_65); then

@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use eng_anim::anim::LinkAnimation;
 use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_gbi::gbi::DrawList;
-use eng_gbi::model::{Binding, BuildOptions, build_draw_list};
+use eng_gbi::model::{Binding, BuildOptions, build_draw_list, display_list_bytes};
 
 use crate::csrc::{Init, Macros, enum_members, find_initializer};
 use crate::project::Project;
@@ -189,7 +189,10 @@ impl PlayerModel {
                 (limb, addr)
             })
             .collect();
+        // The tunic's colour (gDPSetEnvColor before the skeleton) from a dynamic segment's list,
+        // so a draw can give another tunic's (SEG_TUNIC).
         let tunic = rules.tunics.get(lo.tunic).map(|t| t.1).unwrap_or([30, 105, 27]);
+        let tunic_env = u32::from_be_bytes([tunic[0], tunic[1], tunic[2], 0]);
         let opts = BuildOptions {
             lod,
             env_color: Some([tunic[0], tunic[1], tunic[2], 0]),
@@ -198,8 +201,11 @@ impl PlayerModel {
                 Binding { segment: 6, buf: self.object.clone(), base: 0 },
                 Binding { segment: 8, buf: self.object.clone(), base: self.eye_offsets[eye.min(self.eye_offsets.len() - 1)] },
                 Binding { segment: 9, buf: self.object.clone(), base: self.mouth_offsets[mouth.min(self.mouth_offsets.len() - 1)] },
+                Binding { segment: SEG_TUNIC, buf: display_list_bytes(&[(0xFB00_0000, tunic_env)]), base: 0 },
             ],
             limb_dlists,
+            dynamic_segments: 1 << SEG_TUNIC,
+            prelude: vec![(SEG_TUNIC as u32) << 24],
             ..Default::default()
         };
         Ok((build_draw_list(&self.skeleton, &opts)?, missing))

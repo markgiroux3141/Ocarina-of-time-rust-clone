@@ -406,11 +406,46 @@ fn ice_scroll(gameplay_frames: u32) -> Vec<(u32, u32)> {
 /// skeleton, its `gSPMatrix` of segment 0x0D's limb matrices putting it on the left forearm).
 const BRACELET_BAKE: &str = "Player/bracelet";
 
+/// The adult's gauntlet plates (`Player_DrawImpl`, strength 2 and up): both forearms' first
+/// plates, then each hand's second (open hand) or third, on the limbs' matrices (segment 0x0D),
+/// by `[left closed * 2 + right closed]`; their env colour (`sGauntletColors`) from
+/// `SEG_GAUNTLET_COLOR`.
+const GAUNTLET_BAKES: [&str; 4] = ["Player/gauntlets_open_open", "Player/gauntlets_open_closed", "Player/gauntlets_closed_open", "Player/gauntlets_closed_closed"];
+const SEG_GAUNTLET_COLOR: u8 = 0x0E;
+/// `sGauntletColors`: the silver gauntlets', the golden gauntlets'.
+const GAUNTLET_COLORS: [[u8; 3]; 2] = [[255, 255, 255], [254, 207, 15]];
+/// `sBootDListGroups`: the iron boots, the hover boots (both feet each, on the limbs' matrices).
+const BOOT_BAKES: [&str; 2] = ["Player/boots_iron", "Player/boots_hover"];
+
 /// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice, the child's bracelet, the
-/// bottle in hand (`sBottleDLists`, its colour dynamic).
+/// adult's gauntlet plates and boots, the bottle in hand (`sBottleDLists`, its colour dynamic).
 pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     use oot_game::pack::{BakeBody, BakeSegment, MeshBake};
-    vec![
+    let skel = || BakeSegment::SkeletonMatrices { file: "object_link_boy".into(), symbol: "gLinkAdultSkel".into() };
+    let boy = |s: &str| ("object_link_boy".to_string(), s.to_string());
+    let gauntlets = GAUNTLET_BAKES.iter().enumerate().map(|(i, name)| {
+        let (l, r) = (if i & 2 == 0 { "2" } else { "3" }, if i & 1 == 0 { "2" } else { "3" });
+        MeshBake {
+            name: (*name).into(),
+            object: "object_link_boy".into(),
+            segments: vec![(0x0D, skel()), (SEG_GAUNTLET_COLOR, BakeSegment::DynamicColor { env: true, prim: false })],
+            prelude: vec![SEG_GAUNTLET_COLOR],
+            body: BakeBody::DLists(vec![
+                boy("gLinkAdultLeftGauntletPlate1DL"),
+                boy("gLinkAdultRightGauntletPlate1DL"),
+                boy(&format!("gLinkAdultLeftGauntletPlate{l}DL")),
+                boy(&format!("gLinkAdultRightGauntletPlate{r}DL")),
+            ]),
+        }
+    });
+    let boots = BOOT_BAKES.iter().zip(["Iron", "Hover"]).map(|(name, kind)| MeshBake {
+        name: (*name).into(),
+        object: "object_link_boy".into(),
+        segments: vec![(0x0D, skel())],
+        prelude: vec![],
+        body: BakeBody::DLists(vec![boy(&format!("gLinkAdultLeft{kind}BootDL")), boy(&format!("gLinkAdultRight{kind}BootDL"))]),
+    });
+    gauntlets.chain(boots).chain(vec![
         MeshBake {
             name: ICE_BAKE.into(),
             object: "gameplay_keep".into(),
@@ -439,7 +474,30 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
             prelude: vec![SEG_BOTTLE_COLOR],
             body: BakeBody::DLists(vec![("object_link_child".into(), "gLinkChildBottleDL".into())]),
         },
-    ]
+    ])
+    .collect()
+}
+
+/// The left hand's lists a cutscene puts in `leftHandDLists` over the model group's
+/// (`func_80851A50`, the Master Sword's pedestal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeftHandDLists {
+    /// `gPlayerLeftHandBgsDLs` (the child's: holding the Master Sword).
+    Bgs,
+    /// `gPlayerLeftHandClosedDLs`.
+    Closed,
+}
+
+impl LeftHandDLists {
+    /// The model type whose lists these are (`PLAYER_MODELTYPE_*`), as the render state's switch
+    /// (0 for none).
+    pub fn switch(v: Option<LeftHandDLists>) -> u32 {
+        match v {
+            None => 0,
+            Some(LeftHandDLists::Bgs) => 1,
+            Some(LeftHandDLists::Closed) => 2,
+        }
+    }
 }
 
 /// Player's sounds: what its `Player_PlaySfx`-style calls ask the audio for, at Player
@@ -609,6 +667,8 @@ pub enum Action {
     JumpSlash,
     /// `Player_Action_BlueWarpArrive`: arriving by blue warp, falling from 800 up.
     BlueWarpArrive,
+    /// `Player_Action_TimeTravelEnd`: arriving by time travel, on the Master Sword's pedestal.
+    TimeTravelEnd,
     /// `Player_Action_8084E3C4`: the ocarina out and played.
     Ocarina,
     /// `Player_Action_StartWarpSongArrive`: the warp song's arrival's first frame.
@@ -889,6 +949,7 @@ impl Action {
             Action::Midair => "Player_Action_8084411C",
             Action::JumpSlash => "Player_Action_80844AF4",
             Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
+            Action::TimeTravelEnd => "Player_Action_TimeTravelEnd",
             Action::Ocarina => "Player_Action_8084E3C4",
             Action::StartWarpSongArrive => "Player_Action_StartWarpSongArrive",
             Action::WaitForCutscene => "Player_Action_WaitForCutscene",
@@ -1234,6 +1295,9 @@ pub struct Player {
     /// `rightHandType == PLAYER_MODELTYPE_RH_FF` (a cutscene's: the shield collider off, the right
     /// hand's matrix kept), set by `func_808526EC`, cleared with the models.
     pub right_hand_ff: bool,
+    /// `leftHandDLists` set over the model group's by a cutscene (`func_80851A50`: the
+    /// pedestal), until `Player_SetModels` puts the group's back.
+    pub left_hand_dlists: Option<LeftHandDLists>,
     /// `currentShield` (`PLAYER_SHIELD_*`: 0 none, 1 Deku, 2 Hylian, 3 Mirror), `currentTunic`,
     /// `currentBoots`, `currentSwordItemId` (`B_BTN_ITEM`): from the save's equipment
     /// (`Player_SetEquipmentData`).
@@ -1523,6 +1587,7 @@ impl Player {
             model_group: data.items.model_group("DEFAULT"),
             next_model_group: data.items.model_group("DEFAULT"),
             models_group: None,
+            left_hand_dlists: None,
             right_hand_ff: false,
             // A plain start is the map select's file's (SaveContext::debug): the Kokiri Sword and
             // the Deku Shield for the child, the Master Sword and the Hylian Shield for the adult,
@@ -1782,8 +1847,25 @@ impl Player {
                 self.func_80837C0C(&env, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 2.0, 2.0, yaw, 0);
                 play.put_io(io.into_inner());
             }
-            // 1, 3, 6: the Master Sword pedestal, a door, Farore's Wind: not ported. Standing
-            // still.
+            // Player_StartMode_TimeTravel: on the pedestal (sPedestalPos) facing -z, held
+            // (PLAYER_STATE1_29), the age's timeTravelEndAnim frozen on its first frame (start
+            // and end frame 0) with moveFlags 0x28F; the adult has the Master Sword in hand
+            // (Player_PutSwordInHand, silently); av2.animDelayTimer 20.
+            1 => {
+                self.setup_action(&data, Action::TimeTravelEnd, 0);
+                self.state1 |= STATE1_29;
+                self.actor.world_pos = Vec3::new(-1.0, 69.0, 20.0);
+                self.current_yaw = i16::MIN;
+                self.actor.shape_rot.y = i16::MIN;
+                let a = self.age.climb.time_travel_end_anim;
+                self.skel.change(&data, a, 2.0 / 3.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0);
+                self.start_anim_movement(0x28F);
+                if self.adult {
+                    self.put_sword_in_hand(&data, false);
+                }
+                self.action_var2 = 20;
+            }
+            // 3, 6: a door, Farore's Wind: not ported. Standing still.
             m => self.note(format!("start mode {m} (sStartModeFuncs) not ported: standing")),
         }
     }
@@ -2172,6 +2254,7 @@ impl Player {
             Action::Midair => self.action_8084411c(env),
             Action::JumpSlash => self.action_80844af4(env),
             Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
+            Action::TimeTravelEnd => self.action_time_travel_end(env),
             Action::Ocarina => self.action_8084e3c4(env),
             Action::StartWarpSongArrive => self.action_start_warp_song_arrive(env),
             Action::WaitForCutscene => self.action_wait_for_cutscene(env),
@@ -6955,6 +7038,59 @@ impl Player {
         }
     }
 
+    /// `Player_PutSwordInHand`: the age's sword (`sSwordItemIds[linkAge]`: the Master Sword for
+    /// the adult, the Kokiri Sword for the child) in hand at once, no animation (a cutscene's
+    /// plays): what's held let go (`Player_DetachHeldActor`; the hookshot isn't ported, so
+    /// there's no hook to destroy), the item's action and models (`Player_InitItemAction`), the
+    /// upper body back to it (`func_80834644`); with `play_sfx`, `NA_SE_IT_SWORD_PICKOUT`.
+    pub(crate) fn put_sword_in_hand(&mut self, data: &GameData, play_sfx: bool) {
+        use oot_game::item::{ITEM_SWORD_KOKIRI, ITEM_SWORD_MASTER};
+        let sword = if self.adult { ITEM_SWORD_MASTER } else { ITEM_SWORD_KOKIRI };
+        // sItemActions[swordItemId].
+        let ap = data.items.item_action_params[sword as usize];
+        self.detach_held_actor(data);
+        self.held_item_id = sword;
+        self.next_model_group = self.action_to_model_group(data, ap);
+        self.init_item_action(data, ap);
+        self.func_80834644(data);
+        if play_sfx {
+            self.play_sfx(NA_SE_IT_SWORD_PICKOUT);
+        }
+    }
+
+    /// `Player_Action_TimeTravelEnd`: on the pedestal after time travel (start mode 1). The
+    /// animation stays on its first frame for `av2.animDelayTimer` (20) frames, then plays to its
+    /// end (`endFrame` set back) and Link stands (`func_8083C0E8`). Meanwhile the adult cries on
+    /// frame 158 (past `link_demo_return_to_past`'s 89: never heard, in the C too) and swings the
+    /// sword (`func_8084E988`: `D_808549F0`, frame 60); the child jumps off with a cry and lands
+    /// (`sJumpOffPedestalAnimSfxList`, PAL 1.0 and later).
+    fn action_time_travel_end(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            // av1.startedAnim.
+            if self.action_var1 == 0 {
+                // DECR(av2.animDelayTimer) == 0.
+                if self.action_var2 != 0 {
+                    self.action_var2 -= 1;
+                }
+                if self.action_var2 == 0 {
+                    self.action_var1 = 1;
+                    self.skel.end_frame = self.skel.anim_length - 1.0;
+                }
+            } else {
+                self.func_8083C0E8(data);
+            }
+        } else {
+            if self.adult && self.skel.on_frame(158.0) {
+                self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+                return;
+            }
+            let name = if !self.adult { "sJumpOffPedestalAnimSfxList" } else { "D_808549F0" };
+            let t = env.audio.player_anim_sfx(name).to_vec();
+            self.process_anim_sfx_list(&t);
+        }
+    }
+
     /// `Player_Action_BlueWarpArrive`: falling from the blue warp (held still in Lake Hylia's
     /// cutscene until its frame 305); within 150 of the floor the pose plays, slowing the fall
     /// towards 2 up; landed, the landing's sound and the pose to its end; then in Kokiri Forest a
@@ -8008,6 +8144,7 @@ impl Player {
         self.model_group = mg;
         self.models_group = None;
         self.right_hand_ff = false;
+        self.left_hand_dlists = None;
         let it = &data.items;
         let mut t = if mg == it.model_group("CHILD_HYLIAN_SHIELD") { 0 } else { it.model_group_anim_type[mg] };
         if t < 3 && self.current_shield == 0 {
@@ -9899,6 +10036,7 @@ impl Player {
             self.setup_action(data, action, flags);
             self.item_ap = saved;
             self.models_group = Some(self.action_to_model_group(data, self.item_ap));
+            self.left_hand_dlists = None;
         }
     }
 
@@ -10305,6 +10443,47 @@ impl Player {
                 self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
                 self.start_anim_movement(0x28F);
             }
+            // Mode 18 (the pedestal): the pull or the putting back. On the adult's frame 70 or the
+            // child's 87 the sword is let go of or taken (interactRangeActor's parent Player, so
+            // Bg_Toki_Swd draws it or stops), the left hand changes (leftHandDLists:
+            // gPlayerLeftHandClosedDLs for the adult, gPlayerLeftHandBgsDLs for the child holding
+            // it), and D_808551A4's sounds play (the sword stuck in for the adult; drawn out with a
+            // cry for the child); else the adult's cry on frame 66, and the child's steps
+            // (D_808551AC, PAL 1.0 and later).
+            "func_80851A50" => {
+                self.skel.update(data);
+                if (self.adult && self.skel.on_frame(70.0)) || (!self.adult && self.skel.on_frame(87.0)) {
+                    use oot_game::audio::sfx::{NA_SE_IT_SWORD_PUTAWAY_STN, NA_SE_IT_SWORD_STICK_STN};
+                    // D_808551A4[linkAge]: { sfx, voice }, adult first.
+                    let (sfx, voice) = if self.adult { (NA_SE_IT_SWORD_PUTAWAY_STN, 0) } else { (NA_SE_IT_SWORD_STICK_STN, NA_SE_VO_LI_SWORD_N) };
+                    if let Some(h) = self.interact_range_actor {
+                        self.play_requests.push(PlayRequest::SetParent(h));
+                    }
+                    self.left_hand_dlists = Some(if !self.adult { LeftHandDLists::Bgs } else { LeftHandDLists::Closed });
+                    self.play_sfx(sfx);
+                    if !self.adult {
+                        self.play_voice_sfx(voice);
+                    }
+                } else if self.adult {
+                    if self.skel.on_frame(66.0) {
+                        self.play_voice_sfx(NA_SE_VO_LI_SWORD_L);
+                    }
+                } else {
+                    let t = env.audio.player_anim_sfx("D_808551AC").to_vec();
+                    self.process_anim_sfx_list(&t);
+                }
+            }
+            // Mode 30: the sword drawn on frame 6 (Player_PutSwordInHand, silently), else
+            // D_808551B8's sound (NA_SE_IT_SWORD_PICKOUT on frame 12).
+            "func_80851D80" => {
+                self.skel.update(data);
+                if self.skel.on_frame(6.0) {
+                    self.put_sword_in_hand(data, false);
+                } else {
+                    let t = env.audio.player_anim_sfx("D_808551B8").to_vec();
+                    self.process_anim_sfx_list(&t);
+                }
+            }
             "func_80851B90" => {
                 let a = data.anim("link_demo_warp");
                 self.skel.change(data, a, -(2.0 / 3.0), 12.0, 12.0, ANIMMODE_ONCE, 0.0);
@@ -10330,6 +10509,7 @@ impl Player {
                 let fairy = env.io.borrow().save.inv_content(oot_game::item::ITEM_OCARINA_FAIRY) == oot_game::item::ITEM_OCARINA_FAIRY;
                 self.item_ap = if fairy { data.items.ap("OCARINA_FAIRY") } else { data.items.ap("OCARINA_OF_TIME") };
                 self.models_group = Some(self.action_to_model_group(data, self.item_ap));
+                self.left_hand_dlists = None;
             }
             // The ocarina held up (D_80855208[linkAge]: gPlayerAnim_L_okarina_get an adult's, om_get
             // a child's, LINK_AGE_ADULT being 0), from the second frame with sparkles about the right
@@ -11208,10 +11388,26 @@ impl Player {
                 // type field is bit 0; bits 1 to 3 are placed 0)
                 let (id, params) = (a.id, a.params);
                 if id == ACTOR_BG_TOKI_SWD && self.adult {
-                    // The Master Sword pulled from its pedestal: PLAYER_IA_SWORD_CS and
-                    // Player_UseItem(ITEM_SWORD_CS), for an adult only.
-                    self.note("Player_ActionHandler_2: the Master Sword's pedestal (an adult's) isn't ported");
-                    return false;
+                    // The Master Sword put back in its pedestal: no item in hand
+                    // (PLAYER_ANIMTYPE_0), then the cutscene's sword (PLAYER_IA_SWORD_CS) in hand:
+                    // straight away with the Master Sword in hand, else by Player_UseItem.
+                    let data = env.data;
+                    let sp24 = self.item_ap;
+                    self.item_ap = data.items.ap("NONE");
+                    self.model_anim_type = 0;
+                    self.held_item_ap = self.item_ap;
+                    self.setup_wait_for_put_away(data, env, A74::Lift);
+                    if sp24 == data.items.ap("SWORD_MASTER") {
+                        self.next_model_group = self.action_to_model_group(data, data.items.ap("SWORD_CS"));
+                        self.init_item_action(data, data.items.ap("SWORD_CS"));
+                    } else {
+                        /// `ITEM_SWORD_CS` (`item.h`).
+                        const ITEM_SWORD_CS: u8 = 0xFC;
+                        self.use_item(data, ITEM_SWORD_CS);
+                    }
+                    self.func_80832224();
+                    self.state1 |= STATE1_11;
+                    return true;
                 }
                 // A silver rock needs the silver gauntlets.
                 let strength = oot_game::player_lib::player_get_strength(&env.io.borrow().save);
@@ -12353,6 +12549,12 @@ mod rs {
     pub const BOTTLE: usize = 12;
     /// `switches`: `PLAYER_STATE1_BOOMERANG_THROWN` (the boomerang's left hand open).
     pub const BOOMERANG_THROWN: usize = 13;
+    /// `switches`: a cutscene's `leftHandDLists` (`super::LeftHandDLists::switch`), 0 for the
+    /// group's.
+    pub const LEFT_HAND: usize = 14;
+    /// `switches`: `currentTunic` and `currentBoots` (`PLAYER_TUNIC_*`, `PLAYER_BOOTS_*`).
+    pub const TUNIC: usize = 15;
+    pub const BOOTS: usize = 16;
 }
 
 impl LookRotations {
@@ -12568,10 +12770,12 @@ impl ActorImpl for Player {
     }
 
     /// `Player_Destroy`: the sword's trail deleted (the colliders have nothing to free;
-    /// `Magic_Reset` is for a spell cast (`unk_6AD` 4: the spells aren't ported, #85), and
-    /// `linkAge` from `linkAgeOnLoad` on the age change).
+    /// `Magic_Reset` is for a spell cast (`unk_6AD` 4: the spells aren't ported, #85)), and
+    /// `linkAge = linkAgeOnLoad` (`z_player.c:12362`): a new age from a cutscene destination
+    /// becomes the save's as the scene ends.
     fn destroy(&mut self, play: &mut PlayState) {
         play.effect_delete(self.melee_weapon_effect_index);
+        play.save.adult = play.link_age_on_load == oot_game::save::LINK_AGE_ADULT;
     }
 
     /// `Player_Update` (`Player_DoNothing`, which does nothing, for start mode 0).
@@ -12792,8 +12996,11 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 14];
+        let mut switches = vec![0u32; 17];
         switches[rs::BOOMERANG_THROWN] = (self.state1 & STATE1_25 != 0) as u32;
+        switches[rs::LEFT_HAND] = LeftHandDLists::switch(self.left_hand_dlists);
+        switches[rs::TUNIC] = self.current_tunic as u32;
+        switches[rs::BOOTS] = self.current_boots as u32;
         switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
         // Player_ActionToBottle(itemAction): -1 while the shield's up (itemAction -1).
         let bottle = self.item_ap - PLAYER_IA_BOTTLE;
@@ -12859,6 +13066,13 @@ impl ActorImpl for Player {
             holding_shield: st.switches.get(rs::HOLDING_SHIELD).copied().unwrap_or(0) != 0,
             first_person: false,
             boomerang_thrown: st.switches.get(rs::BOOMERANG_THROWN).copied().unwrap_or(0) != 0,
+            left_hand: match st.switches.get(rs::LEFT_HAND).copied().unwrap_or(0) {
+                1 => Some(rules.model_type("LH_BGS")),
+                2 => Some(rules.model_type("LH_CLOSED")),
+                _ => None,
+            },
+            // gSaveContext.save.info.playerData.swordHealth <= 0.0f.
+            knife_broken: play.save.sword_health == 0,
         };
         // In first person (unk_6AD), with the head (focus.pos) projected behind -4
         // (SkinMatrix_Vec3fMtxFMultXYZ with viewProjectionMtxF),
@@ -12918,12 +13132,42 @@ impl ActorImpl for Player {
             // nor crawling behind the camera; the credits' game mode isn't ported): a child with
             // strength (Player_GetStrength) wears the Goron's Bracelet, on the limbs' matrices.
             let crawling_behind = unk_6ad == 0 && st.switches[rs::CRAWLING] != 0 && projected_z < 0.0;
-            let bracelet = !self.adult && !first_person && !crawling_behind && oot_game::player_lib::player_get_strength(&play.save) > oot_game::player_lib::PLAYER_STR_NONE;
-            let bracelet_bones = bracelet.then(|| bones.clone());
-            out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
-            if let Some(bones) = bracelet_bones {
-                let mesh = MeshKey::named(oot_game::pack::keys::bake(BRACELET_BAKE));
-                out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
+            let tail = !first_person && !crawling_behind;
+            let bracelet = !self.adult && tail && oot_game::player_lib::player_get_strength(&play.save) > oot_game::player_lib::PLAYER_STR_NONE;
+            // The adult's tail: the silver or gold gauntlets' plates (CUR_UPG_VALUE(UPG_STRENGTH)
+            // 2 or 3, sGauntletColors as the env colour; the second plate open or closed by the
+            // hands' types), and the iron or hover boots (sBootDListGroups).
+            let strength = play.save.cur_upg_value(oot_game::item::UPG_STRENGTH);
+            let gauntlets = (self.adult && tail && strength >= 2).then(|| {
+                let (left, right) = rules.hand_types(&loadout);
+                let open = (left == rules.model_type("LH_OPEN"), right == rules.model_type("RH_OPEN"));
+                (GAUNTLET_BAKES[(!open.0) as usize * 2 + (!open.1) as usize], GAUNTLET_COLORS[(strength - 2).min(1) as usize])
+            });
+            let boots = st.switches[rs::BOOTS];
+            let boots_bake = (self.adult && tail && (PLAYER_BOOTS_IRON as u32..=PLAYER_BOOTS_HOVER as u32).contains(&boots)).then(|| BOOT_BAKES[(boots - PLAYER_BOOTS_IRON as u32) as usize]);
+            let tail_bones = (bracelet || gauntlets.is_some() || boots_bake.is_some()).then(|| bones.clone());
+            // sTunicColors[tunic] (Player_DrawImpl's env colour, SEG_TUNIC).
+            // @bug (game): with no tunic worn currentTunic is -1, read before the array; the port
+            // draws the Kokiri Tunic's colour.
+            let tunic = rules.tunics.get(st.switches[rs::TUNIC] as usize).or(rules.tunics.first()).map(|t| t.1).unwrap_or([30, 105, 27]);
+            let mut sv = eng_gfx::SegmentValues::default();
+            sv.env[oot_game::player_lib::SEG_TUNIC as usize] = Some([tunic[0], tunic[1], tunic[2], 0]);
+            out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, segments: Some(sv), ..Default::default() } });
+            if let Some(bones) = tail_bones {
+                if bracelet {
+                    let mesh = MeshKey::named(oot_game::pack::keys::bake(BRACELET_BAKE));
+                    out.opa.push(DrawCmd { mesh, transform: root, bones: bones.clone(), params: eng_gfx::DrawParams { fog, ..Default::default() } });
+                }
+                if let Some((bake, c)) = gauntlets {
+                    let mut sv = eng_gfx::SegmentValues::default();
+                    sv.env[SEG_GAUNTLET_COLOR as usize] = Some([c[0], c[1], c[2], 0]);
+                    let mesh = MeshKey::named(oot_game::pack::keys::bake(bake));
+                    out.opa.push(DrawCmd { mesh, transform: root, bones: bones.clone(), params: eng_gfx::DrawParams { fog, segments: Some(sv), ..Default::default() } });
+                }
+                if let Some(bake) = boots_bake {
+                    let mesh = MeshKey::named(oot_game::pack::keys::bake(bake));
+                    out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
+                }
             }
         }
         // Frozen (PLAYER_STATE2_14): the ice, at Actor_Draw's matrix scaled by
@@ -13084,6 +13328,9 @@ impl PlayerIface for Player {
     }
     fn hand_over_held_actor(&mut self, actor: ActorHandle) {
         self.held_actor = Some(actor);
+        self.interact_range_actor = Some(actor);
+    }
+    fn set_interact_range_actor(&mut self, actor: ActorHandle) {
         self.interact_range_actor = Some(actor);
     }
     fn clear_carried(&mut self) {

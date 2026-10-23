@@ -964,6 +964,16 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: ocarina_c,
     },
     SavePreset {
+        name: "master-sword",
+        about: "ocarina-of-time with the Door of Time open (EVENTCHKINF_OPENED_DOOR_OF_TIME), the Master Sword revealed (EVENTCHKINF_REVEALED_MASTER_SWORD) and once obtained (EVENTCHKINF_OBTAINED_MASTER_SWORD: the next pull's terminator 8 changes Link's age) the Temple's intro, the first return from the Chamber, Sheik's awakening and the Prelude of Light seen (EVENTCHKINF_A7, EVENTCHKINF_C9, EVENTCHKINF_C5, EVENTCHKINF_55: the story's state for a child pulling it again): GAME-11 milestone 1's debug start, a child on the pedestal's step (ENTR_TEMPLE_OF_TIME_0, then room 0)",
+        apply: master_sword,
+    },
+    SavePreset {
+        name: "master-sword-adult",
+        about: "master-sword after the pull (Route::MasterSwordPull's end): the Master Sword had (Item_Give), Link an adult with the equips swapped (Inventory_SwapAgeEquipment's first time: the Master Sword on B, bombs on C-Down, the Ocarina of Time on C-Right; the Master Sword, Hylian Shield, Kokiri Tunic and Boots worn; the child's kept; EVENTCHKINF_55 from master-sword: he may put the sword back): the way back's debug start, on the pedestal (ENTR_TEMPLE_OF_TIME_2)",
+        apply: master_sword_adult,
+    },
+    SavePreset {
         name: "frogs-choir",
         about: "ocarina-c with the six songs played to Zora's River's frogs (EVENTCHKINF_SONGS_FOR_FROGS_ZL .. _STORMS, 0xD1 to 0xD6: their purple rupees and piece of heart taken): the ocarina out on their log starts the frogs' song game (0x40AB); a debug start",
         apply: |s| {
@@ -1393,6 +1403,38 @@ fn ocarina_c(s: &mut SaveContext) {
     ocarina_of_time(s);
     s.equip_item_on_c(1, crate::item::ITEM_OCARINA_OF_TIME);
     crate::item::item_give(s, None, crate::item::ITEM_SONG_STORMS);
+}
+
+/// `master-sword`'s save: `ocarina-of-time` with the Door of Time opened
+/// (`EVENTCHKINF_OPENED_DOOR_OF_TIME`, 0x4B), the sword revealed
+/// (`EVENTCHKINF_REVEALED_MASTER_SWORD`, 0x4F) and obtained (`EVENTCHKINF_OBTAINED_MASTER_SWORD`,
+/// 0x45): `Bg_Toki_Swd` offers itself to the child, and the pull's terminator 8 makes him an
+/// adult at `ENTR_TEMPLE_OF_TIME_2` rather than going to the cutscene map. And what comes before
+/// any second pull in the story: `EVENTCHKINF_A7`, the Temple's intro (`ENTR_TEMPLE_OF_TIME_0`,
+/// the debug start's entrance); `EVENTCHKINF_C9`, the first return from the Chamber of the Sages
+/// (`Demo_Effect`'s time warp shrinking at `ENTR_TEMPLE_OF_TIME_4`); `EVENTCHKINF_C5`, Sheik's
+/// awakening (`En_Xc` 9 would start it as the adult arrives); and `EVENTCHKINF_55`, the Prelude of
+/// Light, which a child pulling the sword again always has (the adult puts it back only with it:
+/// without it `En_Xc` 9 would stand by the pedestal, blocking it, where the adult arrives).
+fn master_sword(s: &mut SaveContext) {
+    ocarina_of_time(s);
+    s.set_event_chk_inf(0xA7);
+    s.set_event_chk_inf(0x4B);
+    s.set_event_chk_inf(0x4F);
+    s.set_event_chk_inf(0x45);
+    s.set_event_chk_inf(0xC9);
+    s.set_event_chk_inf(0xC5);
+    s.set_event_chk_inf(0x55);
+}
+
+/// `master-sword-adult`'s save (`Route::MasterSwordPull`'s end): `master-sword` with the pull's
+/// `Item_Give(ITEM_SWORD_MASTER)` and the terminator's age change (`Play_Destroy`'s
+/// `Inventory_SwapAgeEquipment` while a child, then `Player_Destroy`'s `linkAge`).
+fn master_sword_adult(s: &mut SaveContext) {
+    master_sword(s);
+    crate::item::item_give(s, None, crate::item::ITEM_SWORD_MASTER);
+    s.inventory_swap_age_equipment();
+    s.adult = true;
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:
@@ -1931,6 +1973,94 @@ impl SaveContext {
             }
         }
         any
+    }
+
+    /// `Inventory_SwapAgeEquipment` (`z_parameter.c:1210-1317`), which `Play_Destroy` runs while
+    /// the old age is still current when `linkAgeOnLoad` differs from it.
+    ///
+    /// A child keeps his buttons and equipment as `childEquips` (B as the Kokiri Sword, whatever
+    /// it holds) and takes the adult's back; the first time (`adultEquips`' B is `ITEM_NONE`)
+    /// that's the Master Sword on B, Deku Nuts on C-Left if owned, bombs on C-Down (owned or
+    /// not), the ocarina's slot on C-Right, and the Master Sword, Hylian Shield, Kokiri Tunic and
+    /// Kokiri Boots worn. An adult keeps his as `adultEquips` and takes the child's back (if
+    /// `childEquips` has a B: never `ITEM_NONE` once a child has been swapped), the Kokiri Sword
+    /// worn. A bottle or a trade item on a button is re-read from its slot (it may have changed
+    /// meanwhile). Last, a worn shield no longer owned (burnt, eaten) is taken off.
+    pub fn inventory_swap_age_equipment(&mut self) {
+        use crate::item::*;
+        // A bottle's or a trade item's button shows its slot's current content.
+        // @bug (game): for B (i = 0) the check reads cButtonSlots[-1], which is buttonItems[3]
+        // (the struct's previous byte); B never holds those items in play.
+        fn reread(e: &mut ItemEquips, items: &[u8; 24], i: usize) {
+            let it = e.button_items[i];
+            if (ITEM_BOTTLE_EMPTY..=ITEM_BOTTLE_POE).contains(&it) || (ITEM_WEIRD_EGG..=ITEM_CLAIM_CHECK).contains(&it) {
+                let slot = if i == 0 { e.button_items[3] } else { e.c_button_slots[i - 1] };
+                e.button_items[i] = items.get(slot as usize).copied().unwrap_or(ITEM_NONE);
+            }
+        }
+        if !self.adult {
+            // LINK_AGE_IN_YEARS == YEARS_CHILD.
+            for i in 0..4 {
+                self.child_equips.button_items[i] = if i != 0 { self.equips.button_items[i] } else { ITEM_SWORD_KOKIRI };
+                if i != 0 {
+                    self.child_equips.c_button_slots[i - 1] = self.equips.c_button_slots[i - 1];
+                }
+            }
+            self.child_equips.equipment = self.equips.equipment;
+            if self.adult_equips.button_items[0] == ITEM_NONE {
+                self.equips.button_items[0] = ITEM_SWORD_MASTER;
+                if self.inventory.items[SLOT_DEKU_NUT] != ITEM_NONE {
+                    self.equips.button_items[1] = ITEM_DEKU_NUT;
+                    self.equips.c_button_slots[0] = SLOT_DEKU_NUT as u8;
+                } else {
+                    // buttonItems[1] = cButtonSlots[0] = ITEM_NONE (0xFF, SLOT_NONE's value).
+                    self.equips.button_items[1] = ITEM_NONE;
+                    self.equips.c_button_slots[0] = ITEM_NONE;
+                }
+                self.equips.button_items[2] = ITEM_BOMB;
+                self.equips.button_items[3] = self.inventory.items[SLOT_OCARINA];
+                self.equips.c_button_slots[1] = SLOT_BOMB as u8;
+                self.equips.c_button_slots[2] = SLOT_OCARINA as u8;
+                self.equips.equipment = (EQUIP_VALUE_SWORD_MASTER << (EQUIP_TYPE_SWORD * 4))
+                    | (EQUIP_VALUE_SHIELD_HYLIAN << (EQUIP_TYPE_SHIELD * 4))
+                    | (EQUIP_VALUE_TUNIC_KOKIRI << (EQUIP_TYPE_TUNIC * 4))
+                    | (EQUIP_VALUE_BOOTS_KOKIRI << (EQUIP_TYPE_BOOTS * 4));
+            } else {
+                for i in 0..4 {
+                    self.equips.button_items[i] = self.adult_equips.button_items[i];
+                    if i != 0 {
+                        self.equips.c_button_slots[i - 1] = self.adult_equips.c_button_slots[i - 1];
+                    }
+                    reread(&mut self.equips, &self.inventory.items, i);
+                }
+                self.equips.equipment = self.adult_equips.equipment;
+            }
+        } else {
+            for i in 0..4 {
+                self.adult_equips.button_items[i] = self.equips.button_items[i];
+                if i != 0 {
+                    self.adult_equips.c_button_slots[i - 1] = self.equips.c_button_slots[i - 1];
+                }
+            }
+            self.adult_equips.equipment = self.equips.equipment;
+            if self.child_equips.button_items[0] != ITEM_NONE {
+                for i in 0..4 {
+                    self.equips.button_items[i] = self.child_equips.button_items[i];
+                    if i != 0 {
+                        self.equips.c_button_slots[i - 1] = self.child_equips.c_button_slots[i - 1];
+                    }
+                    reread(&mut self.equips, &self.inventory.items, i);
+                }
+                self.equips.equipment = self.child_equips.equipment;
+                self.equips.equipment &= !(0xF << (EQUIP_TYPE_SWORD * 4));
+                self.equips.equipment |= EQUIP_VALUE_SWORD_KOKIRI << (EQUIP_TYPE_SWORD * 4);
+            }
+        }
+        // CHECK_OWNED_EQUIP_ALT(EQUIP_TYPE_SHIELD, value - 1).
+        let shield = self.cur_equip_value(EQUIP_TYPE_SHIELD);
+        if shield != 0 && !self.check_owned_equip(EQUIP_TYPE_SHIELD, shield - 1) {
+            self.equips.equipment &= EQUIP_NEG_MASKS[EQUIP_TYPE_SHIELD];
+        }
     }
 
     /// What the pause menu's item screen does when C-Left equips `item` from its slot: see

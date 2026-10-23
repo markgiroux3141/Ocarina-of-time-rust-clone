@@ -166,6 +166,8 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Fish", "Fish", Group::Effect),
     ("En_Wonder_Talk", "Spot to check", Group::Trigger),
     ("Bg_Toki_Hikari", "Temple of Time windows", Group::SetPiece),
+    ("Bg_Toki_Swd", "Master Sword in its pedestal", Group::SetPiece),
+    ("Door_Toki", "Door of Time collision", Group::SetPiece),
     ("Bg_Mjin", "Warp pad", Group::Door),
     ("En_Heishi3", "Castle sentry", Group::Character),
     ("En_Heishi2", "Gate guard", Group::Character),
@@ -298,6 +300,9 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Kakasi", "Scarecrow (long song)", Group::Character),
     ("En_Kakasi2", "Pierre (scarecrow's song)", Group::Character),
     ("En_Kakasi3", "Bonooru (scarecrow)", Group::Character),
+    ("En_Rl", "Rauru", Group::Character),
+    ("Demo_6K", "Sages' balls of light (cutscenes)", Group::Effect),
+    ("En_Xc", "Sheik", Group::Character),
 ];
 
 /// An actor the editor can place.

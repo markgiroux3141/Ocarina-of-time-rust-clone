@@ -718,6 +718,29 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
                 }
             }
         }
+        // A cutscene's left hand over the group's (func_80851A50, the Master Sword's pedestal:
+        // gPlayerLeftHandBgsDLs, gPlayerLeftHandClosedDLs), standing.
+        for (gi, g) in rules.model_groups.iter().enumerate() {
+            for shield in 0..rules.shields.len() {
+                for sword in [true, false] {
+                    for left in ["LH_BGS", "LH_CLOSED"] {
+                        let lo = Loadout { model_group: gi, shield, child_has_kokiri_sword: sword, left_hand: Some(rules.model_type(left)), ..default.clone() };
+                        loadouts.push((g, false, lo));
+                    }
+                }
+            }
+        }
+        // The Giant's Knife broken (swordHealth 0) in the groups holding it (LH_BGS).
+        for (gi, g) in rules.model_groups.iter().enumerate().filter(|(_, g)| g.left == rules.model_type("LH_BGS")) {
+            for fists in [false, true] {
+                for shield in 0..rules.shields.len() {
+                    for holding_shield in [false, true] {
+                        let lo = Loadout { model_group: gi, moving_fast: fists, shield, holding_shield, knife_broken: true, ..default.clone() };
+                        loadouts.push((g, fists, lo));
+                    }
+                }
+            }
+        }
         // Aiming in first person (Player_OverrideLimbDrawGameplayFirstPerson): only the arms.
         for (gi, g) in rules.model_groups.iter().enumerate() {
             loadouts.push((g, false, Loadout { model_group: gi, first_person: true, ..default.clone() }));

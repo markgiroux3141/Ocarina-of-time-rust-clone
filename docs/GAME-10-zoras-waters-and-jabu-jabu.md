@@ -1444,7 +1444,8 @@ C-Down and the Song of Storms).
 - **The hand test of milestone 9**, deferred ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)): the list
   above.
 - **The adult's parts chosen at init** (the user's call 4): `En_Kz`'s ice (`Bg_Ice_Shelter`),
-  `Bg_Spot07_Taki`'s frozen falls, `Bg_Spot06_Objects`' adult branches and ice block,
+  `Bg_Spot06_Objects`' adult branches and ice block (`Bg_Spot07_Taki`'s frozen falls are whole:
+  corrected in GAME-11),
   `Item_Etcetera`'s fire arrows (Phase 16) and the treasure game's types (Phase 20); `Bg_Spot08_Iceblock` (Phase
   16).
 - **BACKLOG from this phase still open:** #100 (the other shops' shopkeepers), #101 (radians

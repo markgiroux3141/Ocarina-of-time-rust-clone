@@ -813,6 +813,31 @@ from `ocarina-of-time`. Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 
+## Phase 12: the Temple of Time, the Chamber of the Sages and adult Link (GAME-11)
+
+**Goal:** from `ocarina-of-time`, the Door of Time opened with the Song of Time, the Master Sword
+pulled, Ganondorf, the Chamber of the Sages (Rauru, the Light Medallion), adult Link back in the
+Temple and Sheik's awakening, out through the ruined market; then time travel both ways (Sheik's
+Prelude of Light, the sword put back and pulled again, the Prelude's warp). Exit: adult Link out
+of the Temple. See [GAME-11](GAME-11-the-temple-of-time-and-adult-link.md)'s survey.
+**Surveyed and proposed** (2026-10-23): three milestones. 1 is adult Link and the time machine:
+the age switch (`Inventory_SwapAgeEquipment`, `linkAgeOnLoad`), `Bg_Toki_Swd`, `Door_Toki`,
+Player's time travel and the adult's draw details. 2 is the Door of Time to the Chamber and out,
+the exit: `En_Rl`, `SDC_CHAMBER_OF_THE_SAGES`, `En_Xc`'s awakening, `Demo_6K`'s light balls.
+3 is the Prelude, the sword put back and the warp (BACKLOG #26). About 2,300 lines of C; the
+spikes' Player and the import already cover most of adult Link. Decided 2026-10-23 (every
+recommendation: the Prelude and the way back from a debug start with `EVENTCHKINF_48`, the
+equipment page left for Phase 20, `Bg_Spot00_Break` in, `En_Xc` and `Demo_6K` split by type, the
+coverage corrections with milestone 1).
+**Milestone 1** (2026-10-23, ADR 0088: the age switch, `linkAgeOnLoad` and
+`Inventory_SwapAgeEquipment` whole; `Bg_Toki_Swd`, `Door_Toki`; Player's adult pedestal, start
+mode 1 and `TimeTravelEnd`, cutscene modes 18 and 30; the adult's gauntlets, boots, tunic colour
+and left-hand overrides, pack format 33; the runs the pull and the sword put back on the presets
+`master-sword` and `master-sword-adult`; milestone 2's `En_Rl`, `Demo_6K` 14 to 19 and `En_Xc` 9,
+1 and the pedestal block merged early; BACKLOG #37 and #57 closed) **done** (hand-tested
+2026-10-23). Found: the first adult's C buttons hold bombs and the Ocarina of Time (the survey said
+empty).
+
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:

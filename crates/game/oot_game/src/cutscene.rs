@@ -1045,7 +1045,7 @@ impl PlayState {
             go(self, e, c, t, n);
             return;
         }
-        let age_not_ported = |age: &str| log::warn!("cutscene terminator {base}: play->linkAgeOnLoad = {age} not ported");
+        use crate::save::{LINK_AGE_ADULT, LINK_AGE_CHILD};
         match base {
             8 => {
                 // gSaveContext.fw.set = 0 (Farore's Wind isn't ported).
@@ -1055,7 +1055,7 @@ impl PlayState {
                     go(self, "ENTR_CUTSCENE_MAP_0", Some(0xFFF3), TRANS_TYPE_INSTANT, None);
                 } else {
                     if !self.is_cutscene_layer() {
-                        age_not_ported(if !self.save.adult { "LINK_AGE_ADULT" } else { "LINK_AGE_CHILD" });
+                        self.link_age_on_load = if !self.save.adult { LINK_AGE_ADULT } else { LINK_AGE_CHILD };
                     }
                     go(self, "ENTR_TEMPLE_OF_TIME_2", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
                 }
@@ -1069,7 +1069,7 @@ impl PlayState {
                 go(self, "ENTR_DESERT_COLOSSUS_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
             25 => {
-                age_not_ported("LINK_AGE_ADULT");
+                self.link_age_on_load = LINK_AGE_ADULT;
                 go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
             29 | 30 | 31 => {
@@ -1080,11 +1080,11 @@ impl PlayState {
                 }
             }
             32 => {
-                age_not_ported("LINK_AGE_CHILD");
+                self.link_age_on_load = LINK_AGE_CHILD;
                 go(self, "ENTR_HYRULE_FIELD_0", Some(0xFFF2), TRANS_TYPE_INSTANT, None);
             }
             40 => {
-                age_not_ported("LINK_AGE_ADULT");
+                self.link_age_on_load = LINK_AGE_ADULT;
                 go(self, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFFA), TRANS_TYPE_FADE_BLACK_FAST, None);
             }
             46 => {
@@ -1100,26 +1100,26 @@ impl PlayState {
                 // GAMEMODE_END_CREDITS, Audio_SetSfxBanksMute(0x6F).
                 self.save.game_mode = 3;
                 if base == 54 {
-                    age_not_ported("LINK_AGE_CHILD");
+                    self.link_age_on_load = LINK_AGE_CHILD;
                     go(self, "ENTR_GERUDO_VALLEY_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None);
                 } else {
-                    age_not_ported("LINK_AGE_ADULT");
+                    self.link_age_on_load = LINK_AGE_ADULT;
                     go(self, "ENTR_HYRULE_FIELD_0", Some(0xFFF7), TRANS_TYPE_FADE_WHITE, None);
                 }
             }
             62 => {
-                age_not_ported("LINK_AGE_ADULT");
+                self.link_age_on_load = LINK_AGE_ADULT;
                 go(self, "ENTR_KOKIRI_FOREST_0", Some(0xFFF6), TRANS_TYPE_FADE_BLACK, None);
             }
             65 | 73 | 75 | 76 | 77 => {
                 let (age, c) = match base {
-                    65 => ("LINK_AGE_CHILD", 0xFFF2),
-                    73 => ("LINK_AGE_CHILD", 0xFFF2),
-                    75 => ("LINK_AGE_CHILD", 0xFFF4),
-                    76 => ("LINK_AGE_ADULT", 0xFFF5),
-                    _ => ("LINK_AGE_CHILD", 0xFFF6),
+                    65 => (LINK_AGE_CHILD, 0xFFF2),
+                    73 => (LINK_AGE_CHILD, 0xFFF2),
+                    75 => (LINK_AGE_CHILD, 0xFFF4),
+                    76 => (LINK_AGE_ADULT, 0xFFF5),
+                    _ => (LINK_AGE_CHILD, 0xFFF6),
                 };
-                age_not_ported(age);
+                self.link_age_on_load = age;
                 go(self, "ENTR_LON_LON_RANCH_0", Some(c), TRANS_TYPE_FADE_BLACK, None);
             }
             71 => {
@@ -1128,7 +1128,7 @@ impl PlayState {
                 self.player_set_equipment_data();
                 self.save.equips.equipment |= EQUIP_VALUE_BOOTS_KOKIRI << (EQUIP_TYPE_BOOTS * 4);
                 self.player_set_equipment_data();
-                age_not_ported("LINK_AGE_CHILD");
+                self.link_age_on_load = LINK_AGE_CHILD;
                 go(self, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None);
             }
             95 => {
@@ -1210,7 +1210,7 @@ impl PlayState {
     }
 
     /// `Player_SetEquipmentData(play, player)`.
-    fn player_set_equipment_data(&mut self) {
+    pub(crate) fn player_set_equipment_data(&mut self) {
         let (data, save) = (self.data.clone(), self.save.clone());
         if let Some(p) = self.player.and_then(|h| self.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
             p.set_equipment_data(&data, &save);

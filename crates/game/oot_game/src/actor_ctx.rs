@@ -155,6 +155,9 @@ pub trait PlayerIface {
     /// `func_8002F5C4`'s write when the parent is Player (a Bomb Flower handing the carry on to
     /// its bomb): `heldActor` and `interactRangeActor` become `actor`.
     fn hand_over_held_actor(&mut self, _actor: ActorHandle) {}
+    /// `player->interactRangeActor = &this->actor` (`Bg_Toki_Swd` waiting to be taken from or
+    /// put back in its pedestal, `func_808BB0AC`).
+    fn set_interact_range_actor(&mut self, _actor: ActorHandle) {}
     /// An explosive's write when it goes in Link's hand (`EnBom_Explode`, `EnBombf_Explode`,
     /// `EnBombf_GrowBomb`): `actor.child`, `heldActor` and `interactRangeActor` cleared,
     /// `PLAYER_STATE1_CARRYING_ACTOR` off.

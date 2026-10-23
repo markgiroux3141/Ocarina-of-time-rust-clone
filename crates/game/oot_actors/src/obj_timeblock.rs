@@ -248,8 +248,8 @@ impl ObjTimeblock {
         }
     }
 
-    /// `ObjTimeblock_SpawnDemoEffect`: `Demo_Effect` at the block with the size's params (a
-    /// placeholder: not ported).
+    /// `ObjTimeblock_SpawnDemoEffect`: `Demo_Effect` at the block with the size's params (its
+    /// time warp, `DEMO_EFFECT_TIMEWARP_TIMEBLOCK_LARGE` or `_SMALL`).
     fn spawn_demo_effect(&self, play: &mut PlayState) {
         let _ = play.actor_spawn(ACTOR_DEMO_EFFECT, self.actor.world_pos, [0, 0, 0], self.size_options().demo_effect_params);
     }

@@ -33,7 +33,7 @@ PHASES = {
     9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "done"),
     10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "done"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "done"),
-    12: ("The Temple of Time and the adult world", "planned"),
+    12: ("The Temple of Time and the adult world (GAME-11)", "in progress"),
     13: ("Epona and the adult Hyrule Field", "planned"),
     14: ("The Forest Temple", "planned"),
     15: ("The Fire Temple", "planned"),
@@ -64,9 +64,10 @@ SCENES = {
     "ganon_final_scene": (19, 19, 19), "ganon_demo_scene": (19, 19, 19), "ganon_tou_scene": (19, 19, 19),
     # Kokiri Forest and its houses. Kokiri Forest's 10 and 11 are the credits', 12 and 13 the Deku
     # Sprout's after the Forest Temple (8 and 9 hold unused cutscenes).
-    "spot04_scene": (3, 12, 3, {10: 19, 11: 19, 12: 14, 13: 14}), "link_home_scene": (3, 12, 3),
-    "kokiri_home_scene": (3, 12, 3), "kokiri_home3_scene": (3, 12, 3), "kokiri_home4_scene": (3, 12, 3),
-    "kokiri_home5_scene": (3, 12, 3), "kokiri_shop_scene": (4, 20, 4),
+    # Their adult layers are the outline's "Kokiri Forest as an adult" (Phase 14; GAME-11's survey).
+    "spot04_scene": (3, 14, 3, {10: 19, 11: 19, 12: 14, 13: 14}), "link_home_scene": (3, 14, 3),
+    "kokiri_home_scene": (3, 14, 3), "kokiri_home3_scene": (3, 14, 3), "kokiri_home4_scene": (3, 14, 3),
+    "kokiri_home5_scene": (3, 14, 3), "kokiri_shop_scene": (4, 20, 4),
     # Hyrule Field, the cutscene map, the forest's neighbours.
     # Hyrule Field: 1 a child with the three stones (z_play.c forces it: the moat's ocarina), 5
     # Zelda's escape, 6 the flashback, 7 the title screen's, 8 the Ocarina of Time's (the map
@@ -76,13 +77,15 @@ SCENES = {
     # The meadow: 4 Sheik's minuet, 5 Saria's song.
     "spot10_scene": (9, 14, 7), "spot05_scene": (9, 14, 9, {4: 14, 5: 9}),
     # Castle Town, the castle, the Temple of Time.
-    "entra_scene": (8, 12, 8), "entra_n_scene": (8, 12, 8), "enrui_scene": (12, 12, 12),
+    # The market's, its entrance's and the Temple's outside's adult layers: never loaded (the
+    # entrance table's adult rows lead to the ruins: GAME-11's survey).
+    "entra_scene": (8, None, 8), "entra_n_scene": (8, None, 8), "enrui_scene": (12, 12, 12),
     "market_alley_scene": (8, None, 8), "market_alley_n_scene": (8, None, 8),
-    "market_day_scene": (8, 12, 8), "market_night_scene": (8, 12, 8), "market_ruins_scene": (12, 12, 12),
-    "shrine_scene": (8, 12, 8), "shrine_n_scene": (8, 12, 8), "shrine_r_scene": (12, 12, 12),
+    "market_day_scene": (8, None, 8), "market_night_scene": (8, None, 8), "market_ruins_scene": (12, 12, 12),
+    "shrine_scene": (8, None, 8), "shrine_n_scene": (8, None, 8), "shrine_r_scene": (12, 12, 12),
     # The Temple of Time: 5 and 12 to 14 the ending's. The Chamber of the Sages: 6 the sages
     # together (the ending's).
-    "tokinoma_scene": (8, 12, 12, {5: 19, 11: 11, 12: 19, 13: 19, 14: 19}), "kenjyanoma_scene": (12, 12, 12, {6: 19}),
+    "tokinoma_scene": (8, 12, 12, {5: 19, 11: 11, 12: 19, 13: 19, 14: 19}), "kenjyanoma_scene": (14, 14, 12, {5: 18, 6: 19}),
     "spot15_scene": (8, 19, 8), "hairal_niwa_scene": (8, None, 8), "hairal_niwa_n_scene": (8, None, 8),
     "nakaniwa_scene": (8, None, 19), "miharigoya_scene": (8, 20, 8),
     # Kakariko and the graveyard (Kakariko's 7: the mountain's eruption).
@@ -145,6 +148,17 @@ ACTORS = {
     # fountain's unused layers place it, and a grotto (kakusiana, Phase 20)
     "Bg_Spot08_Iceblock": 16,  # Zora's Fountain's ice: placed in the child layers but killed
     # for a child (BgSpot08Iceblock_Init); the adult's frozen fountain
+    # The Temple of Time's room 0, behind the Door of Time: the child's layers place them, but a
+    # child first reaches them through the door (GAME-11's survey).
+    "Bg_Toki_Swd": 12,
+    "Demo_6K": 12,
+    "En_Xc": 12,
+    # The broken drawbridge at Hyrule Field's spawn 7, where the adult's walk out of the ruins
+    # ends (GAME-11's call 5).
+    "Bg_Spot00_Break": 12,
+    # The Chamber of the Sages' layers 0 to 3 (the medallions' scenes): Ruto's and Nabooru's sages.
+    "En_Ru2": 16,
+    "En_Nb": 18,
 }
 
 # What a ported actor's module docs say when it leaves something out.

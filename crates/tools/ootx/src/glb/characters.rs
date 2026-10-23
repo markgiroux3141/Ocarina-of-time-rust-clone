@@ -192,6 +192,10 @@ pub const CHARACTERS: &[Character] = &[
     skel("Big Octo", "object_bigokuta", "object_bigokuta_Skel_006BC0", Some(("object_bigokuta", "object_bigokuta_Anim_001CA4")), &[], &[]),
     // GAME-10 milestone 9: a frog (En_Fr), the yellow one, eyes open (eyeTexIndex 1), sitting.
     c("Frog", "En_Fr/eye1", Some(("object_fr", "object_fr_Anim_001534")), &[(0x0E, Env, [200, 170, 0, 255])], &[], &[]),
+    // GAME-11 milestone 2: Rauru (En_Rl), eyes open, opaque, idling; Sheik (En_Xc), eyes open,
+    // idling.
+    c("Rauru", "En_Rl/opa", Some(("object_rl", "object_rl_Anim_000A3C")), &[OPAQUE_0E], &[], &[]),
+    c("Sheik", "En_Xc/skel", Some(("object_xc", "gSheikIdleAnim")), &[], &[], &[]),
     // GAME-10 milestone 4: the Stinger (En_Eiyer, En_Weiyer), gliding.
     skel("Stinger", "object_ei", "gStingerSkel", Some(("object_ei", "gStingerHitAnim")), &[], &[]),
     // GAME-10 milestone 4: the Biri (En_Bili), its tentacles' first picture, its core's colours
