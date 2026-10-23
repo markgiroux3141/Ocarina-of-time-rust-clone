@@ -1389,8 +1389,8 @@ impl<'a> Builder<'a> {
     /// middle), the whole repeats keep their size and what's left over is folded at the middle's
     /// foot: a part-repeat up into it and back down (two bands, empty when nothing's left over,
     /// so every column of a wall has the same bands). Otherwise the repeats stretch to fill.
-    /// Without caps, one band, the texture stretched over it (repeated per `band` units on
-    /// walls taller than that).
+    /// Without caps, one band: the texture stretched over it, or with a `band`, repeating every
+    /// `band` units up from z 0 (short walls show part of it, at the same size as tall ones).
     fn bands(ws: &WallStyle, reps: usize, b: f64, t: f64, walls3: bool, fold: bool) -> Vec<(f64, f64, f64, f64, bool)> {
         let h = t - b;
         match &ws.caps {
@@ -1430,13 +1430,12 @@ impl<'a> Builder<'a> {
                 out.push((t - ht, t, 1.0 - c.top, 1.0, false));
                 out
             }
-            _ => {
-                let n = match ws.band {
-                    Some(band) if h > band => (h / band).round().max(1.0),
-                    _ => 1.0,
-                };
-                vec![(b, t, 0.0, n, false)]
-            }
+            // banded: one repeat every `band` units up from z 0, whatever the wall's height, as a
+            // stack's slope drawn in the style is, so the two meet at one size
+            _ => match ws.band {
+                Some(band) => vec![(b, t, b / band, t / band, false)],
+                None => vec![(b, t, 0.0, 1.0, false)],
+            },
         }
     }
 
@@ -4339,6 +4338,18 @@ mod tests {
             assert!(walls.contains("brick") || walls.contains("brick~mid"), "{detail}: {walls:?}");
             assert!(walls.contains("rock"), "{detail}: {walls:?}");
             assert!(mats("ground").contains("rock"), "{detail}: {:?}", mats("ground"));
+            // the 120 rock wall's texture the size the rock slope above it is, one repeat every
+            // band units up, not squeezed into its height
+            let band = th.wall_styles["rock"].band.unwrap();
+            for name in ["walls", "ground"] {
+                let o = lvl.mesh.objects.iter().find(|o| o.name == name).unwrap();
+                for t in (0..o.tris.len()).filter(|&t| lvl.mesh.materials[o.mat[t]] == "rock") {
+                    for k in 0..3 {
+                        let z = o.verts[o.tris[t][k]][2];
+                        assert!((o.uvs[t][k][1] - z / band).abs() < 1e-6, "{detail} {name}: v {} at z {z}", o.uvs[t][k][1]);
+                    }
+                }
+            }
             // the island's edge stands 200 up from the ground beside it, then slopes to its top
             let g = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
             let island_top = g.verts.iter().filter(|v| dist([v[0], v[1]], [-500.0, -300.0]) < 300.0).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);

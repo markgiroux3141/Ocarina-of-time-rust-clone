@@ -442,7 +442,7 @@ pub struct Water {
 
 /// A wall: u runs along it (`tile_u` units per repeat, continuous round corners, snapped to
 /// whole repeats round closed loops), v is stretched over its height as one band, or repeated
-/// once per `band` units on walls taller than that.
+/// once per `band` units up from z 0 (a short wall shows part of a repeat, at the same size).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WallStyle {
     pub material: String,
