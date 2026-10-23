@@ -6,6 +6,9 @@ rem room 14's chest. jabu-door-14: room 1's bottom after the chest, through door
 rem Milestone 5's: jabu-ruto: room 2, Ruto's first meeting, the cow's boulders bombed, the cow
 rem shot, door 4. jabu-web: room 11's stick lit, through door 7, room 7's web burnt. jabu-crystal:
 rem door 9, room 5's crystal, door 0, the fall into Barinade's room.
+rem Milestone 8's: jabu-switch: room 3, Ruto talked to, lifted, up the spout, onto the blue switch.
+rem jabu-octo: the green barrier gone, Ruto up the spout, door 21, room 6, thrown onto the platform,
+rem her scripts, the platform's rise, Big Octo's arrival, the descent.
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1
@@ -23,5 +26,9 @@ if not exist out\run mkdir out\run
 "%BIN%\oot_sandbox.exe" --entrance ENTR_JABU_JABU_0 --child --preset jabu-room-7 --script jabu-web ^
     --trace out\run\jabu_web.json --screenshot out\run\jabu_web.png --shots-at 640,720,780 || exit /b 1
 "%BIN%\oot_sandbox.exe" --entrance ENTR_JABU_JABU_0 --child --preset jabu-crystal --script jabu-crystal ^
-    --trace out\run\jabu_crystal.json --screenshot out\run\jabu_crystal.png --shots-at 340,400,660 %*
+    --trace out\run\jabu_crystal.json --screenshot out\run\jabu_crystal.png --shots-at 340,400,660 || exit /b 1
+"%BIN%\oot_sandbox.exe" --entrance ENTR_JABU_JABU_0 --child --preset jabu-room-7 --script jabu-switch ^
+    --trace out\run\jabu_switch.json --screenshot out\run\jabu_switch.png --shots-at 640,800,1060 || exit /b 1
+"%BIN%\oot_sandbox.exe" --entrance ENTR_JABU_JABU_0 --child --preset jabu-room-7 --script jabu-octo ^
+    --trace out\run\jabu_octo.json --screenshot out\run\jabu_octo.png --shots-at 1000,1180,1500,2000,2200 %*
 exit /b %errorlevel%

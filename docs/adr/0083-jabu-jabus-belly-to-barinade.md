@@ -1,6 +1,6 @@
 # 0083: Jabu-Jabu's Belly to Barinade: Ruto, the tentacles and barriers, and the way to the boss
 
-- **Status:** accepted, built in GAME-10 milestone 5 (2026-10-21); its hand test owed ([HAND-TESTS-OWED.md](../HAND-TESTS-OWED.md))
+- **Status:** accepted, built in GAME-10 milestone 5 (2026-10-21), hand-tested 2026-10-22
 - **Date:** 2026-10-21
 - **Builds on:** [ADR 0082](0082-jabu-jabus-belly-to-the-boomerang.md) (Jabu-Jabu to the boomerang,
   the search over the floors), [ADR 0064](0064-kakariko-lifting-and-the-village.md) (Player's

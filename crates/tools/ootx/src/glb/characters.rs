@@ -185,6 +185,8 @@ pub const CHARACTERS: &[Character] = &[
     c("Lord Jabu-Jabu", "En_Jj/eye0", Some(("object_jj", "gJabuJabuAnim")), &[], &[], &[]),
     // GAME-10 milestone 2: the Octorok (En_Okuta), floating.
     skel("Octorok", "object_okuta", "gOctorokSkel", Some(("object_okuta", "gOctorokFloatAnim")), &[], &[]),
+    // GAME-10 milestone 8: Big Octo (En_Bigokuta), swimming round.
+    skel("Big Octo", "object_bigokuta", "object_bigokuta_Skel_006BC0", Some(("object_bigokuta", "object_bigokuta_Anim_001CA4")), &[], &[]),
     // GAME-10 milestone 4: the Stinger (En_Eiyer, En_Weiyer), gliding.
     skel("Stinger", "object_ei", "gStingerSkel", Some(("object_ei", "gStingerHitAnim")), &[], &[]),
     // GAME-10 milestone 4: the Biri (En_Bili), its tentacles' first picture, its core's colours
@@ -202,6 +204,9 @@ pub const CHARACTERS: &[Character] = &[
     skel("Barinade (Zapper)", "object_bv", "gBarinadeZapperSkel", Some(("object_bv", "gBarinadeZapperIdleAnim")), &[], &[]),
     skel("Barinade (Stump)", "object_bv", "gBarinadeStumpSkel", Some(("object_bv", "gBarinadeStumpAnim")), &[], &[]),
     skel("Bari", "object_bv", "gBarinadeBariSkel", Some(("object_bv", "gBarinadeBariAnim")), &[], &[]),
+    // GAME-10 milestone 8: the Bari (En_Vali), its skeleton whole (nucleus, core and hood limbs
+    // included) idling.
+    skel("Bari (Jellyfish)", "object_vali", "gBariSkel", Some(("object_vali", "gBariIdleAnim")), &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

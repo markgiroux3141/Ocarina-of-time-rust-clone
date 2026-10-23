@@ -81,6 +81,7 @@ pub fn mesh(img: DecodedImage, fmt: u8, siz: u8) -> DrawList {
         two_cycle: false,
         prim: [0; 4],
         prim_lod_frac: 0,
+        lod_frac: 0,
         env: [0; 4],
         fog: [0; 4],
         blend_color: [0; 4],

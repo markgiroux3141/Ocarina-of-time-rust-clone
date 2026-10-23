@@ -1,6 +1,6 @@
 # 0084: Barinade, Ruto's warp and the Zora's Sapphire
 
-- **Status:** accepted, built in GAME-10 milestone 6 (2026-10-21); its hand test owed ([HAND-TESTS-OWED.md](../HAND-TESTS-OWED.md))
+- **Status:** accepted, built in GAME-10 milestone 6 (2026-10-21), hand-tested 2026-10-22
 - **Date:** 2026-10-21
 - **Builds on:** [ADR 0075](0075-king-dodongo-the-room-texture-the-cameras-up-and-the-ruby.md) (King
   Dodongo: the boss pattern, the camera's up, the screen fill), [ADR 0050](0050-queen-gohma.md) (a

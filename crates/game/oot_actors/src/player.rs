@@ -5251,7 +5251,10 @@ impl Player {
         self.update_hostile_lock_on()
     }
 
-    /// The "not locked on" half of `Player_UpdateHostileLockOn` (clears `PLAYER_STATE1_HOSTILE_LOCK_ON`).
+    /// The "not locked on" half of `Player_UpdateHostileLockOn` (clears `PLAYER_STATE1_HOSTILE_LOCK_ON`);
+    /// only `player_update_hostile_lock_on_env`'s. Called alone it drops a hostile lock-on: raising the
+    /// slingshot while locked on then took the first-person aim, which the lock ended at once, every
+    /// other frame (the camera flipping between `CAM_MODE_Z_TARGET_UNFRIENDLY` and `_AIM_CHILD`).
     fn update_hostile_lock_on(&mut self) -> bool {
         if self.state1 & STATE1_4 != 0 {
             self.state1 &= !STATE1_4;
@@ -7323,7 +7326,7 @@ impl Player {
         if self.state1 & STATE1_23 != 0 {
             let a = data.anim("link_uma_anim_walk");
             self.skel.play_loop(data, a);
-        } else if self.grounded() && !self.update_hostile_lock_on() {
+        } else if self.grounded() && !self.player_update_hostile_lock_on_env(env) {
             let a = self.anim(data, group::WAIT);
             self.skel.play_loop(data, a);
         }
@@ -7694,7 +7697,7 @@ impl Player {
         if self.cs_mode != 0
             || self.unk_6AD == 0
             || self.unk_6AD >= 4
-            || self.update_hostile_lock_on()
+            || self.player_update_hostile_lock_on_env(env)
             || self.focus_actor.is_some()
             || self.func_8083ad4c(env) == oot_game::camera::CAM_MODE_NORMAL as i32
             || (self.unk_6AD == 2 && (press & (BTN_A | BTN_B | BTN_R) != 0 || self.friendly_lock_on_or_parallel() || (!self.func_8002dd78() && !self.func_808334b4())))

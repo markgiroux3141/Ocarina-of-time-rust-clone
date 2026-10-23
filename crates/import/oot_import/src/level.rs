@@ -225,6 +225,7 @@ fn material(texture: usize, texture2: Option<usize>, wrap_s: WrapMode, wrap_t: W
         two_cycle,
         prim: [255; 4],
         prim_lod_frac: 0,
+        lod_frac: 0,
         env: [255; 4],
         fog: [0; 4],
         blend_color: [0; 4],

@@ -61,6 +61,8 @@ pub struct Interpreter {
     combine: u64,
     prim: [u8; 4],
     prim_lod_frac: u8,
+    /// `gSPTexture`'s level (the top mipmap level, `max_level` in the RDP's LOD).
+    tex_level: u8,
     env: [u8; 4],
     fog: [u8; 4],
     blend_color: [u8; 4],
@@ -111,6 +113,7 @@ impl Interpreter {
             combine: 0,
             prim: [255; 4],
             prim_lod_frac: 0,
+            tex_level: 0,
             env: [255; 4],
             fog: [0; 4],
             blend_color: [0; 4],
@@ -294,6 +297,7 @@ impl Interpreter {
             0xD7 => {
                 self.tex_on = (w0 >> 1) & 0x7F != 0;
                 self.tex_tile = ((w0 >> 8) & 7) as u8;
+                self.tex_level = ((w0 >> 11) & 7) as u8;
                 self.tex_scale = [(w1 >> 16) as f32 / 65536.0, (w1 & 0xFFFF) as f32 / 65536.0];
                 self.invalidate();
             }
@@ -429,6 +433,15 @@ impl Interpreter {
                 _ => {}
             }
         }
+    }
+
+    /// The RDP's `LOD_FRACTION` where it doesn't depend on the pixel (angrylion's
+    /// `tclod_*`: computed whenever the combiner reads it): with sharpen and detail off
+    /// (`G_MDSFT_TEXTDETAIL`, bits 17 and 18 of othermode H) a "distant" pixel's is 0xFF, and with
+    /// `gSPTexture`'s level 0 every pixel is distant (its tile `log2(lod) >= max_level`). Else 0,
+    /// as before (the per-pixel LOD isn't modelled).
+    fn static_lod_frac(&self) -> u8 {
+        if (self.othermode_h >> 17) & 3 == 0 && self.tex_level == 0 { 0xFF } else { 0 }
     }
 
     fn op_mtx(&mut self, w0: u32, w1: u32) {
@@ -642,6 +655,7 @@ impl Interpreter {
             two_cycle,
             prim: self.prim,
             prim_lod_frac: self.prim_lod_frac,
+            lod_frac: self.static_lod_frac(),
             env: self.env,
             fog: self.fog,
             blend_color: self.blend_color,

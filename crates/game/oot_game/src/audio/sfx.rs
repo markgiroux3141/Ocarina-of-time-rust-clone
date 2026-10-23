@@ -721,6 +721,7 @@ impl GameAudio {
                         self.queue_cmd_s8((0x6 << 24) | ((SEQ_PLAYER_SFX as u32) << 16) | c | 5, ((e.sfx_id & 0x100) >> 8) as i8);
                     }
                     self.sfx.banks[b][ei].state = if e.sfx_id & 0xC00 != 0 { SFX_STATE_PLAYING_1 } else { SFX_STATE_PLAYING_2 };
+                    log::debug!("[sfx] start {:#06x} {} (channel {cur}, frame {})", e.sfx_id, self.tables.sfx_name(e.sfx_id).unwrap_or("?"), self.frames);
                 } else if channel.sound_script_io[1] as u8 == 0xFF {
                     self.remove_sfx_bank_entry(bank, entry_index);
                 } else if e.state == SFX_STATE_PLAYING_REFRESH {

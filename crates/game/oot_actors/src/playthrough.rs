@@ -633,6 +633,33 @@ pub enum Step {
     SongOfTimePlayed,
     /// Hyrule Field at `ENTR_HYRULE_FIELD_16` after `gHyruleFieldGetOoTCs`, Link free.
     FieldAfterOcarina,
+    /// Jabu-Jabu's room 3: Ruto's first talk closed (0x404C: `INFTABLE_RUTO_EXPLAINED_WHY_IN_JABU`).
+    RutoExplained,
+    /// Ruto's second talk (0x404D): she sat down and asks to be carried
+    /// (`INFTABLE_RUTO_LET_LINK_CARRY`), the box closed.
+    RutoSeated,
+    /// Ruto lifted: Link stands carrying her.
+    RutoLifted,
+    /// Ruto put down (Link's hands free).
+    RutoPutDown,
+    /// A spout (`En_Siofuki`) risen with Link on it.
+    SpoutUp,
+    /// Room 3's blue switch held down by Ruto (switch flag 0x3C: door 12).
+    RutoOnSwitch,
+    /// Room 6 entered carrying Ruto: `gRutoFoundSapphireCs` over
+    /// (`INFTABLE_RUTO_BROUGHT_TO_SAPPHIRE_ROOM`), Link free.
+    RutoFoundSapphire,
+    /// Ruto thrown (Link's hands free).
+    RutoThrown,
+    /// `gRutoObtainingSapphireCs` over: the Sapphire Ruto's (`INFTABLE_RUTO_HAS_SAPPHIRE`).
+    RutoHasSapphire,
+    /// Big Octo's platform rising with Ruto (one-point 3070: Link held).
+    PlatformRising,
+    /// Big Octo spawned on the risen platform and Ruto taken (`INFTABLE_RUTO_ABDUCTED`).
+    BigOctoArrived,
+    /// The platform down with Big Octo and his battle on (`Bg_Bdan_Objects`'
+    /// `OctoPlatformBattleInProgress`), the cameras back, Link free.
+    BigOctoBattle,
 }
 
 impl Step {
@@ -883,6 +910,18 @@ impl Step {
             Step::TempleOfTime => "temple_of_time",
             Step::SongOfTimePlayed => "song_of_time_played",
             Step::FieldAfterOcarina => "field_after_ocarina",
+            Step::RutoExplained => "ruto_explained",
+            Step::RutoSeated => "ruto_seated",
+            Step::RutoLifted => "ruto_lifted",
+            Step::RutoPutDown => "ruto_put_down",
+            Step::SpoutUp => "spout_up",
+            Step::RutoOnSwitch => "ruto_on_switch",
+            Step::RutoFoundSapphire => "ruto_found_sapphire",
+            Step::RutoThrown => "ruto_thrown",
+            Step::RutoHasSapphire => "ruto_has_sapphire",
+            Step::PlatformRising => "platform_rising",
+            Step::BigOctoArrived => "big_octo_arrived",
+            Step::BigOctoBattle => "big_octo_battle",
         }
     }
 }
@@ -1188,6 +1227,18 @@ pub enum Route {
     /// the Temple of Time's `gTempleOfTimeSongOfTimeCs` (the Song of Time taught and played back),
     /// and Hyrule Field after `gHyruleFieldGetOoTCs`: Phase 11's exit, part 2 (Phase 12's start).
     OcarinaOfTime,
+    /// GAME-10 milestone 8: Jabu-Jabu's room 3 by Ruto (`jabu-room-7`, the room marked cleared):
+    /// her two talks (0x404C; 0x404D, she sits and asks to be carried), lifted, carried into the
+    /// pool onto the yellow switch 0x3A, up its spout, the hop to the west ledge, down its south
+    /// slope and onto the blue switch 0x3C, put down there: door 12 opens.
+    JabuSwitch,
+    /// GAME-10 milestone 8: room 3 by Ruto with the green tentacle's flag 0x0C (a debug start's:
+    /// room 3's green barrier gone): her talks, lifted, carried up the spout to the west ledge and through
+    /// door 21 into room 6 (`gRutoFoundSapphireCs`), thrown onto Big Octo's platform
+    /// (`gRutoObtainingSapphireCs`: the Sapphire hers), the platform's rise (one-point 3070), Big
+    /// Octo's arrival (Ruto taken: `INFTABLE_RUTO_ABDUCTED`) and the descent with him (3080) to
+    /// the fight's start. No fight: that's the hand test's.
+    JabuOcto,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1809,7 +1860,18 @@ fn jabu_door_14_tasks() -> Vec<Task> {
 /// - `crystal`: room 1 in door 9's corridor with the tentacles' flags (`jabu-crystal`);
 /// - `door0`: room 5 in front of door 0 after the crystal (`jabu-barinade`): through, room 15's
 ///   floor is the exit to Barinade.
-pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8], &[i32]); 21] = [
+/// - `octo`: room 3 by Ruto with the green tentacle's flag 0x0C (`jabu-room-7`): carried onto the
+///   spout's yellow switch, the hop to the west ledge, door 21 into room 6, thrown onto the
+///   platform;
+/// - `platform`: room 6 inside door 21 with the Sapphire Ruto's (`jabu-sapphire`): she waits on
+///   the platform; near it, it rises (3070), Big Octo comes and takes her, it comes down (3080);
+/// - `bigocto`: room 6 where the platform's descent puts Link, facing the platform, Big Octo met
+///   (`jabu-big-octo`): the platform spawns him at once, the battle on;
+/// - `bari`: room 6's upper walkway (y 80) south of the Bari (`En_Vali` at (-1367, 411, -2490));
+/// - `tailpasaran`: room 12 inside door 5 (its three `En_Tp`);
+/// - `room4`, `room13`: inside door 8 (room 4: Flobberies, a Lizalfos, crates, hookshot posts) and
+///   door 13 (room 13: Stingers, the lens-only Keese, a timer).
+pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8], &[i32]); 28] = [
     ("cow", "jabu-jabu", 0, Vec3::new(-18.0, -240.0, 302.0), i16::MIN, &[], &[]),
     ("elevator", "jabu-room-1", 1, Vec3::new(0.0, -320.0, -1500.0), i16::MIN, &[], &[]),
     ("flobbery", "jabu-room-1", 1, Vec3::new(-200.0, -325.0, -1600.0), i16::MIN, &[], &[]),
@@ -1831,6 +1893,13 @@ pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8], &[i32]); 21] = [
     ("crystal", "jabu-crystal", 1, JABU_DOOR_9_START, 0x4000, &[1], &[]),
     ("door0", "jabu-barinade", 5, Vec3::new(1360.0, -320.0, -2040.0), i16::MIN, &[5], &[]),
     ("room5", "jabu-crystal", 5, Vec3::new(700.0, -320.0, -1703.0), 0x4000, &[], &[]),
+    ("octo", "jabu-room-7", 3, JABU_ROOM_3_START, 0x4000, &[], &[0x0C]),
+    ("platform", "jabu-sapphire", 6, Vec3::new(-1080.0, -1025.0, -3343.0), -0x4000, &[], &[]),
+    ("bigocto", "jabu-big-octo", 6, Vec3::new(-1130.0, -1025.0, -3500.0), -10136, &[], &[]),
+    ("bari", "jabu-web", 6, Vec3::new(-1360.0, 80.0, -2700.0), 0, &[], &[]),
+    ("tailpasaran", "jabu-web", 12, Vec3::new(-660.0, -340.0, -5300.0), i16::MIN, &[], &[]),
+    ("room4", "jabu-web", 4, Vec3::new(-800.0, 80.0, -1703.0), -0x4000, &[], &[]),
+    ("room13", "jabu-web", 13, Vec3::new(-680.0, -1113.0, -2640.0), -0x22D8, &[], &[]),
 ];
 
 /// Room 14's boomerang chest (`En_Box` 0x10C6 at (699, -1073, -2376), facing -x: its front the
@@ -2083,6 +2152,95 @@ fn ocarina_of_time_tasks() -> Vec<Task> {
         ),
         Task::Settle(None),
     ]
+}
+
+/// Room 3's east floor west of Ruto (`En_Ru1` 0x0203 at (222, -1113, -3270)).
+const JABU_ROOM_3_START: Vec3 = Vec3::new(140.0, -1113.0, -3270.0);
+/// Room 3's blue switch (`Bg_Bdan_Switch` 0x3C00 at (44, -1114, -3596): switch flag 0x3C, door 12).
+const JABU_BLUE_SWITCH_3C: Vec3 = Vec3::new(44.0, -1114.0, -3596.0);
+const JABU_BLUE_SWITCH_3C_FLAG: i32 = 0x3C;
+
+/// Ruto's two talks in room 3 (0x404C; then 0x404D, she sits and asks to be carried) and the
+/// lift.
+fn jabu_ruto_lift_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Talk(Who::Ruto, JABU_ROOM_3_START, Step::RutoExplained),
+        Task::Talk(Who::Ruto, JABU_ROOM_3_START, Step::RutoSeated),
+        Task::LiftWho(Who::Ruto, Step::RutoLifted),
+    ]
+}
+
+/// Room 3's yellow switch (`Bg_Bdan_Switch` 0x3A02 at (-15, -1204, -3330), in the pool over the
+/// spout `En_Siofuki` 0x0EBF: switch flag 0x3A).
+const JABU_YELLOW_SWITCH_3A: Vec3 = Vec3::new(-15.0, -1204.0, -3330.0);
+
+/// Carrying Ruto from room 3's east floor up to its west ledge (-1015, door 21's). The east floor
+/// (-1113, Ruto's) is cut off from the rest by the pool (its floor -1209, 3 deep): off its edge
+/// into it, onto the yellow switch 0x3A over the spout, which rises 400 for 300 frames and lifts
+/// Link to about -1000; from its top at a run west, its push carries him over the 150 or so to the
+/// ledge (Wikibooks' Master Quest walkthrough: "step on the yellow switch ... jump over to the
+/// highest platform you can reach"). The ledge's sides are slopes Link slides down, not up.
+fn jabu_spout_to_ledge_tasks() -> Vec<Task> {
+    vec![
+        Task::Walk(vec![Vec3::new(100.0, -1206.0, -3280.0), JABU_YELLOW_SWITCH_3A]),
+        Task::WaitFor(Cond::Switch(0x3A), Step::YellowSwitch),
+        Task::Texts(|w| w.player().actor.world_pos.y > -1010.0, Step::SpoutUp),
+        Task::Hurry(vec![Vec3::new(-300.0, -1015.0, -3330.0)]),
+    ]
+}
+
+/// `Route::JabuSwitch`'s tasks: up to the ledge, down its south slope to the switch's floor (the
+/// south floor, -1113, joined to nothing else), Ruto put down on the blue switch.
+fn jabu_switch_tasks() -> Vec<Task> {
+    let mut t = jabu_ruto_lift_tasks();
+    t.extend(jabu_spout_to_ledge_tasks());
+    t.extend([
+        Task::Walk(vec![Vec3::new(-300.0, -1015.0, -3440.0), Vec3::new(-230.0, -1113.0, -3570.0), Vec3::new(-60.0, -1113.0, -3600.0)]),
+        // A carried actor put down lands about 6 in front of Link: he puts her down standing on
+        // the switch himself (its camera takes the first A), then steps off.
+        Task::PutDown(vec![JABU_BLUE_SWITCH_3C + Vec3::new(12.0, 1.0, 0.0)], Vec3::new(140.0, -1113.0, -3596.0), Step::RutoPutDown),
+        Task::Walk(vec![Vec3::new(-60.0, -1113.0, -3590.0)]),
+        Task::WaitFor(Cond::Switch(JABU_BLUE_SWITCH_3C_FLAG), Step::RutoOnSwitch),
+        Task::Settle(None),
+    ]);
+    t
+}
+
+/// Door 21 (transition 21, at (-1001, -935, -3343)): room 3's west ledge into room 6.
+const JABU_DOOR_21: usize = 21;
+const JABU_DOOR_21_FRONT: Vec3 = Vec3::new(-960.0, -1015.0, -3343.0);
+/// Big Octo's platform (`Bg_Bdan_Objects` 0x1F00 at (-1360, -1025, -3343)).
+const JABU_OCTO_PLATFORM: Vec3 = Vec3::new(-1360.0, -1025.0, -3343.0);
+
+/// Whether Big Octo's platform has its battle on.
+fn octo_battle(w: &PlayState) -> bool {
+    use crate::bg_bdan_objects::{Action, BgBdanObjects};
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<BgBdanObjects>(h)).any(|o| o.action == Action::OctoPlatformBattleInProgress)
+}
+
+/// `Route::JabuOcto`'s tasks.
+fn jabu_octo_tasks() -> Vec<Task> {
+    use crate::en_ru1::{INFTABLE_RUTO_BROUGHT_TO_SAPPHIRE_ROOM, INFTABLE_RUTO_HAS_SAPPHIRE};
+    let mut t = jabu_ruto_lift_tasks();
+    t.extend(jabu_spout_to_ledge_tasks());
+    t.extend([
+        // West along the ledge past the green barrier's place (En_Bx 0x0C81, gone with 0x0C).
+        Task::Walk(vec![Vec3::new(-600.0, -1015.0, -3343.0), Vec3::new(-900.0, -1015.0, -3343.0)]),
+        Task::OpenSlidingDoor(JABU_DOOR_21, JABU_DOOR_21_FRONT, Step::DoorOpened),
+        Task::WaitDoorShut(JABU_DOOR_21, Step::ThroughDoor),
+        Task::Texts(|w| w.save.get_inf_table(INFTABLE_RUTO_BROUGHT_TO_SAPPHIRE_ROOM) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode(), Step::RutoFoundSapphire),
+        Task::Walk(vec![Vec3::new(-1150.0, -1025.0, -3343.0)]),
+        Task::Throw(JABU_OCTO_PLATFORM, Step::RutoThrown),
+        Task::Texts(|w| w.save.get_inf_table(INFTABLE_RUTO_HAS_SAPPHIRE), Step::RutoHasSapphire),
+        // The platform rises once Link is within 250 of it (BgBdanObjects_OctoPlatform_WaitForRutoToStartCutscene).
+        Task::WalkUntil(vec![Vec3::new(-1170.0, -1025.0, -3343.0)], |w| w.player_in_cs_mode(), Step::PlatformRising),
+        Task::Texts(|w| w.save.get_inf_table(crate::bg_bdan_objects::INFTABLE_RUTO_ABDUCTED), Step::BigOctoArrived),
+        Task::Texts(|w| octo_battle(w) && !w.player_in_cs_mode(), Step::BigOctoBattle),
+        Task::WaitCameras,
+        Task::Settle(None),
+    ]);
+    t
 }
 
 /// Ruto's blue warp (`Door_Warp1` `WARP_BLUE_RUTO`), if it's there.
@@ -2749,7 +2907,7 @@ impl Route {
             Route::KingZora => "ENTR_ZORAS_DOMAIN_1",
             Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
             // Spawn 0, room 0; the debug starts change room.
-            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => "ENTR_JABU_JABU_0",
+            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal | Route::JabuSwitch | Route::JabuOcto => "ENTR_JABU_JABU_0",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -2807,6 +2965,7 @@ impl Route {
             Route::JabuRuto => Some("jabu-boomerang"),
             Route::JabuWeb => Some("jabu-room-7"),
             Route::JabuCrystal => Some("jabu-crystal"),
+            Route::JabuSwitch | Route::JabuOcto => Some("jabu-room-7"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
             Route::Escape => Some("zora-sapphire"),
@@ -2877,6 +3036,8 @@ impl Route {
             Route::JabuWeb => Some((JABU_ROOM_11_START, i16::MIN)),
             // Room 1 in door 9's corridor (the red barrier's place), facing the door (+x).
             Route::JabuCrystal => Some((JABU_DOOR_9_START, 0x4000)),
+            // Room 3's east floor west of Ruto, facing her (+x).
+            Route::JabuSwitch | Route::JabuOcto => Some((JABU_ROOM_3_START, 0x4000)),
             _ => None,
         }
     }
@@ -2889,6 +3050,9 @@ impl Route {
             // that beat it: Obj_Roomtimer 0x07FF is an enemy until its first update, so a room
             // marked cleared never spawns it to set the flag.
             Route::JabuWeb => &[0x01],
+            // The green tentacle's flag (room 10's `En_Ba` 0x0C01, the hand test's fight): room
+            // 3's green barrier (`En_Bx` 0x0C81) in front of the ledge's way to door 21 gone.
+            Route::JabuOcto => &[0x0C],
             _ => &[],
         }
     }
@@ -2918,6 +3082,8 @@ impl Route {
             Route::JabuRuto => &[2],
             Route::JabuWeb => &[11],
             Route::JabuCrystal => &[1, 5],
+            // Room 3's Biri and Shabom (room 6 isn't: its clear sinks Big Octo's platform).
+            Route::JabuSwitch | Route::JabuOcto => &[3],
             _ => &[],
         }
     }
@@ -2937,6 +3103,7 @@ impl Route {
             Route::JabuRuto => Some(2),
             Route::JabuWeb => Some(11),
             Route::JabuCrystal => Some(1),
+            Route::JabuSwitch | Route::JabuOcto => Some(3),
             _ => None,
         }
     }
@@ -3094,6 +3261,8 @@ impl Route {
             Route::Sapphire => "sapphire",
             Route::Escape => "zelda-escape",
             Route::OcarinaOfTime => "ocarina-of-time",
+            Route::JabuSwitch => "jabu-switch",
+            Route::JabuOcto => "jabu-octo",
         }
     }
 
@@ -3158,6 +3327,8 @@ impl Route {
             Route::Sapphire => 5000,
             Route::Escape => 4000,
             Route::OcarinaOfTime => 8000,
+            Route::JabuSwitch => 3000,
+            Route::JabuOcto => 6000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3170,7 +3341,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3198,6 +3369,9 @@ enum Task {
     /// Lift the cucco (`En_Niw`) nearest the point when the task starts: towards it until it
     /// offers itself to Link's lift (Player's `interactRangeActor`), A, until he stands carrying it.
     Lift(Vec3, Step),
+    /// `Task::Lift` for the actor: towards it until it offers itself to Link's lift, A, until he
+    /// stands carrying it.
+    LiftWho(Who, Step),
     /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
     /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
     Throw(Vec3, Step),
@@ -3582,6 +3756,8 @@ enum Who {
     Owl,
     /// King Zora (`En_Kz`).
     KingZora,
+    /// Ruto (`En_Ru1`).
+    Ruto,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -3949,6 +4125,8 @@ impl Playthrough {
             Route::JabuRuto => jabu_ruto_tasks(),
             Route::JabuWeb => jabu_web_tasks(),
             Route::JabuCrystal => jabu_crystal_tasks(),
+            Route::JabuSwitch => jabu_switch_tasks(),
+            Route::JabuOcto => jabu_octo_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -4435,6 +4613,13 @@ impl Playthrough {
                 Some(stick_towards(w, target, RUN))
             }
             Task::Lift(near, step) => self.lift(w, near, step),
+            Task::LiftWho(who, step) => {
+                if self.carried.is_none() {
+                    self.carried = Self::find(w, who);
+                }
+                let at = self.carried.and_then(|h| w.actors.actor(h)).map(|a| a.world_pos).unwrap_or_default();
+                self.lift(w, at, step)
+            }
             Task::LiftBombFlower(near, step) => self.lift_bomb_flower(w, near, step),
             Task::PutDown(points, face, step) => self.put_down(w, &points, face, step),
             Task::TakeBomb(c, step) => self.take_bomb(w, c, step),
@@ -7393,6 +7578,10 @@ impl Playthrough {
                     self.finish(Some(step));
                     return None;
                 }
+                if p.held_actor.is_some() && p.action == PA::StandingStill && !w.player_in_cs_mode() {
+                    // The A went nowhere (a switch's cutscene took it): again.
+                    self.sub = 1001;
+                }
                 Some(PadState::default())
             }
         }
@@ -8081,6 +8270,7 @@ impl Playthrough {
             Who::Dampe => w.actors.downcast::<crate::en_tk::EnTk>(h).is_some_and(|a| !a.actor.killed),
             Who::Owl => w.actors.downcast::<crate::en_owl::EnOwl>(h).is_some_and(|a| !a.actor.killed),
             Who::KingZora => w.actors.downcast::<crate::en_kz::EnKz>(h).is_some_and(|a| !a.actor.killed),
+            Who::Ruto => w.actors.downcast::<crate::en_ru1::EnRu1>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

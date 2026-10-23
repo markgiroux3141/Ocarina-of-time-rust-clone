@@ -980,6 +980,33 @@ impl PlayState {
                 set_cs_info(self, if cs_id == 8603 { "D_801232CC" } else { "D_80123394" }, 5);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
+            3070 => {
+                // Big Octo's platform rising with Ruto (Bg_Bdan_Objects type 0): ten keyframes
+                // (D_801215E4: Link held, PLAYER_CSACTION_8, then 1, 9 and 1; the platform from
+                // room 6's west, up its rise, round to Ruto), a decaying quake on the sub camera
+                // (QUAKE_TYPE_3, speed 22000, y 2, roll 200, 10 frames).
+                set_cs_info(self, "D_801215E4", 10);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                let i = self.quake_request(sub, crate::quake::QUAKE_TYPE_3);
+                self.quake_set_speed(i, 22000);
+                self.quake_set_perturbations(i, 2, 0, 200, 0);
+                self.quake_set_duration(i, 10);
+            }
+            3080 => {
+                // The platform down with Big Octo (Bg_Bdan_Objects type 0): four keyframes
+                // (D_80121774: Link held, PLAYER_CSACTION_8, then 1 and 5; on Big Octo, then Link
+                // at the room's south side).
+                set_cs_info(self, "D_80121774", 4);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            3090 => {
+                // The platform's lift after Big Octo (Bg_Bdan_Objects type 0): Player held
+                // (PLAYER_CSACTION_8) with the actors, then four keyframes (D_80121814: Link's
+                // PLAYER_CSACTION_76, the rise from below, on Link at the top).
+                self.player_set_cs_action_with_halted_actors(None, 8);
+                set_cs_info(self, "D_80121814", 4);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
             3100 => {
                 // Jabu-Jabu's falling platform (Bg_Bdan_Objects type 3): the camera at (0, -280,
                 // -1400), under room 1's platform, looking at it (Actor_GetFocus), on

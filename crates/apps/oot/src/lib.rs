@@ -963,6 +963,9 @@ impl eframe::App for App {
         if dt > 0.0 {
             self.fps = self.fps * 0.9 + (1.0 / dt) * 0.1;
         }
+        if dt > 0.040 {
+            log::info!("[frame] slow display frame: {:.0} ms", dt * 1000.0);
+        }
 
         // Input: poll the pad every display frame (PadMgr accumulates presses between game
         // frames), keyboard merged in.

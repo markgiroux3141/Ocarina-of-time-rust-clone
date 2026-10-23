@@ -19,8 +19,8 @@
 //!   the nearest quarter and sinks 3 a frame to 125 below home; Link on it within 120 across,
 //!   one-point 3090 and it rises (to 965 above home, `NA_SE_EV_BUYOSTAND_STOP_A`) and stays. With
 //!   the room cleared it starts sunk; with `INFTABLE_RUTO_ABDUCTED` (Big Octo met), Big Octo (params
-//!   3) is spawned at once, 263 along z, and the battle's on. Big Octo isn't ported (milestone 8):
-//!   a placeholder stands in.
+//!   3) is spawned at once, 263 along z, and the battle's on. Big Octo is `En_Bigokuta` (GAME-10
+//!   milestone 8), who writes the platform's turn (`world.rot.y`) through his parent.
 //! - **Room 1's elevator** (type 1, `gJabuElevatorPlatformDL`, `gJabuElevatorCol`): rises and sinks
 //!   by `sin`, 471.24 (150π) round its home over 512 frames, for good; Link on it turns the main
 //!   camera to `CAM_SET_NORMAL2` without the bg's settings (`CAM_STATE_CHECK_BG` off), the setting

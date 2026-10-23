@@ -24,10 +24,10 @@ use common::*;
 use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CUP, BTN_Z, PadState};
 use glam::Vec3;
 use oot_actors::PlayExt;
-use oot_actors::player::{ARROW_NUT, ARROW_SEED, Action, STATE1_3, STATE1_9, STATE1_20, UpperAction};
+use oot_actors::player::{ARROW_NUT, ARROW_SEED, Action, STATE1_3, STATE1_4, STATE1_9, STATE1_20, UpperAction};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl};
 use oot_game::audio::sfx::*;
-use oot_game::camera::{CAM_ID_MAIN, CAM_MODE_AIM_CHILD, CAM_MODE_FIRST_PERSON, CAM_MODE_NORMAL, CAM_MODE_Z_AIM};
+use oot_game::camera::{CAM_ID_MAIN, CAM_MODE_AIM_CHILD, CAM_MODE_FIRST_PERSON, CAM_MODE_NORMAL, CAM_MODE_Z_AIM, CAM_MODE_Z_TARGET_UNFRIENDLY};
 use oot_game::item::{ITEM_DEKU_NUT, ITEM_DEKU_NUTS_10, ITEM_DEKU_STICK, ITEM_NONE, ITEM_SLINGSHOT, item_give};
 use oot_game::play::{DrawOut, PlayState, ViewInfo, scripted_input};
 use oot_game::play_scene::GameAssets;
@@ -343,6 +343,38 @@ fn z_targeted_the_slingshot_aims_in_third_person() {
     let p = w.player();
     assert_eq!(p.update_cam_and_seq_modes().map(|m| m.0), Some(CAM_MODE_Z_AIM));
     assert_eq!(w.game_camera.mode, CAM_MODE_Z_AIM);
+}
+
+#[test]
+fn locked_on_a_hostile_target_the_slingshot_aims_in_third_person() {
+    // Child Link on the course, the slingshot on C-Right, a dummy target (hostile, targetable)
+    // 150 ahead: Z locks on (PLAYER_STATE1_HOSTILE_LOCK_ON), then C-Right raises the slingshot.
+    // func_80834D2C's Player_UpdateHostileLockOn keeps the flag (the target is still locked and
+    // hostile), so func_80834EB8 sees Player_IsZTargeting and stays in third person: no first
+    // person (unk_6AD 0, no PLAYER_STATE1_20), and Player_UpdateCamAndSeqModes keeps asking for
+    // CAM_MODE_Z_TARGET_UNFRIENDLY. (The port's clearing half alone dropped the flag: the raise
+    // went first person, which the lock ended at once, every other frame: the camera flipped
+    // between the two modes, its attention sound each time.)
+    let Some(d) = data() else { return };
+    let c = oot_game::course::build();
+    let mut w = new_world(d, eng_collision::bgcheck::CollisionContext::new(c.collision), false, c.spawn, c.spawn_yaw);
+    item_give(&mut w.save, None, ITEM_SLINGSHOT);
+    w.save.equip_item_on_c(2, ITEM_SLINGSHOT);
+    w.spawn_target(c.spawn + Vec3::new(0.0, 0.0, -150.0));
+    let mut prev = frame(&mut w, PadState::default(), PadState::default());
+    prev = frame(&mut w, prev, press(BTN_Z));
+    prev = frame(&mut w, prev, PadState::default());
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
+    assert_ne!(w.player().state1 & STATE1_4, 0);
+    let mut raised = false;
+    for i in 0..12 {
+        prev = frame(&mut w, prev, press(BTN_CRIGHT));
+        let p = w.player();
+        assert_eq!((p.unk_6AD, p.state1 & STATE1_20, p.state1 & STATE1_4 != 0), (0, 0, true), "frame {i}");
+        assert_eq!(w.game_camera.mode, CAM_MODE_Z_TARGET_UNFRIENDLY, "frame {i}");
+        raised |= p.held_item_ap != 0;
+    }
+    assert!(raised);
 }
 
 #[test]

@@ -21,6 +21,12 @@ rem "crates": room 7's crates, the blue switch's boulders blown (a crate on it o
 rem "crystal": room 1 in door 9's corridor, the tentacles dead. "room5": room 5 inside door 9
 rem (the crystal over the pool). "door0": room 5 after the crystal, in front of door 0 (room 15's
 rem floor drops you into Barinade's room).
+rem Milestone 8's: "octo": room 3 by Ruto, the green barrier gone (carry her onto the yellow switch
+rem in the water, ride the spout up, hop west onto the ledge, through door 21 into room 6, throw
+rem her onto the platform). "platform": room 6 with the Sapphire hers (she waits on the platform;
+rem walk near: it rises, Big Octo comes). "bigocto": Big Octo's fight (beside him). "bari": room 6's
+rem upper walkway by the Bari. "tailpasaran": room 12's three Tailpasarans. "room4", "room13": rooms
+rem 4 and 13 inside their doors.
 rem WASD the stick (Shift walks), Space A, E B, Q Z, R R, J C-Left, K C-Down, L C-Right, I C-Up,
 rem Enter Start.
 setlocal
@@ -88,6 +94,27 @@ if /i "%~1"=="cow" (
     shift
 ) else if /i "%~1"=="door0" (
     set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-barinade --clear 5 --room 5 --at 1360,-320,-2040,-32768"
+    shift
+) else if /i "%~1"=="octo" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-room-7 --room 3 --switch 0x0C --at 140,-1113,-3270,16384"
+    shift
+) else if /i "%~1"=="platform" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-sapphire --room 6 --at -1080,-1025,-3343,-16384"
+    shift
+) else if /i "%~1"=="bigocto" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-big-octo --room 6 --at -1130,-1025,-3500,-10136"
+    shift
+) else if /i "%~1"=="bari" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-web --room 6 --at -1360,80,-2700,0"
+    shift
+) else if /i "%~1"=="tailpasaran" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-web --room 12 --at -660,-340,-5300,-32768"
+    shift
+) else if /i "%~1"=="room4" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-web --room 4 --at -800,80,-1703,-16384"
+    shift
+) else if /i "%~1"=="room13" (
+    set "args=--entrance ENTR_JABU_JABU_0 --preset jabu-web --room 13 --at -680,-1113,-2640,-8920"
     shift
 )
 "%BIN%\oot.exe" %args% %1 %2 %3 %4 %5 %6 %7 %8 %9

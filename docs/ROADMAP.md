@@ -235,12 +235,12 @@ surveyed and proposed (2026-10-20), nine milestones, every call the recommended 
 milestones 2 and 3 (the river, the Domain, the lake, the fountain: King Zora and Jabu-Jabu's mouth)
 are done (2026-10-21); milestone 4 (Jabu-Jabu to the boomerang, [ADR 0082](adr/0082-jabu-jabus-belly-to-the-boomerang.md))
 is done; milestone 5 (to Barinade: Ruto whole, the tentacles, barriers, crates and room timers,
-[ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) is done, its hand test owed
-([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)); milestone 6 (Barinade and the Sapphire,
-[ADR 0084](adr/0084-barinade-rutos-warp-and-the-zoras-sapphire.md)) is done, its hand test owed;
+[ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) is done; milestone 6 (Barinade and the
+Sapphire, [ADR 0084](adr/0084-barinade-rutos-warp-and-the-zoras-sapphire.md)) is done;
 milestone 7 (the Ocarina of Time and the Song of Time, [ADR 0085](adr/0085-the-ocarina-of-time-and-the-song-of-time.md))
-is done, its hand test owed; milestones 8 and 9 (the rest of Jabu-Jabu, the frogs and
-scarecrows) are next.
+is done; milestone 8 (the rest of Jabu-Jabu: Big Octo, the Bari, the Tailpasarans, Ruto's way to
+the Sapphire, [ADR 0086](adr/0086-the-rest-of-jabu-jabus-belly.md)) is done (all four hand-tested
+2026-10-22); milestone 9 (the frogs and scarecrows) is next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -789,14 +789,18 @@ boomerang), **done** (2026-10-21, hand-tested; the elevator's foot shadows fixed
 (2026-10-21, ADR 0083: `En_Ru1` whole with Player's Ruto checks, `En_Ba`, `En_Bx`, `Obj_Kibako`,
 `Obj_Roomtimer`; the silver scale in the story's presets, BACKLOG #102; the runs to Ruto's meeting
 and the cow, room 11's stick to room 7's web, and room 5's crystal to Barinade's room) **done**
-(committed 2026-10-21; the hand test deferred by the user, owed: [HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)). **Milestone 6**
+(committed 2026-10-21; hand-tested 2026-10-22). **Milestone 6**
 (2026-10-21, ADR 0084: `Boss_Va` whole, `Door_Warp1`'s Ruto warp, the fountain's Sapphire cutscene;
 the runs Barinade's intro and the Sapphire; the three stones at `zora-sapphire`) **done** (committed
-2026-10-21; the hand test deferred by the user, owed). **Milestone 7** (2026-10-21, ADR 0085:
+2026-10-21; hand-tested 2026-10-22: the blue warp's look fixed, the renderer's static
+`LOD_FRACTION`, pack format 31). **Milestone 7** (2026-10-21, ADR 0085:
 `Item_Ocarina` and `En_Ganon_Mant` whole; the runs Zelda's escape and the Ocarina of Time through
 the Temple of Time's Song of Time; the presets `zelda-fled` and `ocarina-of-time`, Phase 12's
-start) **done** (committed 2026-10-21; the hand test deferred by the user, owed). Next: milestone 8
-(the rest of Jabu-Jabu). Found: in MQ neither Ruto nor Big Octo is on the way to
+start) **done** (committed 2026-10-21; hand-tested 2026-10-22). **Milestone 8**
+(2026-10-21, ADR 0086: `En_Bigokuta`, `En_Vali`, `En_Tp` whole, one-points 3070, 3080, 3090; the runs
+Ruto onto room 3's blue switch and Ruto to the Sapphire and Big Octo's arrival, room 3's way up
+its spout; the presets `jabu-sapphire`, `jabu-big-octo`; every actor Jabu-Jabu places ported)
+**done** (hand-tested 2026-10-22). Next: milestone 9 (the frogs and scarecrows). Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 

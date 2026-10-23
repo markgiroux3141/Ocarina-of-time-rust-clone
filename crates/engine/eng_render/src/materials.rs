@@ -68,7 +68,7 @@ pub(crate) fn material_uniform_with(m: &Material, dynamic: Option<&SegmentValues
         sel: [[s[0], s[1], s[2], s[3]], [s[4], s[5], s[6], s[7]], [s[8], s[9], s[10], s[11]], [s[12], s[13], s[14], s[15]]],
         prim: c(prim),
         env: c(env),
-        params: [m.prim_lod_frac as f32 / 255.0, threshold, n as f32, 0.0],
+        params: [m.prim_lod_frac as f32 / 255.0, threshold, n as f32, m.lod_frac as f32 / 255.0],
         flags: [flags, m.two_cycle as u32, fog.map(|f| (f.multiplier as f32).to_bits()).unwrap_or(0), fog.map(|f| (f.offset as f32).to_bits()).unwrap_or(0)],
         uv_off: [uv[0].x, uv[0].y, uv[1].x, uv[1].y],
         lights,

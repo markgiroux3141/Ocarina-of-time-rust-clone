@@ -85,8 +85,8 @@
 //! 0x0004; Zora's Fountain layer 4: 0x0001; Zora's Domain layers 0 and 1: 0x0005. Barinade
 //! (`Boss_Va`) spawns type 0.
 //!
-//! Not ported here: Big Octo (`En_Bigokuta`, milestone 8: what she does to it is the platform's,
-//! which spawns it); the warp's Ruto states; Player's own Ruto checks (the main session's).
+//! Big Octo (`En_Bigokuta`, milestone 8) is the platform's to spawn; what she does to it goes through
+//! the platform. The warp's Ruto states are `Door_Warp1`'s; Player's own Ruto checks are Player's.
 //!
 //! Params: `type` bits 0 to 7 (`EnRu1Type`: 0 the boss room, 1 Zora's Fountain, 2 the holes room,
 //! 3 the basement, 4 the sapphire room, 5 beside King Zora, 6 beside the door switch, 10 debug;

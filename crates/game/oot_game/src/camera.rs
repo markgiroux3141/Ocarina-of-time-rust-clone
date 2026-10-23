@@ -3411,6 +3411,7 @@ impl GameCamera {
             _ => {}
         }
         mode_change_flags &= !0x10;
+        log::info!("[camera] mode {} -> {mode} (status {}, sound flags {mode_change_flags:#x})", self.mode, self.status);
         if self.status == CAM_STAT_ACTIVE && matches!(mode_change_flags, 1 | 2 | 4 | 8) {
             self.sfx.push(CamSfx::ModeChange(mode_change_flags as u8));
         }

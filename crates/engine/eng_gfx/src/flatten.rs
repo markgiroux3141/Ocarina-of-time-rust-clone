@@ -113,6 +113,7 @@ mod tests {
             two_cycle: false,
             prim: [1, 2, 3, 4],
             prim_lod_frac: 0,
+        lod_frac: 0,
             env: [5, 6, 7, 8],
             fog: [0; 4],
             blend_color: [0; 4],

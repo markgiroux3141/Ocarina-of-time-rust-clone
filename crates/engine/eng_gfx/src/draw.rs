@@ -77,6 +77,11 @@ pub struct Material {
     pub two_cycle: bool,
     pub prim: [u8; 4],
     pub prim_lod_frac: u8,
+    /// The combiner's `LOD_FRACTION` where it doesn't depend on the pixel: the RDP computes it
+    /// whenever the combiner reads it, and with sharpen and detail off and `gSPTexture`'s level
+    /// 0 every pixel counts as "distant" (its tile at or past the top level), so it's 0xFF
+    /// (`Door_Warp1`'s portal: TEXEL1). Otherwise 0, standing in for the per-pixel LOD.
+    pub lod_frac: u8,
     pub env: [u8; 4],
     pub fog: [u8; 4],
     pub blend_color: [u8; 4],

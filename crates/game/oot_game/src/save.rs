@@ -923,6 +923,16 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: jabu_barinade,
     },
     SavePreset {
+        name: "jabu-sapphire",
+        about: "jabu-room-7 with the green tentacle killed (switch flag 0x0C: room 3's green barrier gone; room 10 visited) and Ruto carried from room 3 into room 6 and thrown onto Big Octo's platform: her talks (INFTABLE_RUTO_EXPLAINED_WHY_IN_JABU, _LET_LINK_CARRY), gRutoFoundSapphireCs (_BROUGHT_TO_SAPPHIRE_ROOM), gRutoObtainingSapphireCs (_HAS_SAPPHIRE, her switch flag 0x02), rooms 3 and 6 visited: a debug start for the platform (in room 6 she waits on it: Link near, it rises and Big Octo comes)",
+        apply: jabu_sapphire,
+    },
+    SavePreset {
+        name: "jabu-big-octo",
+        about: "jabu-sapphire, and GAME-10 milestone 8's Big Octo run over: the platform risen, Ruto taken by Big Octo (INFTABLE_RUTO_ABDUCTED), the platform down with him: Route::JabuOcto's end, Big Octo's fight's start (re-entered, the platform spawns him at once and the battle's on)",
+        apply: jabu_big_octo,
+    },
+    SavePreset {
         name: "barinade-fight",
         about: "jabu-barinade, and GAME-10 milestone 6's Barinade run over: his intro and title card (EVENTCHKINF_BEGAN_BARINADE_BATTLE): the fight's start (re-entered, his init calls the Bari down at once); the boomerang on C-Down for the fight (the run leaves the bombs there)",
         apply: barinade_fight,
@@ -1260,6 +1270,25 @@ fn jabu_barinade(s: &mut SaveContext) {
     let f = &mut s.scene_flags[SCENE_JABU_JABU];
     f.swch |= 1 << 0x14;
     f.rooms |= (1 << 5) | (1 << 15);
+}
+
+/// `jabu-sapphire`'s save: the green tentacle (0x0C), Ruto's walk to the Sapphire (`save.h`:
+/// `INFTABLE_RUTO_EXPLAINED_WHY_IN_JABU` 0x142, `_LET_LINK_CARRY` 0x143, `_BROUGHT_TO_SAPPHIRE_ROOM`
+/// 0x144, `_HAS_SAPPHIRE` 0x145; her switch flag 0x02, `En_Ru1` 0x0203's).
+fn jabu_sapphire(s: &mut SaveContext) {
+    jabu_room_7(s);
+    for f in [0x142, 0x143, 0x144, 0x145] {
+        s.set_inf_table(f);
+    }
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= (1 << 0x0C) | (1 << 0x02);
+    f.rooms |= (1 << 3) | (1 << 6) | (1 << 10);
+}
+
+/// `jabu-big-octo`'s save (`Route::JabuOcto`'s end): `INFTABLE_RUTO_ABDUCTED` (0x146).
+fn jabu_big_octo(s: &mut SaveContext) {
+    jabu_sapphire(s);
+    s.set_inf_table(0x146);
 }
 
 /// `SCENE_JABU_JABU_BOSS` (`scene_table.h`: 0x13).

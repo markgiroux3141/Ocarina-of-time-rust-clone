@@ -389,7 +389,7 @@ fn big_octos_platform_waits_for_ruto_then_rises_and_brings_big_octo() {
     assert!((ob(&mut w, h).actor.world_pos.y - (home.y + 500.0)).abs() < 0.1);
     assert_eq!(ob(&mut w, h).camera_setting, oot_game::camera::CAM_SET_DUNGEON0);
     assert_eq!(sfx(&w, h, objects::NA_SE_EV_BUYOSTAND_STOP_A), 1);
-    // Ruto's DUNGEON1: Big Octo (a placeholder until milestone 8) spawned as its child,
+    // Ruto's DUNGEON1: Big Octo (En_Bigokuta params 0) spawned as its child,
     // INFTABLE_RUTO_ABDUCTED; 10 frames on the flag cleared, 40 more and it descends.
     ob(&mut w, h).camera_setting = objects::CAM_SET_DUNGEON1;
     update(&mut w, h);
@@ -417,6 +417,67 @@ fn big_octos_platform_waits_for_ruto_then_rises_and_brings_big_octo() {
     assert_eq!(ob(&mut w, h).action, objects::Action::WaitForPlayerInRange);
     assert_eq!(ob(&mut w, h).actor.world_pos.y, home.y - 125.0);
     assert_eq!(ob(&mut w, h).actor.shape_rot.y, 0x4000);
+}
+
+/// The sub camera one-point `cs_id` runs on, if any.
+fn onepoint_cam(w: &PlayState, cs_id: i16) -> Option<&oot_game::camera::GameCamera> {
+    w.sub_cameras.iter().flatten().find(|c| c.cs_id == cs_id)
+}
+
+#[test]
+fn big_octos_platform_starts_one_points_3070_3080_and_3090() {
+    use oot_game::onepoint::CAM_SET_CS_C;
+    let Some(a) = assets() else { return };
+    let mut w = jabu(&a, 6);
+    idle(&mut w, 320);
+    let home = Vec3::new(-1360.0, -1025.0, -3343.0);
+    let h = find::<BgBdanObjects>(&w, objects::JABU_OBJECTS_TYPE_BIG_OCTO_PLATFORM, home);
+    // z_onepointdemo.c's rows: (actionFlags, initFlags, timer, roll, fov, lerp, at, eye); the
+    // init field PLAYER_CSACTION_* (0xFF: ONEPOINT_CS_INIT_FIELD_NONE).
+    let row = |w: &PlayState, t: &str, i: usize| {
+        let k = w.onepoint.keyframes[w.onepoint.table(t)][i];
+        (k.action_flags, k.init_field, k.init_flags, k.timer_init, k.roll_target_init, k.fov_target_init, k.lerp_step_scale, k.at_target_init, k.eye_target_init)
+    };
+    // 3070 (Ruto's CAM_SET_NORMAL0, Link within 250): D_801215E4's ten keyframes on
+    // CAM_SET_CS_C, Link held (its first row's PLAYER_CSACTION_8), and a QUAKE_TYPE_3 on the sub
+    // camera: speed 22000, y 2, roll 200, 10 frames.
+    assert_eq!(w.onepoint.len(w.onepoint.table("D_801215E4")), 10);
+    assert_eq!(row(&w, "D_801215E4", 0), (15, 8, 0x4141, 20, 0, 30.0, 1.0, Vec3::new(0.0, 120.0, 0.0), Vec3::new(-10.0, 140.0, -90.0)));
+    assert_eq!(row(&w, "D_801215E4", 4), (15, 9, 0x0101, 40, -5, 70.0, 1.0, Vec3::new(-973.0, -924.0, -3263.0), Vec3::new(-1190.0, -1010.0, -3365.0)));
+    assert_eq!(row(&w, "D_801215E4", 9), (17, 0xFF, 0x0000, 1, 0, 60.0, 1.0, Vec3::splat(-1.0), Vec3::splat(-1.0)));
+    ob(&mut w, h).camera_setting = CAM_SET_NORMAL0;
+    ob(&mut w, h).actor.xz_dist_to_player = 100.0;
+    update(&mut w, h);
+    let cam = onepoint_cam(&w, 3070).expect("one-point 3070's camera");
+    assert_eq!((cam.setting, cam.cs_info.key_frame_cnt), (CAM_SET_CS_C, 10));
+    assert_eq!(cam.cs_info.key_frames.map(|k| (k.table, k.start)), Some((w.onepoint.table("D_801215E4"), 0)));
+    let sub = cam.cam_id;
+    let q = w.quake.requests.iter().find(|r| r.cam_id == sub).expect("3070's quake");
+    assert_eq!((q.type_, q.speed, q.y, q.x, q.fov, q.up_pitch_offset, q.duration), (oot_game::quake::QUAKE_TYPE_3, 22000, 2, 0, 200, 0, 10));
+    // 3080, on Big Octo as the platform comes down with him: D_80121774's four keyframes.
+    assert_eq!(w.onepoint.len(w.onepoint.table("D_80121774")), 4);
+    assert_eq!(row(&w, "D_80121774", 1), (1, 1, 0x0142, 39, 2, 70.0, 1.0, Vec3::new(0.0, -20.0, 10.0), Vec3::new(-1140.0, -1010.0, -3560.0)));
+    ob(&mut w, h).action = objects::Action::OctoPlatformDescendWithBigOcto;
+    // Its fall 0.5 faster each frame: from 0.4 short of 70 below home, there at once.
+    ob(&mut w, h).actor.world_pos.y = home.y - 69.6;
+    ob(&mut w, h).actor.velocity.y = 0.0;
+    update(&mut w, h);
+    assert_eq!(ob(&mut w, h).action, objects::Action::OctoPlatformWaitForBigOctoToStartBattle);
+    let cam = onepoint_cam(&w, 3080).expect("one-point 3080's camera");
+    assert_eq!((cam.setting, cam.cs_info.key_frame_cnt), (CAM_SET_CS_C, 4));
+    assert_eq!(cam.cs_info.key_frames.map(|k| (k.table, k.start)), Some((w.onepoint.table("D_80121774"), 0)));
+    // 3090, Link on the sunk platform: Player held (PLAYER_CSACTION_8 with the actors halted),
+    // D_80121814's four keyframes (the first Link's PLAYER_CSACTION_76).
+    assert_eq!(w.onepoint.len(w.onepoint.table("D_80121814")), 4);
+    assert_eq!(row(&w, "D_80121814", 0), (15, 76, 0x0101, 5, 0, 40.0, 1.0, Vec3::new(-1400.0, -540.0, -3327.0), Vec3::new(-1254.0, -20.0, -3357.0)));
+    let bg = ob(&mut w, h).bg;
+    ob(&mut w, h).action = objects::Action::WaitForPlayerInRange;
+    stand(&w, bg, DYNA_INTERACT_PLAYER_ON_TOP);
+    update(&mut w, h);
+    assert_eq!(ob(&mut w, h).action, objects::Action::RaiseToUpperPosition);
+    let cam = onepoint_cam(&w, 3090).expect("one-point 3090's camera");
+    assert_eq!((cam.setting, cam.cs_info.key_frame_cnt), (CAM_SET_CS_C, 4));
+    assert_eq!(cam.cs_info.key_frames.map(|k| (k.table, k.start)), Some((w.onepoint.table("D_80121814"), 0)));
 }
 
 const ROOM_1_SPOUT: Vec3 = Vec3::new(341.0, -1233.0, -1704.0);

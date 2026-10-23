@@ -16,10 +16,10 @@ last section). The phase starts from the `fairy-magic` preset (GAME-09's exit re
 | 2 | Zora's River and Zora's Domain to the silver scale | done (2026-10-21) |
 | 3 | Ruto's letter, King Zora and Lord Jabu-Jabu | done (2026-10-21) |
 | 4 | Jabu-Jabu to the boomerang | done (2026-10-21) |
-| 5 | Jabu-Jabu to Barinade | committed (2026-10-21), hand test owed |
-| 6 | Barinade and the Zora's Sapphire (the exit's first part) | committed (2026-10-21), hand test owed |
-| 7 | The Ocarina of Time and the Song of Time (the exit's second part) | |
-| 8 | The rest of Jabu-Jabu | |
+| 5 | Jabu-Jabu to Barinade | done (2026-10-22, hand-tested) |
+| 6 | Barinade and the Zora's Sapphire (the exit's first part) | done (2026-10-22, hand-tested) |
+| 7 | The Ocarina of Time and the Song of Time (the exit's second part) | done (2026-10-22, hand-tested) |
+| 8 | The rest of Jabu-Jabu | done (2026-10-22, hand-tested) |
 | 9 | The frogs and the scarecrows | |
 
 ## The survey
@@ -736,8 +736,7 @@ scripts\run\sandbox-jabu-runs.bat
 
 ## Milestone 5: Jabu-Jabu's Belly to Barinade
 
-**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
-[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+**Status:** done: committed 2026-10-21, hand-tested 2026-10-22 (the list below under "By hand").
 
 **The answer:** Ruto (`En_Ru1`) whole, every type, with Player's two Ruto checks; the tentacles,
 the electric barriers, the crate and the room timers whole; the silver scale in the story's
@@ -882,8 +881,7 @@ scripts\run\sandbox-jabu-runs.bat
 
 ## Milestone 6: Barinade and the Zora's Sapphire
 
-**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
-[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+**Status:** done: committed 2026-10-21, hand-tested 2026-10-22 (the list below under "By hand").
 
 **The answer:** Barinade (`Boss_Va`) whole, `Door_Warp1`'s Ruto warp whole, and the fountain's
 `gZorasFountainSapphireCs` played through with what was already ported; two short scripted runs
@@ -955,6 +953,24 @@ Scripts: `scripts\run\game-barinade.bat` (menu 160: empty, `fight`, `beaten`, `f
 - The fountain's `ENTR_ZORAS_FOUNTAIN_0` (the cutscene's way out) puts Link in the water by
   Jabu-Jabu (-1480, -10, 1755): he treads water there, as after the original's cutscene.
 
+### Found by hand (2026-10-22)
+
+- **The blue warp looked cut in the middle** (Ruto's, and the earlier bosses'): `gWarpPortalDL`
+  loads its 4 KB texture twice, at TMEM 0 and 2 KB, so tile 0 reads it shifted half its height
+  (the load wraps round TMEM) and tile 1 reads it straight; its combiner takes `(TEXEL1 - TEXEL0) x
+  LOD_FRACTION + TEXEL0`. The renderer had no `LOD_FRACTION` (0: TEXEL0, the shifted copy). The RDP
+  computes it whenever the combiner reads it, and with sharpen and detail off and `gSPTexture`'s
+  level 0 every pixel is "distant": 0xFF, TEXEL1. Fixed: materials carry that static fraction
+  (`Material::lod_frac`, pack format 31; the per-pixel case is BACKLOG #109).
+- **Targeting Barinade, then a C button** (the slingshot): the attention sound repeated about five
+  times a second and the screen stuttered. Two of Player's calls (`func_80834D2C`, the item raised,
+  and the first-person action) used only the clearing half of `Player_UpdateHostileLockOn`, dropping
+  the hostile lock-on: the raise went first person, which the lock ended the next frame, again and
+  again (the camera flipping between `CAM_MODE_Z_TARGET_UNFRIENDLY` and `CAM_MODE_AIM_CHILD`, the
+  attention sound each time). Fixed (BACKLOG #108; found with the `[target]`, `[camera]` and `[frame]`
+  lines at `RUST_LOG=info`, `[sfx]` at debug).
+- Otherwise fine: his intro, the fight, his death, Ruto's warp and the Sapphire's cutscene.
+
 ### Known gaps
 
 - Approximated in `Boss_Va` (ADR 0084): the fog swaps round a stunned Bari's shadow; a tumour's
@@ -995,8 +1011,7 @@ scripts\run\sandbox-barinade.bat
 
 ## Milestone 7: The Ocarina of Time and the Song of Time
 
-**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
-[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+**Status:** done: committed 2026-10-21, hand-tested 2026-10-22 (the list below under "By hand").
 
 **The answer:** `Item_Ocarina` whole (every type) and `En_Ganon_Mant` whole (by a helper), and the
 cutscenes from the drawbridge to the field after the Song of Time played through with what was
@@ -1107,3 +1122,137 @@ scripts\run\sandbox-ocarina-of-time.bat
    it back (C-Right, A, C-Down, C-Right, A, C-Down); back to the field.
 4. `temple`: the Temple of Time's cutscene alone. `field`: the field afterwards (the Ocarina of Time
    on the item page, the Song of Time on the quest page).
+
+## Milestone 8: The rest of Jabu-Jabu's Belly
+
+**Status:** done: built 2026-10-21, hand-tested 2026-10-22 (the list below under "By hand"; what it found under "Found by hand").
+
+**The answer:** Big Octo (`En_Bigokuta`), the Bari (`En_Vali`) and the Tailpasarans (`En_Tp`) whole
+(by two helpers), one-points 3070, 3080 and 3090, and Ruto's way to the Sapphire played through
+with what was already ported: every actor Jabu-Jabu's Belly places or spawns is ported. Two
+scripted runs from room 3 by Ruto (`jabu-room-7`, the room marked cleared), no fights:
+
+- **Ruto onto the blue switch** (`Route::JabuSwitch`): her two talks (0x404C; 0x404D, she sits and
+  asks to be carried, 611), lifted (635), carried off the east floor into the pool and onto the
+  yellow switch 0x3A (714): the spout rises under them to about -1000 (802); a run west off its top
+  lands on the west ledge; down its south slope to the south floor, Ruto put down on the blue
+  switch 0x3C (1049): door 12's flag (1070).
+- **Ruto to the Sapphire and Big Octo** (`Route::JabuOcto`, the green tentacle's flag 0x0C a debug
+  start's): the same way up the spout, west along the ledge past the green barrier's place, door
+  21 (997) into room 6 carrying her: `gRutoFoundSapphireCs` (0x404F, 1175); thrown onto the
+  platform (1203): `gRutoObtainingSapphireCs` (0x4050 to 0x4052), the Sapphire hers (1832); Link
+  near, the platform rises with her (one-point 3070, 1840); at the top her 0x4048 and Big Octo
+  spawned on it (`INFTABLE_RUTO_ABDUCTED`, 2007); down with him (3080), Link put at (-1130, -1025,
+  -3500), Big Octo on its rim and the battle on (2217): the fight's start.
+
+Scripts: `scripts\run\game-jabu.bat` (menu 157) gains `octo`, `platform`, `bigocto`, `bari`,
+`tailpasaran`, `room4`, `room13`; `test-jabu.bat` (158) and `sandbox-jabu-runs.bat` (159) gain the
+new tests and runs.
+
+### What was built
+
+- **`En_Bigokuta`** whole, by a helper (`en_bigokuta.rs`): his params-0 arrival with the platform
+  (it writes 1, he jumps to its rim and writes 2: the platform's battle), params 3 (met before:
+  spawned at the platform's init, fighting at once); circling the rim (turning the platform
+  against him through his parent's `world.rot.y`), the turn about, the stun (a Deku Nut 20 frames,
+  else 80), the spin and dizzy frames, a bomb's bounce, hurt, sinking and rising across from Link,
+  his death (`Flags_SetClear`, `CAM_SET_DUNGEON0`, drop table 11: the platform sinks); his hard
+  front and soft back (only his back is hurt), the knock-back, the mini-boss music,
+  `CAM_SET_BIG_OCTO`; his draw in three opaque bakes split where limbs 10 and 15 set the
+  environment colour, and a translucent one for his death's fade.
+- **`En_Vali`** and **`En_Tp`** whole, by a second helper (`en_vali.rs`, `en_tp.rs`): the Bari's
+  drop from above, its spin and tentacles (their quads swept from the limbs in `draw_update`), its
+  shock and lightning, its stun, burn, freeze and fast spin, its death into three Biri; the
+  Tailpasaran's head and seven segments as a chain, rising, hovering, attacking and diving back to
+  its place, killed whole from any segment (each leaving a fading remnant), stunned whole by a nut.
+- **One-points 3070, 3080, 3090** (`OnePointCutscene_SetInfo`): their keyframe tables, 3070's quake
+  on the sub camera, 3090's Player hold.
+- **The runs' tasks:** `Task::LiftWho` (lift an actor by `Who`: `Who::Ruto`); `Task::PutDown` presses
+  A again when a switch's camera took the first.
+- **The presets:** `jabu-sapphire` (a debug start: the green tentacle's flag, Ruto's flags through
+  `INFTABLE_RUTO_HAS_SAPPHIRE` and her switch flag 0x02; in room 6 she waits on the platform) and
+  `jabu-big-octo` (`Route::JabuOcto`'s end: `INFTABLE_RUTO_ABDUCTED`; re-entered, Big Octo is
+  spawned at once and the battle's on), checked against the run.
+
+### The way, settled
+
+- **Room 3** (the floors probed, then Link driven): Ruto sits on the east floor (-1113), which the
+  pool (its floor -1209, 3 deep, its water -1206) cuts off from the rest. Link drops into the pool
+  but can't climb the 96 back out. The west ledge (-1015, door 21's, the green barrier on it) and
+  the south floor (-1113, the blue switch's) have slopes for sides (20 to 30 up for 10 across) that
+  Link slides down, not up. The way up is the yellow switch 0x3A in the pool, over the spout
+  `En_Siofuki` 0x0EBF: it rises 400 for 300 frames and holds Link at about -1000 (bobbing 4); a run
+  west off its top carries him over the 150 or so to the ledge (as the game's walkthroughs say:
+  "step on the yellow switch ... jump over to the highest platform you can reach"). Room 2's six
+  holes land on the east floor, the pool, the ledge, the west floor and the south floor.
+- **Room 6:** a round basin (its floor -1025, 3 deep) with the platform in its middle (its top 56
+  over the floor while it waits) and a walkway at y 80 above, where the Bari floats (door 3 to room
+  4). The platform rises only with Link within 250 of it, which a throw from 210 leaves him short
+  of: the run steps closer.
+- **BACKLOG #104** (Ruto's 71 jump): the C does the same (`Animation_Change` loads the walk's frame
+  0, her `prevTransl` still the spawn's zero; she's hidden until that frame). Closed.
+
+### Results
+
+- Tests: the helpers' `en_bigokuta` (12), `en_vali` (12), `en_tp` (10); `jabu_objects` gains one-points
+  3070, 3080 and 3090; `jabu_octo_runs` (2: the two runs, `JabuOcto`'s end checked against
+  `jabu-big-octo`); `jabu_runs`' starts test covers the seven new starts.
+- 1,736 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings.
+- Goldens: all 322 of `out/golden_base36`'s hashes the same; 9 new hashes in 6 cases (`jabu_switch`,
+  `jabu_octo`, `jabu_octo_platform`, `jabu_big_octo`, `jabu_bari`, `jabu_tailpasaran`): 331 hashes,
+  247 cases (`out/golden_base37`). The pack is still format 30, re-imported into `out/data27` for the
+  three overlays' bakes.
+- COVERAGE: Jabu-Jabu's Belly 37 of 37; Phase 11 32 of 35 (`En_Fr`, `En_Kakasi`, `En_Kakasi3` left:
+  milestone 9); 217 ported overall.
+
+### Found by hand (2026-10-22)
+
+- **Room 4's floating Flobbery** (`En_Brob` at y -20, over a floor at -40): walked into after its
+  stun, it damages Link and voids him out. The C does the same (its box's walls are skipped under
+  Link's dipped wall check, its bottom face is a ceiling over a floor of another mesh: crushed);
+  kept as the C, the user's call (BACKLOG #107).
+- The blue warp's look and the lock-on stutter: milestone 6's findings.
+- Otherwise fine: the `bari` run and the others.
+
+### Known gaps
+
+- Big Octo's, the Bari's and the Tailpasarans' draws and fights haven't been seen on screen (the hand
+  test). Their `Rumble_Request`s aren't ported (as elsewhere).
+- Milestones 5's, 6's and 7's hand tests are still owed ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)).
+
+### How to check
+
+```
+scripts\run\test-jabu.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-jabu-runs.bat
+```
+
+### By hand
+
+`scripts\run\game-jabu.bat` (menu 157):
+
+1. `octo` (room 3 by Ruto, the green barrier gone): talk to her twice (she sits), lift her (A),
+   walk off the edge into the water, onto the yellow switch in the middle (its camera), ride the
+   spout up, run west off its top onto the ledge; along it west through door 21 into room 6: her
+   cutscene as she sees the Sapphire; throw her onto the platform: she walks to the Sapphire and
+   holds it up (her texts); walk towards the platform: it rises with her (the camera on it), at
+   the top she cries out and Big Octo takes her, the platform comes down with him; his jump to the
+   rim and the fight's start. Also: from the ledge, down its south slope, put her on the blue
+   switch (door 12 opens).
+2. `platform` (room 6, the Sapphire hers): she stands on the platform; walk towards it: the same
+   rise, Big Octo's arrival and the descent.
+3. `bigocto` (beside Big Octo, the battle on): his circling (the platform turns against him), his
+   front knocks you back; the boomerang or a nut stuns him, then hit his back with the sword (his
+   swollen back, the colours); his death and the room's clear: the platform sinks; step on it: it
+   lifts you (one-point 3090).
+4. `bari` (room 6's upper walkway): walk towards where it hangs: it drops, spins with its tentacles
+   out; touch it (the shock); sword it (it shocks you back, then takes damage); boomerang or nut
+   (stunned); its death into three Biri.
+5. `tailpasaran` (room 12): walk in: the three heads rise, hover and fly at you trailing their
+   glowing segments, dive into the floor and come back; a nut stuns a whole one; hit a segment
+   with the sword or boomerang: the whole tail dies segment by segment.
+6. `room4`, `room13`: rooms 4 and 13 inside their doors (Flobberies, a Lizalfos, crates and hookshot
+   posts; Stingers, the lens-only Keese and its timer).

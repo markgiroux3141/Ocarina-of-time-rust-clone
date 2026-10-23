@@ -7,7 +7,7 @@ are [ROADMAP.md](ROADMAP.md)'s; each scene's layers are assigned in the script's
 first phase whose scenes place it. "Gaps noted": its module docs say something is left out
 (a placeholder spawned, a part not ported, a call logged); BACKLOG.md has the details.
 
-**Actor overlays:** 429 in the table, 214 ported (49%). Placed in the game's scenes: 341, 181 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 32 ported.
+**Actor overlays:** 429 in the table, 217 ported (50%). Placed in the game's scenes: 341, 183 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 33 ported.
 
 ## By phase
 
@@ -20,7 +20,7 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 | 8: Castle Town, Hyrule Castle and Kakariko (GAME-07) | done | 48 | 45 | `Bg_Toki_Swd`, `Demo_6K`, `En_Xc` |
 | 9: The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08) | done | 10 | 10 | - |
 | 10: Death Mountain, Goron City and Dodongo's Cavern (GAME-09) | done | 33 | 33 | - |
-| 11: Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10) | in progress | 35 | 30 | `En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Tp`, `En_Vali` |
+| 11: Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10) | in progress | 35 | 32 | `En_Fr`, `En_Kakasi`, `En_Kakasi3` |
 | 12: The Temple of Time and the adult world | planned | 4 | 0 | `En_Nb`, `En_Rl`, `En_Ru2`, `Obj_Mure3` |
 | 13: Epona and the adult Hyrule Field | planned | 7 | 0 | `Bg_Ingate`, `Bg_Spot00_Break`, `Bg_Umajump`, `En_Horse`, `En_Horse_Game_Check`, `En_Ma3`, `En_Po_Field` |
 | 14: The Forest Temple | planned | 21 | 0 | `Bg_Mori_Bigst`, `Bg_Mori_Elevator`, `Bg_Mori_Hashira4`, `Bg_Mori_Hineri`, `Bg_Mori_Idomizu`, `Bg_Mori_Kaitenkabe`, `Bg_Mori_Rakkatenjo`, `Bg_Po_Event`, `Bg_Po_Syokudai`, `Boss_Ganondrof`, `En_Bb`, `En_Floormas`, `En_Hs`, `En_Kakasi2`, `En_Mb`, `En_Mm2`, `En_Po_Relay`, `En_Test`, `En_Wallmas`, `Obj_Blockstop`, `Obj_Dekujr` |
@@ -33,7 +33,7 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 
 ## Ported with gaps noted
 
-`Bg_Bdan_Objects`, `Bg_Ddan_Kd`, `Bg_Dodoago`, `Bg_Gnd_Darkmeiro`, `Bg_Relay_Objects`, `Bg_Spot06_Objects`, `Bg_Spot16_Bombstone`, `Bg_Treemouth`, `Boss_Dodongo`, `Boss_Goma`, `Boss_Va`, `Demo_Du`, `Demo_Im`, `Demo_Kankyo`, `Demo_Sa`, `Door_Shutter`, `Door_Warp1`, `Eff_Dust`, `En_A_Obj`, `En_Ani`, `En_Arrow`, `En_Bom`, `En_Bombf`, `En_Box`, `En_Cs`, `En_Daiku_Kakariko`, `En_Dnt_Nomal`, `En_Dodojr`, `En_Dodongo`, `En_Door`, `En_Du`, `En_Elf`, `En_Encount1`, `En_Ex_Item`, `En_Ex_Ruppy`, `En_Fire_Rock`, `En_Firefly`, `En_Fu`, `En_G_Switch`, `En_Ganon_Mant`, `En_GirlA`, `En_Go2`, `En_Hata`, `En_Heishi4`, `En_Hs2`, `En_Hy`, `En_In`, `En_Ishi`, `En_Item00`, `En_Kanban`, `En_Ko`, `En_Kz`, `En_Light`, `En_M_Thunder`, `En_Ma1`, `En_Ma2`, `En_Md`, `En_Mk`, `En_Ms`, `En_Mu`, `En_Niw_Lady`, `En_Ossan`, `En_Part`, `En_Poh`, `En_Rd`, `En_Rr`, `En_Ru1`, `En_Si`, `En_Ssh`, `En_St`, `En_Sw`, `En_Tana`, `En_Tg`, `En_Tite`, `En_Tk`, `En_Toryo`, `En_Viewer`, `En_Weather_Tag`, `En_Wf`, `En_Wonder_Item`, `En_Wonder_Talk`, `En_Zf`, `Item_B_Heart`, `Item_Etcetera`, `Obj_Bean`, `Obj_Bombiwa`, `Obj_Elevator`, `Obj_Hsblock`, `Obj_Kibako2`, `Obj_Switch`, `Obj_Syokudai`, `Object_Kankyo`, `Oceff_Spot`, `Oceff_Wipe`, `Player`
+`Bg_Ddan_Kd`, `Bg_Dodoago`, `Bg_Gnd_Darkmeiro`, `Bg_Relay_Objects`, `Bg_Spot06_Objects`, `Bg_Spot16_Bombstone`, `Bg_Treemouth`, `Boss_Dodongo`, `Boss_Goma`, `Boss_Va`, `Demo_Du`, `Demo_Im`, `Demo_Kankyo`, `Demo_Sa`, `Door_Shutter`, `Door_Warp1`, `Eff_Dust`, `En_A_Obj`, `En_Ani`, `En_Arrow`, `En_Bom`, `En_Bombf`, `En_Box`, `En_Cs`, `En_Daiku_Kakariko`, `En_Dnt_Nomal`, `En_Dodojr`, `En_Dodongo`, `En_Door`, `En_Du`, `En_Elf`, `En_Encount1`, `En_Ex_Item`, `En_Ex_Ruppy`, `En_Fire_Rock`, `En_Firefly`, `En_Fu`, `En_G_Switch`, `En_Ganon_Mant`, `En_GirlA`, `En_Go2`, `En_Hata`, `En_Heishi4`, `En_Hs2`, `En_Hy`, `En_In`, `En_Ishi`, `En_Item00`, `En_Kanban`, `En_Ko`, `En_Kz`, `En_Light`, `En_M_Thunder`, `En_Ma1`, `En_Ma2`, `En_Md`, `En_Mk`, `En_Ms`, `En_Mu`, `En_Niw_Lady`, `En_Ossan`, `En_Part`, `En_Poh`, `En_Rd`, `En_Rr`, `En_Si`, `En_Ssh`, `En_St`, `En_Sw`, `En_Tana`, `En_Tg`, `En_Tite`, `En_Tk`, `En_Toryo`, `En_Viewer`, `En_Weather_Tag`, `En_Wf`, `En_Wonder_Item`, `En_Wonder_Talk`, `En_Zf`, `Item_B_Heart`, `Item_Etcetera`, `Obj_Bean`, `Obj_Bombiwa`, `Obj_Elevator`, `Obj_Hsblock`, `Obj_Kibako2`, `Obj_Switch`, `Obj_Syokudai`, `Object_Kankyo`, `Oceff_Spot`, `Oceff_Wipe`, `Player`
 
 ## Only spawned
 
@@ -70,7 +70,7 @@ each comes with its spawner.
 | `En_Arrow` | ported, gaps noted |
 | `En_Attack_Niw` | ported |
 | `En_Bdfire` | ported |
-| `En_Bigokuta` | not yet |
+| `En_Bigokuta` | ported |
 | `En_Bird` | not yet |
 | `En_Bom` | ported, gaps noted |
 | `En_Bom_Bowl_Pit` | not yet |
@@ -185,7 +185,7 @@ each comes with its spawner.
 | `ddan_boss` (DODONGOS_CAVERN_BOSS) | 10 | `SDC_DEFAULT (ported)` | 6 | 6 |
 | `daiyousei_izumi` (GREAT_FAIRYS_FOUNTAIN_MAGIC) | 10, 15, 19 | `SDC_GREAT_FAIRYS_FOUNTAIN (ported)` | 4 | 4 |
 | `spot18` (GORON_CITY) | 10, 15, 19 | `SDC_GORON_CITY (ported)` | 27 | 27 |
-| `bdan` (JABU_JABU) | 11 | `SDC_JABU_JABU (ported)` | 37 | 35 |
+| `bdan` (JABU_JABU) | 11 | `SDC_JABU_JABU (ported)` | 37 | 37 |
 | `bdan_boss` (JABU_JABU_BOSS) | 11 | `SDC_JABU_JABU (ported)` | 3 | 3 |
 | `hylia_labo` (LAKESIDE_LABORATORY) | 11, 16 | `SDC_LAKESIDE_LABORATORY (ported)` | 5 | 5 |
 | `spot03` (ZORAS_RIVER) | 11, 16 | `SDC_ZORAS_RIVER (ported)` | 25 | 24 |
@@ -208,7 +208,7 @@ each comes with its spawner.
 | `HAKAdanCH` (BOTTOM_OF_THE_WELL) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 33 | 24 |
 | `HAKAdan_bs` (SHADOW_TEMPLE_BOSS) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 3 | 2 |
 | `jyasinzou` (SPIRIT_TEMPLE) | 18 | `SDC_SPIRIT_TEMPLE` | 66 | 37 |
-| `men` (GERUDO_TRAINING_GROUND) | 18 | `SDC_GERUDO_TRAINING_GROUND` | 40 | 22 |
+| `men` (GERUDO_TRAINING_GROUND) | 18 | `SDC_GERUDO_TRAINING_GROUND` | 40 | 23 |
 | `gerudoway` (THIEVES_HIDEOUT) | 18 | `SDC_THIEVES_HIDEOUT` | 11 | 7 |
 | `jyasinboss` (SPIRIT_TEMPLE_BOSS) | 18 | `SDC_DEFAULT (ported)` | 8 | 2 |
 | `tent` (CARPENTERS_TENT) | 18 | `SDC_DEFAULT (ported)` | 3 | 1 |

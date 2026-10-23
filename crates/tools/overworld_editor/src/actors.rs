@@ -286,11 +286,14 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Siofuki", "Water spout", Group::Object),
     ("En_Okuta", "Octorok", Group::Enemy),
     ("En_Ba", "Parasitic tentacle", Group::Enemy),
+    ("En_Bigokuta", "Big Octo", Group::Enemy),
     ("En_Bx", "Electrified tentacle barrier", Group::Enemy),
     ("Obj_Kibako", "Small crate", Group::Object),
     ("Obj_Roomtimer", "Room clear (timer)", Group::Trigger),
     ("En_Ru1", "Ruto, child", Group::Character),
     ("En_Ganon_Mant", "Ganondorf's cape", Group::SetPiece),
+    ("En_Vali", "Bari", Group::Enemy),
+    ("En_Tp", "Tailpasaran", Group::Enemy),
 ];
 
 /// An actor the editor can place.

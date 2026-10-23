@@ -311,6 +311,7 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
         if ctx.reticle_spin_counter != 0 {
             ctx.reticle_spin_counter = 0;
             audio.play_sfx_centered(NA_SE_SY_LOCK_OFF);
+            log::info!("[target] lock off (zTargetActiveTimer {})", f.player_timer);
         }
     }
     let mut candidate = None;
@@ -401,6 +402,7 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
             ctx.targeted = Some(h);
             // ACTOR_EN_BOOM (reticleFadeAlphaControl 0): the boomerang isn't ported.
             audio.play_sfx_centered(if a.is_hostile() { NA_SE_SY_LOCK_ON } else { NA_SE_SY_LOCK_ON_HUMAN });
+            log::info!("[target] lock on actor {:04X} (params {:04X}) at {}", a.id, a.params, a.focus_pos);
         }
         ctx.target_center_pos = Vec3::new(a.world_pos.x, a.world_pos.y - (a.shape_y_offset * a.scale.y), a.world_pos.z);
         if ctx.reticle_spin_counter == 0 {

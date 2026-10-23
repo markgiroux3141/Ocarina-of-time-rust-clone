@@ -367,6 +367,15 @@ CASES = [
     ("ocarina_of_time", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ocarina_of_time_dive", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--frames", "250", "--screenshot", "{shot}"]),
     ("ocarina_of_time_temple", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "zelda-fled", "--script", "ocarina-of-time", "--frames", "1300", "--screenshot", "{shot}"]),
+    # GAME-10 milestone 8: Ruto carried onto room 3's blue switch (the run), carried to room 6 and
+    # thrown onto Big Octo's platform (the run; a shot of the descent with Big Octo), Big Octo's
+    # fight's start re-entered, room 6's Bari dropped and room 12's Tailpasarans risen (Link near).
+    ("jabu_switch", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-7", "--script", "jabu-switch", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_octo", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-7", "--script", "jabu-octo", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_octo_platform", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-7", "--script", "jabu-octo", "--frames", "2160", "--screenshot", "{shot}"]),
+    ("jabu_big_octo", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-big-octo", "--room", "6", "--at=-1130,-1025,-3500,-10136", "--script", "still", "--frames", "120", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_bari", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-web", "--room", "6", "--at=-1360,80,-2560,0", "--script", "still", "--frames", "150", "--screenshot", "{shot}"]),
+    ("jabu_tailpasaran", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-web", "--room", "12", "--at=-660,-340,-5450,-32768", "--script", "still", "--frames", "150", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

@@ -1,6 +1,6 @@
 # 0085: The Ocarina of Time and the Song of Time
 
-- **Status:** accepted, built in GAME-10 milestone 7 (2026-10-21); its hand test owed ([HAND-TESTS-OWED.md](../HAND-TESTS-OWED.md))
+- **Status:** accepted, built in GAME-10 milestone 7 (2026-10-21), hand-tested 2026-10-22
 - **Date:** 2026-10-21
 - **Builds on:** [ADR 0084](0084-barinade-rutos-warp-and-the-zoras-sapphire.md) (the three stones,
   `zora-sapphire`), [ADR 0081](0081-water-bottles-and-the-underwater-view.md) (the dive and the

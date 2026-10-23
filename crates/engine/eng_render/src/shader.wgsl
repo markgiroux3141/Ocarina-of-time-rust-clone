@@ -18,7 +18,7 @@ struct Material {
     sel: array<vec4<u32>, 4>,
     prim: vec4<f32>,
     env: vec4<f32>,
-    // x: prim LOD fraction, y: alpha-test threshold (0 = off)
+    // x: prim LOD fraction, y: alpha-test threshold (0 = off), w: the static LOD fraction
     params: vec4<f32>,
     // x: flag bits (1 lit, 2 texgen, 4 opaque-output, 8 fog), y: two-cycle, z/w: the draw's
     // own fog multiplier and offset (f32 bits) when fog_color.w is 1
@@ -125,6 +125,7 @@ fn csel(i: u32, comb: vec4<f32>, a: vec4<f32>, b: vec4<f32>, shade: vec4<f32>) -
         case 15u: { return vec3<f32>(m.prim.a); }
         case 16u: { return vec3<f32>(shade.a); }
         case 17u: { return vec3<f32>(m.env.a); }
+        case 18u: { return vec3<f32>(m.params.w); }
         case 19u: { return vec3<f32>(m.params.x); }
         default: { return vec3<f32>(0.0); }
     }
@@ -139,6 +140,7 @@ fn asel(i: u32, comb: vec4<f32>, a: vec4<f32>, b: vec4<f32>, shade: vec4<f32>) -
         case 4u: { return shade.a; }
         case 5u: { return m.env.a; }
         case 6u: { return 1.0; }
+        case 18u: { return m.params.w; }
         case 19u: { return m.params.x; }
         default: { return 0.0; }
     }
