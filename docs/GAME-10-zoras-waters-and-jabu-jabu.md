@@ -8,7 +8,10 @@ the Zora's Sapphire; then, with the three stones, Zelda's escape, the Ocarina of
 and the Song of Time. Exit (ROADMAP's outline): the Zora's Sapphire, then the Ocarina of Time.
 
 **Status:** surveyed, proposed and decided (2026-10-20; the user took every recommendation: the
-last section). The phase starts from the `fairy-magic` preset (GAME-09's exit review).
+calls' section). The phase starts from the `fairy-magic` preset (GAME-09's exit review). **Done**
+(2026-10-23): its nine milestones built (the ninth's hand test deferred, the user's call:
+[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)) and its exit review (the last section): Phase 12 starts
+from `ocarina-of-time`.
 
 | # | Milestone | Status |
 |---|---|---|
@@ -20,7 +23,7 @@ last section). The phase starts from the `fairy-magic` preset (GAME-09's exit re
 | 6 | Barinade and the Zora's Sapphire (the exit's first part) | done (2026-10-22, hand-tested) |
 | 7 | The Ocarina of Time and the Song of Time (the exit's second part) | done (2026-10-22, hand-tested) |
 | 8 | The rest of Jabu-Jabu | done (2026-10-22, hand-tested) |
-| 9 | The frogs and the scarecrows | |
+| 9 | The frogs and the scarecrows | done (2026-10-23, the hand test deferred) |
 
 ## The survey
 
@@ -1256,3 +1259,197 @@ scripts\run\sandbox-jabu-runs.bat
    with the sword or boomerang: the whole tail dies segment by segment.
 6. `room4`, `room13`: rooms 4 and 13 inside their doors (Flobberies, a Lizalfos, crates and hookshot
    posts; Stingers, the lens-only Keese and its timer).
+
+## Milestone 9: The frogs and the scarecrows
+
+**Status:** done: built 2026-10-23, committed and pushed on the user's ask with the hand test
+deferred ("not too concerned about these features": the list below under "By hand", a row in
+[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)).
+
+**The answer:** the ocarina's part ADR 0061 left out (BACKLOG #47), and the three overlays that
+listen with it: the recording (`AudioOcarina_RecordSong`, `_SetRecordingSong`,
+`_SetRecordingState`, `_PlayLongScarecrowSong`) and the message box's scarecrow and frog modes, all
+in the main session; `En_Fr` (the frogs, one-point 4110) and `En_Kakasi`, `En_Kakasi3` (Bonooru)
+and `En_Kakasi2` (Pierre, the adult's, small enough to port whole; one-points 2260, 2270, 2280) by
+two helpers. Every actor Phase 11's scenes place is ported. Two scripted runs on a debug preset
+`ocarina-c` (`ocarina-of-time` with the Ocarina of Time back on C-Down and the Song of Storms):
+
+- **The frogs** (`Route::Frogs`, Zora's River on the log's song spot): the log's forced text
+  (0x22E, 64), the six songs in turn, each heard (`Task::OcarinaHeard`), danced to and rewarded
+  (0x40A9 and a purple rupee for each child song, 0x40AA and a piece of heart for the Song of
+  Storms), then with all six the song game (0x40AB; the fourteen notes of `gFrogsSongPtr`, each
+  played as the box waits for it, 3793; 0x40AC and the second piece of heart, 4052).
+- **Bonooru** (`Route::Bonooru`, Lake Hylia 70 in front of him): the ocarina out, his 0x40A4, eight
+  notes recorded (A, C-Down, A, C-Up twice over, 299), his 0x40A5 (the spawn song set, 494); talked
+  to, 0x40A0 and his playback (743). The end is the preset `scarecrow-song`.
+
+Scripts: `scripts\run\game-frogs.bat` (menu 166: empty, `choir`, `lake`, `longsong`, `bonooru`,
+`pierre`), `test-frogs.bat` (167), `sandbox-frogs.bat` (168).
+
+### What was built
+
+- **The recording** (`oot_game::audio::ocarina`, ADR 0087): the statics in `Ocarina`; a note
+  written at each change of pitch, volume, vibrato or bend; the long song into its 108 notes, the
+  spawn song into the memory game's song as a buffer, completed (the trailing rests cut, the first
+  entry dropped, the buttons mapped) and refused if it holds any of the twelve songs or one note
+  eight times; the long song after the credits wired to the cutscenes' misc 35. Tests:
+  `the_spawn_recording_keeps_eight_new_notes`, `_refuses_a_song_or_one_note`,
+  `recordings_turned_off` (unit tests against the C's arithmetic).
+- **The box's modes** (`oot_game::message`): `MSGMODE_SCARECROW_LONG_RECORDING_*`,
+  `_LONG_PLAYBACK`, `_SPAWN_RECORDING_*` (`_FAILED`: 0x40AD), `_SPAWN_PLAYBACK` and
+  `MSGMODE_FROGS_*`; the songs saved as the C's bytes and copied back into the ocarina where a play
+  state starts on a loaded file (`Sram_OpenSave`'s copies; `oot`'s start makes them for a preset's
+  song too). Tests in `tests/ocarina.rs`: `the_box_records_the_spawn_song`,
+  `_refuses_a_song_for_the_spawn_song`, `_records_the_long_song`,
+  `the_frogs_mode_takes_a_note_at_a_time`.
+- **`En_Fr`** whole (`en_fr.rs`, 9 tests): the song spot, the frogs out one by one, a note's jump,
+  the songs' dance and rewards, the song game and its timers, the draw (the skeleton in each
+  frog's colour, its eyes, limbs 7 and 8 facing the camera, the butterfly and its light);
+  `sFrogsSongNotes` in the pack (**pack format 32**); one-point 4110.
+- **`En_Kakasi`, `En_Kakasi3`, `En_Kakasi2`** whole (15 tests): the long song recorded and played
+  back; Bonooru's recording (a child's) and playback, the adult's check (`EVENTCHKINF_9C`); Pierre
+  hidden until the spawn song with `EVENTCHKINF_9C` (his switch flag, the attention camera, his
+  rise); one-points 2260, 2270, 2280.
+- **The runs' tasks:** `Task::OcarinaNotes` (the ocarina out to a listener that opens its own box,
+  A through its texts, then notes one at a time while the box is ready), `Task::OcarinaHeard`
+  (`Task::Ocarina` done when the song's heard), `Task::TextsFor` (A through texts until a `Cond`).
+- **The presets:** `ocarina-c` (the runs' start), `frogs-choir` (the six songs played: the song
+  game), `scarecrow-song` (`Route::Bonooru`'s end: the spawn song recorded as a child, the lake's
+  intro seen), `scarecrow-pierre` (and played back to Bonooru as an adult: Pierre comes up).
+
+### Results
+
+- Tests: the three files above (24), the box's four, the recording's three; `frogs_runs` (3: the
+  two runs, `Route::Bonooru`'s end checked against `scarecrow-song`, and Pierre risen to the song on
+  `game-frogs.bat`'s `pierre` start). 1,771 tests pass, 1 ignored; `cargo test -p layering` passes; no
+  warnings.
+- Goldens: all 331 of `out/golden_base39`'s hashes the same; 6 new hashes in 4 cases (`frogs`,
+  `frogs_game`, `bonooru`, `bonooru_recording`): 337 hashes, 251 cases, the same over two runs
+  (`out/golden_base40`). The pack is format 32, re-imported into `out/data27`.
+- COVERAGE: Phase 11 35 of 35; 221 ported overall (Pierre also counts in the adult scenes'
+  phases).
+
+### Corrections to the survey
+
+- The frogs' flags are 0xD1 (Zelda's Lullaby), 0xD2 (Epona's), 0xD3 (the Sun's), 0xD4 (Saria's),
+  0xD5 (the Song of Time), 0xD6 (the Song of Storms) and 0xD0 (the song game): `save.h`'s order,
+  not the songs'.
+- A child never sets `EVENTCHKINF_9C`: Bonooru records a child's song (and plays it back when
+  talked to), but only the adult's playback to him (0x40A8, 0x40A7) sets the flag Pierre needs.
+- The log has a forced text (`En_Wonder_Talk2` 0x4BBB, 0x22E) beside the song spot, read as Link
+  arrives.
+- Bonooru offers his recording to a child within 80 (`PLAYER_STATE2_23`), not the 120 of his talk.
+
+### Known gaps
+
+- The frogs', the scarecrows' and Pierre's draws, dances and cameras haven't been seen in a window
+  (the hand test); the headless shots look right.
+- The credits that would play the long song (`CS_MISC_LONG_SCARECROW_SONG`) aren't ported.
+
+### How to check
+
+```
+scripts\run\test-frogs.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-frogs.bat
+```
+
+### By hand
+
+`scripts\run\game-frogs.bat` (menu 166):
+
+1. Empty (Zora's River, on the frogs' log): the text as you arrive. Take the ocarina out (C-Down):
+   the camera turns to the log, Link is put on the spot, the five frogs jump out of the water one
+   by one onto the log. Single notes: each makes its frog jump (A blue, C-Down yellow, C-Right
+   red, C-Left purple, C-Up white), its croak pitched to the note. Zelda's Lullaby, Epona's Song,
+   Saria's Song, the Sun's Song, the Song of Time: the frogs jump in turn, one grows, the text and
+   a purple rupee (a blue one if played again). The Song of Storms: a piece of heart. B puts it
+   away: the frogs dive back in.
+2. `choir` (the six songs played before): take the ocarina out on the log: the text and the song
+   game. The butterfly sits over the frog whose note is next; play each in time (the first notes
+   have longer): each right one moves on, a wrong one does nothing; B or too slow: the error. All
+   fourteen: the text and a piece of heart (and random notes next time).
+3. `lake` (Lake Hylia in front of Bonooru): take the ocarina out: his camera and text; play eight
+   notes that hold none of your songs: he dances to each and remembers it (his text). Talk to
+   him: he plays it back. Also: a song inside the eight is refused ("doesn't remember").
+4. `longsong` (in front of the other scarecrow): take the ocarina out: he records as long as you
+   play, dancing; B ends it. Talk to him: he plays it back.
+5. `bonooru` (adult, a song recorded as a child: A, C-Down, A, C-Up, A, C-Down, A, C-Up): take
+   the ocarina out in front of him: he asks to hear it; play it: he's glad (`EVENTCHKINF_9C`); a
+   wrong one: his other text.
+6. `pierre` (adult, after that, by Pierre's spot on the lab's shore): take the ocarina out and play
+   the scarecrow's song: Pierre rises out of the ground (the camera on him) and spins.
+
+## Phase 11's end (the exit review, 2026-10-23)
+
+**The exit, met:** the Zora's Sapphire (milestone 6, `Route::Sapphire`: after Barinade the heart,
+Ruto's warp, `EVENTCHKINF_37` and the Sapphire, `gZorasFountainSapphireCs`), then the Ocarina of
+Time (milestone 7, `Route::Escape` and `Route::OcarinaOfTime`: Zelda's escape, the ocarina from the
+moat, the Temple of Time's Song of Time, back in Hyrule Field). The phase's other places are played
+through too: the river, the Domain and the diving game (2), the lake's letter, King Zora and the
+fountain (3), Jabu-Jabu's way and rooms (4, 5, 8), the frogs and the scarecrows (9). Commits: the
+milestones' ("GAME-10: ..."), c686b38 (8) and the frogs and scarecrows' (9).
+
+### What the phase built
+
+- **Actors, whole** (or their child's parts with the adult's placeholders chosen at init, as the
+  user's call 4): Player's water and bottles, `En_Fish`, `En_Insect` (1); `Bg_Spot03_Taki`,
+  `En_Okuta`, `En_Zo`, `En_Kz`, `En_Diving_Game`, `Bg_Spot07_Taki`, `Obj_Comb`, `En_Ms`,
+  `Item_Etcetera`, `Bg_Spot06_Objects`, `En_Mk`, `En_Jj`, `Bg_Spot08_Bakudankabe` (2, 3); the
+  boomerang (`En_Boom`), `Bg_Bdan_Switch`, `Bg_Bdan_Objects`, `En_Siofuki`, `En_Bubble`, `En_Bili`,
+  `En_Brob`, `En_Weiyer`, `En_Eiyer`, `En_Rr` (4); `En_Ru1`, `En_Ba`, `En_Bx`, `Obj_Kibako`,
+  `Obj_Roomtimer` (5); `Boss_Va` (6); `Item_Ocarina`, `En_Ganon_Mant` (7); `En_Bigokuta`, `En_Vali`,
+  `En_Tp` (8); `En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Kakasi2` (9). Every actor the phase's scenes
+  place is ported (COVERAGE: 35 of 35); 181 ported actors at Phase 10's end, 221 at Phase 11's.
+- **Systems:** swimming by the scale, the bottom pick-up, the bottles whole, the currents, the
+  water's effects, the underwater view and its distortion (ADR 0081); Jabu-Jabu's draw config with
+  its pulse as site matrices (pack format 30, ADR 0082); Ruto carried (ADR 0083); the boss's
+  environment overrides (ADR 0084); boned rewritten vertices (ADR 0085); the renderer's static
+  `LOD_FRACTION` (format 31) and the whole hostile lock-on (ADR 0086); the ocarina's recording and
+  the box's scarecrow and frog modes (format 32, ADR 0087); the draw configs `SDC_ZORAS_RIVER`,
+  `_ZORAS_DOMAIN`, `_LAKE_HYLIA`, `_LAKESIDE_LABORATORY`, `_ZORAS_FOUNTAIN`, `_JABU_JABU`; the
+  one-points 4100, 4110, 3070, 3080, 3090, 3100, 2260, 2270, 2280, 9705.
+- **Runs** (each a short debug start, the fights the hand tests'): `Route::Bottle`, `ZorasRiver`,
+  `KingZora`, `JabuFish`, `JabuCow`, `JabuElevator`, `JabuBoomerang`, `JabuDoor14`, `JabuRuto`,
+  `JabuWeb`, `JabuCrystal`, `Barinade`, `Sapphire`, `Escape`, `OcarinaOfTime`, `JabuSwitch`,
+  `JabuOcto`, `Frogs`, `Bonooru`. The story's chain of presets from `fairy-magic` to
+  `ocarina-of-time`, each checked against its run.
+- **Numbers:** 1,433 tests at the phase's start, 1,771 at its end (one ignored); goldens 273 hashes
+  and 207 cases (`out/golden_base30`), then 337 and 251 (`out/golden_base40`). Menu entries 152 to 168. ADRs 0081 to 0087.
+
+### Phase 12's start: the `ocarina-of-time` preset
+
+The story's last run is the Ocarina of Time's (`Route::OcarinaOfTime`, ending in Hyrule Field at
+`ENTR_HYRULE_FIELD_16` after `gHyruleFieldGetOoTCs`), checked against `ocarina-of-time`.
+Milestones 8 and 9 are off the story (debug starts in Jabu-Jabu's rooms and on `ocarina-c`), so the
+story's save is still `ocarina-of-time`. Read from the preset, Link has:
+
+- **Equipment:** the Kokiri Sword on B; the Deku and Hylian Shields; the Kokiri Tunic and Boots;
+  the silver scale.
+- **Items:** Deku Sticks on C-Left (1), the boomerang on C-Down, the Fairy Slingshot on C-Right (37
+  seeds), bombs (15), the Ocarina of Time on no button (the run took it from the moat into the
+  Fairy Ocarina's slot), an empty bottle, Zelda's Letter.
+- **Quest:** the three spiritual stones; Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's
+  Song and the Song of Time (no Song of Storms: the adult's); two pieces of heart; six hearts;
+  magic (level 1); 16 rupees.
+
+Phase 12 (the Door of Time and the adult's first steps: ROADMAP) starts there with its survey. A
+debug start for the frogs' Song of Storms and the scarecrows' songs is `ocarina-c` (the ocarina on
+C-Down and the Song of Storms).
+
+### What's left, and where
+
+- **The hand test of milestone 9**, deferred ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)): the list
+  above.
+- **The adult's parts chosen at init** (the user's call 4): `En_Kz`'s ice (`Bg_Ice_Shelter`),
+  `Bg_Spot07_Taki`'s frozen falls, `Bg_Spot06_Objects`' adult branches and ice block,
+  `Item_Etcetera`'s fire arrows (Phase 16) and the treasure game's types (Phase 20); `Bg_Spot08_Iceblock` (Phase
+  16).
+- **BACKLOG from this phase still open:** #100 (the other shops' shopkeepers), #101 (radians
+  rounded where the game truncates: a milestone with room for a golden proof), #103 (room 14's
+  chest ledge unreached by a child: the runs start on it), #105 (Barinade's approximations), #106
+  (a written cape's light), #107 (the Flobbery's void-out: the C's, kept), #109 (`LOD_FRACTION` per
+  pixel).
+- **The credits** that play the long scarecrow's song (Phase 20's ending).

@@ -294,6 +294,10 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Ganon_Mant", "Ganondorf's cape", Group::SetPiece),
     ("En_Vali", "Bari", Group::Enemy),
     ("En_Tp", "Tailpasaran", Group::Enemy),
+    ("En_Fr", "Frogs (and their song spot)", Group::Character),
+    ("En_Kakasi", "Scarecrow (long song)", Group::Character),
+    ("En_Kakasi2", "Pierre (scarecrow's song)", Group::Character),
+    ("En_Kakasi3", "Bonooru (scarecrow)", Group::Character),
 ];
 
 /// An actor the editor can place.

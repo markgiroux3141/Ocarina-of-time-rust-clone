@@ -240,7 +240,10 @@ Sapphire, [ADR 0084](adr/0084-barinade-rutos-warp-and-the-zoras-sapphire.md)) is
 milestone 7 (the Ocarina of Time and the Song of Time, [ADR 0085](adr/0085-the-ocarina-of-time-and-the-song-of-time.md))
 is done; milestone 8 (the rest of Jabu-Jabu: Big Octo, the Bari, the Tailpasarans, Ruto's way to
 the Sapphire, [ADR 0086](adr/0086-the-rest-of-jabu-jabus-belly.md)) is done (all four hand-tested
-2026-10-22); milestone 9 (the frogs and scarecrows) is next.
+2026-10-22); milestone 9 (the frogs and the scarecrows: the ocarina's recording and the box's frog
+and scarecrow modes, `En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Kakasi2`, [ADR 0087](adr/0087-the-frogs-and-the-scarecrows.md))
+is done (2026-10-23, its hand test deferred: HAND-TESTS-OWED.md). **Phase 11 is done** with its
+exit review (2026-10-23, GAME-10's last section): Phase 12 starts from `ocarina-of-time`.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -800,7 +803,13 @@ start) **done** (committed 2026-10-21; hand-tested 2026-10-22). **Milestone 8**
 (2026-10-21, ADR 0086: `En_Bigokuta`, `En_Vali`, `En_Tp` whole, one-points 3070, 3080, 3090; the runs
 Ruto onto room 3's blue switch and Ruto to the Sapphire and Big Octo's arrival, room 3's way up
 its spout; the presets `jabu-sapphire`, `jabu-big-octo`; every actor Jabu-Jabu places ported)
-**done** (hand-tested 2026-10-22). Next: milestone 9 (the frogs and scarecrows). Found: in MQ neither Ruto nor Big Octo is on the way to
+**done** (hand-tested 2026-10-22). **Milestone 9** (2026-10-23, ADR 0087: the ocarina's recording
+and the box's scarecrow and frog modes, BACKLOG #47; `En_Fr`, `En_Kakasi`, `En_Kakasi3`,
+`En_Kakasi2` whole, one-points 4110, 2260, 2270, 2280, pack format 32; the runs the frogs' six songs
+and song game and Bonooru's recording; the presets `ocarina-c`, `frogs-choir`, `scarecrow-song`,
+`scarecrow-pierre`) **done** (the hand test deferred); every actor the phase places is ported.
+**Phase 11 is done** (2026-10-23) with its exit review (GAME-10's last section): Phase 12 starts
+from `ocarina-of-time`. Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 

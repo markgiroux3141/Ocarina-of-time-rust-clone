@@ -728,7 +728,7 @@ impl PlayState {
 
     /// `CutsceneCmd_Misc`: command 3, the misc actions, on `envCtx` and the rest of play. Those that
     /// need what isn't ported (the skybox's change, title cards, the sandstorm, the Sun's
-    /// Song, the scarecrow's song) are logged on their first frame; their sounds play.
+    /// Song) are logged on their first frame; their sounds play.
     fn cutscene_cmd_misc(&mut self, d: &[u8], o: usize) {
         let (base, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
         let frames = self.cs_ctx.frames;
@@ -931,7 +931,12 @@ impl PlayState {
                 let step = if self.save.is_day() { speed } else { speed.wrapping_mul(2) };
                 self.save.day_time = self.save.day_time.wrapping_sub(step);
             }
-            35 => not_ported("the scarecrow's song after the credits"),
+            // CS_MISC_LONG_SCARECROW_SONG: the long song after the credits; the cutscene runs
+            // forever.
+            35 => {
+                self.audio.audio_ocarina_play_long_scarecrow_song();
+                self.cs_ctx.frames = start.wrapping_sub(1);
+            }
             _ => {}
         }
     }

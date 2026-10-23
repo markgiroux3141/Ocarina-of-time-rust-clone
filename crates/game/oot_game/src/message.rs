@@ -18,8 +18,8 @@
 //! `Message_StartOcarinaImpl`, `Message_HandleOcarina`, free play, the checks, the teaching and
 //! the playback, "You played", the songs' effects spawned, the treble clef and the notes), and
 //! the Skull Kids' memory game (`MSGMODE_MEMORY_GAME_*`, `Message_UpdateOcarinaMemoryGame`,
-//! GAME-08 milestone 2). Not ported: the scarecrow's songs and the frogs' modes (the user's
-//! scope: they log), the textbox backgrounds (decoded, not drawn), the credits and the debug
+//! GAME-08 milestone 2), the scarecrows' recordings and playbacks (`MSGMODE_SCARECROW_*`) and the
+//! frogs' song game (`MSGMODE_FROGS_*`, GAME-10 milestone 9). Not ported: the textbox backgrounds (decoded, not drawn), the credits and the debug
 //! message viewer (`BREG(0)` 0). `YREG(31)` is the shop's (`yreg_31`).
 
 #![allow(non_snake_case)] // sMessageStartFrameCount and the unk_ fields keep the decomp's names
@@ -71,8 +71,11 @@ pub const MSGMODE_SONG_PLAYBACK_NOTES_DROP: u8 = 0x1E;
 pub const MSGMODE_OCARINA_AWAIT_INPUT: u8 = 0x1F;
 pub const MSGMODE_UNK_20: u8 = 0x20;
 pub const MSGMODE_SCARECROW_LONG_RECORDING_START: u8 = 0x21;
+pub const MSGMODE_SCARECROW_LONG_RECORDING_ONGOING: u8 = 0x22;
 pub const MSGMODE_SCARECROW_LONG_PLAYBACK: u8 = 0x23;
 pub const MSGMODE_SCARECROW_SPAWN_RECORDING_START: u8 = 0x24;
+pub const MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING: u8 = 0x25;
+pub const MSGMODE_SCARECROW_SPAWN_RECORDING_FAILED: u8 = 0x26;
 pub const MSGMODE_SCARECROW_SPAWN_RECORDING_DONE: u8 = 0x27;
 pub const MSGMODE_SCARECROW_SPAWN_PLAYBACK: u8 = 0x28;
 pub const MSGMODE_MEMORY_GAME_START: u8 = 0x29;
@@ -84,6 +87,7 @@ pub const MSGMODE_MEMORY_GAME_PLAYER_PLAYING: u8 = 0x2E;
 pub const MSGMODE_MEMORY_GAME_ROUND_SUCCESS: u8 = 0x2F;
 pub const MSGMODE_MEMORY_GAME_START_NEXT_ROUND: u8 = 0x30;
 pub const MSGMODE_FROGS_START: u8 = 0x31;
+pub const MSGMODE_FROGS_PLAYING: u8 = 0x32;
 pub const MSGMODE_FROGS_WAITING: u8 = 0x33;
 pub const MSGMODE_TEXT_AWAIT_NEXT: u8 = 0x34;
 pub const MSGMODE_TEXT_DONE: u8 = 0x35;
@@ -581,9 +585,6 @@ struct Statics {
     /// `Message_DrawMain`'s `sOcarinaNoteFlashTimer`, `sOcarinaNoteFlashColorIndex`.
     ocarina_note_flash_timer: i16,
     ocarina_note_flash_color_index: usize,
-    /// Not in the C: an unported ocarina mode (the scarecrow's, the frogs')
-    /// is logged once.
-    logged_unported_mode: bool,
 }
 
 impl Default for Statics {
@@ -613,7 +614,6 @@ impl Default for Statics {
             ocarina_button_c_env: [0; 3],
             ocarina_note_flash_timer: 12,
             ocarina_note_flash_color_index: 1,
-            logged_unported_mode: false,
         }
     }
 }
@@ -2013,6 +2013,34 @@ impl MessageContext {
         }
     }
 
+    /// The scarecrows' modes' note buffer (`sOcarinaButtonIndexBuf`, `sOcarinaButtonIndexBufLen`):
+    /// when the staff's position is one past the buffer's, its note appended, the buffer
+    /// scrolled down a note once it holds eight; `last` also keeps it in
+    /// `lastOcarinaButtonIndex`. True when a note was taken.
+    fn take_staff_note_scrolling(&mut self, st: ocarina::OcarinaStaff, last: bool) -> bool {
+        if st.pos == 0 || self.s.ocarina_button_index_buf_pos != st.pos as i16 - 1 {
+            return false;
+        }
+        let s = &mut self.s;
+        if s.ocarina_button_index_buf_len >= 8 {
+            let from = s.ocarina_button_index_buf_len as usize - 8;
+            for i in from..from + 8 {
+                s.ocarina_button_index_buf[i] = s.ocarina_button_index_buf[i + 1];
+            }
+            s.ocarina_button_index_buf_len -= 1;
+        }
+        let len = s.ocarina_button_index_buf_len as usize;
+        s.ocarina_button_index_buf[len] = st.button_index;
+        if last {
+            self.last_ocarina_button_index = st.button_index;
+        }
+        let s = &mut self.s;
+        s.ocarina_button_index_buf_len += 1;
+        s.ocarina_button_index_buf[len + 1] = OCARINA_BTN_INVALID;
+        s.ocarina_button_index_buf_pos += 1;
+        true
+    }
+
     /// `Message_DrawMain`'s `MSGMODE_OCARINA_CORRECT_PLAYBACK` flash: the notes' colours step to
     /// the flash colour's in `sOcarinaNoteFlashTimer` frames, then swap.
     fn flash_ocarina_notes(&mut self) {
@@ -2483,13 +2511,115 @@ impl MessageContext {
                     f.audio.audio_ocarina_set_playback_song(OCARINA_SONG_MEMORY_GAME as i8 + 1, 1);
                 }
             }
-            m => {
-                // MSGMODE_SCARECROW_*, MSGMODE_FROGS_*: not ported (the user's scope).
-                if !self.s.logged_unported_mode {
-                    self.s.logged_unported_mode = true;
-                    log::info!("Message_DrawMain: ocarina mode {m:#x} (the scarecrow's songs or the frogs) isn't ported");
+            MSGMODE_SCARECROW_LONG_RECORDING_START => {
+                log::debug!("Scarecrow Recording Initialization");
+                f.audio.audio_ocarina_set_recording_state(ocarina::OCARINA_RECORD_SCARECROW_LONG);
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                self.ocarina_staff = f.audio.audio_ocarina_get_recording_staff();
+                self.reset_staff_pos(f);
+                self.s.ocarina_button_index_buf_len = 0;
+                self.reset_ocarina_note_state();
+                self.msg_mode = MSGMODE_SCARECROW_LONG_RECORDING_ONGOING;
+                self.draw_text(f, out);
+            }
+            MSGMODE_SCARECROW_LONG_RECORDING_ONGOING => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_recording_staff();
+                let st = self.ocarina_staff(f);
+                if self.take_staff_note_scrolling(st, true) && st.pos == 8 {
+                    self.s.ocarina_button_index_buf_pos = 0;
+                }
+                if st.state == ocarina::OCARINA_RECORD_OFF || f.input.press.held(BTN_B) {
+                    if self.s.ocarina_button_index_buf_len != 0 {
+                        log::debug!("Recording complete!!!!!!!!!  message->info->status={}", st.state);
+                        f.save.scarecrow_long_song_set = 1;
+                    }
+                    f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                    f.audio.audio_ocarina_set_recording_state(ocarina::OCARINA_RECORD_OFF);
+                    self.state_timer = 10;
+                    self.ocarina_mode = OCARINA_MODE_04;
+                    self.close_textbox(f.audio);
+                    log::debug!("Recording complete!!!!!!!!! Recording Complete");
+                    f.save.scarecrow_long_song = f.audio.ocarina.scarecrow_long_song_bytes();
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_SCARECROW_LONG_PLAYBACK | MSGMODE_SCARECROW_SPAWN_PLAYBACK => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                let st = self.ocarina_staff(f);
+                if self.take_staff_note_scrolling(st, false) && st.pos == 8 {
+                    self.s.ocarina_button_index_buf_len = 0;
+                    self.s.ocarina_button_index_buf_pos = 0;
+                }
+                if self.state_timer == 0 {
+                    if st.state == 0 {
+                        f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                        self.ocarina_mode = OCARINA_MODE_0F;
+                        self.close_textbox(f.audio);
+                    }
+                } else {
+                    self.state_timer -= 1;
                 }
             }
+            MSGMODE_SCARECROW_SPAWN_RECORDING_START => {
+                f.audio.audio_ocarina_set_recording_state(ocarina::OCARINA_RECORD_SCARECROW_SPAWN);
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                self.msg_mode = MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING;
+                self.draw_text(f, out);
+            }
+            MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_recording_staff();
+                let st = self.ocarina_staff(f);
+                if st.pos != 0 && self.s.ocarina_button_index_buf_pos == st.pos as i16 - 1 {
+                    let p = self.s.ocarina_button_index_buf_pos as usize;
+                    self.last_ocarina_button_index = st.button_index;
+                    self.s.ocarina_button_index_buf[p] = st.button_index;
+                    self.s.ocarina_button_index_buf_pos += 1;
+                    self.s.ocarina_button_index_buf[p + 1] = OCARINA_BTN_INVALID;
+                }
+                if st.state == ocarina::OCARINA_RECORD_OFF {
+                    log::debug!("8 Note Recording OK!");
+                    self.state_timer = 20;
+                    f.save.scarecrow_spawn_song_set = 1;
+                    self.msg_mode = MSGMODE_SCARECROW_SPAWN_RECORDING_DONE;
+                    f.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
+                    f.save.scarecrow_spawn_song = f.audio.ocarina.scarecrow_spawn_song_bytes();
+                } else if st.state == ocarina::OCARINA_RECORD_REJECTED || f.input.press.held(BTN_B) {
+                    log::debug!("Played an existing song!!!");
+                    f.audio.audio_ocarina_set_recording_state(ocarina::OCARINA_RECORD_OFF);
+                    f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                    self.close_textbox(f.audio);
+                    self.msg_mode = MSGMODE_SCARECROW_SPAWN_RECORDING_FAILED;
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_SCARECROW_SPAWN_RECORDING_FAILED => {
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                // Bonooru doesn't remember your song.
+                self.start_textbox(f, 0x40AD, None);
+                self.ocarina_mode = OCARINA_MODE_04;
+            }
+            MSGMODE_FROGS_START => {
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                self.reset_staff_pos(f);
+                self.ocarina_mode = OCARINA_MODE_01;
+                self.reset_ocarina_note_state();
+                f.audio.audio_ocarina_start(self.s.ocarina_song_bit_flags.wrapping_add(0xC000));
+                self.msg_mode = MSGMODE_FROGS_PLAYING;
+            }
+            MSGMODE_FROGS_PLAYING => {
+                // A note played: the frogs' (En_Fr) to answer, then MSGMODE_FROGS_START again.
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                let st = self.ocarina_staff(f);
+                if st.pos != 0 && self.s.ocarina_button_index_buf_pos == st.pos as i16 - 1 {
+                    self.last_ocarina_button_index = st.button_index;
+                    self.reset_staff_pos(f);
+                    self.reset_ocarina_note_state();
+                    self.msg_mode = MSGMODE_FROGS_WAITING;
+                }
+            }
+            // MSGMODE_FROGS_WAITING: En_Fr's.
+            _ => {}
         }
 
         // The notes: the playback's song in grey, then the notes played, fading in.

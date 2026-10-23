@@ -592,12 +592,14 @@ pub fn audio_game_tables(decomp: &Path) -> Result<oot_game::audio::AudioGameTabl
     let oc_bytes = |name: &str| -> Result<Vec<u8>> { find_initializer(&src, name)?.flatten().iter().map(|a| oc(a).map(|v| v as u8)).collect() };
     let button_to_pitch_map = oc_bytes("sButtonToPitchMap")?;
     let pitch_to_button_map = oc_bytes("sPitchToButtonMap")?;
+    let frogs_song_notes = oc_bytes("sFrogsSongNotes")?;
 
     for (name, n, want) in [
         ("sOcarinaSongNotes", ocarina_song_notes.len(), 14),
         ("gOcarinaSongButtons", ocarina_song_buttons.len(), 14),
         ("sButtonToPitchMap", button_to_pitch_map.len(), 5),
         ("sPitchToButtonMap", pitch_to_button_map.len(), 16),
+        ("sFrogsSongNotes", frogs_song_notes.len(), 14),
         ("sSurfaceMaterialToSfxOffset", floor_sfx.len(), 14),
         ("sSeqFlags", seq_flags.len(), 0x6E),
         ("sSpecReverbs", spec_reverbs.len(), 20),
@@ -635,6 +637,7 @@ pub fn audio_game_tables(decomp: &Path) -> Result<oot_game::audio::AudioGameTabl
         ocarina_song_buttons,
         button_to_pitch_map,
         pitch_to_button_map,
+        frogs_song_notes,
     })
 }
 

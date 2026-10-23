@@ -184,6 +184,8 @@ pub struct AudioGameTables {
     /// `sButtonToPitchMap`, `sPitchToButtonMap` (`general.c`).
     pub button_to_pitch_map: Vec<u8>,
     pub pitch_to_button_map: Vec<u8>,
+    /// `sFrogsSongNotes` (`general.c`): the frogs' song game's 14 buttons (`gFrogsSongPtr`).
+    pub frogs_song_notes: Vec<u8>,
 }
 
 impl AudioGameTables {

@@ -314,7 +314,8 @@ pub struct SaveContext {
     pub world_map_area_data: u32,
     pub unk_f3c: [u8; 0x4],
     /// `scarecrowLongSongSet`, `scarecrowLongSong`, `unk_12A1`, `scarecrowSpawnSongSet`,
-    /// `scarecrowSpawnSong`, `unk_1346` (the ocarina isn't ported).
+    /// `scarecrowSpawnSong`, `unk_1346` (the scarecrows' songs as `MemCopy` writes them: eight
+    /// bytes a note, `ocarina::notes_to_bytes`).
     pub scarecrow_long_song_set: u8,
     pub scarecrow_long_song: [u8; 0x360],
     pub unk_12a1: [u8; 0x24],
@@ -958,6 +959,47 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: ocarina_of_time,
     },
     SavePreset {
+        name: "ocarina-c",
+        about: "ocarina-of-time with the Ocarina of Time back on C-Down (where fairy-magic had the Fairy Ocarina; jabu-room-7 put the bombs there) and the Song of Storms (ITEM_SONG_STORMS, the adult's windmill's): a debug start for GAME-10 milestone 9's frogs and scarecrows",
+        apply: ocarina_c,
+    },
+    SavePreset {
+        name: "frogs-choir",
+        about: "ocarina-c with the six songs played to Zora's River's frogs (EVENTCHKINF_SONGS_FOR_FROGS_ZL .. _STORMS, 0xD1 to 0xD6: their purple rupees and piece of heart taken): the ocarina out on their log starts the frogs' song game (0x40AB); a debug start",
+        apply: |s| {
+            ocarina_c(s);
+            for f in 0xD1..=0xD6 {
+                s.set_event_chk_inf(f);
+            }
+        },
+    },
+    SavePreset {
+        name: "scarecrow-song",
+        about: "ocarina-c with Lake Hylia's intro seen (EVENTCHKINF_B1) and Bonooru's spawn song recorded as a child (scarecrowSpawnSongSet: A, C-Down, A, C-Up, A, C-Down, A, C-Up, each held 6 audio tasks with a rest after): as an adult, Bonooru asks to hear it (0x40A8); a debug start",
+        apply: |s| {
+            ocarina_c(s);
+            // OcarinaNotes as MemCopy keeps them (8 bytes each: pitch, pad, length, volume,
+            // vibrato, bend, bFlat4Flag), the notes D4, F4, D4, D5 (OCARINA_PITCH_*) and rests
+            // (0xFF), the boot's volume 0x57; the song ended by a zero length.
+            let pitches = [0x2u8, 0x5, 0x2, 0xE, 0x2, 0x5, 0x2, 0xE];
+            let mut song = [0u8; 0x80];
+            for (i, p) in pitches.iter().flat_map(|&p| [p, 0xFF]).enumerate() {
+                song[i * 8..i * 8 + 8].copy_from_slice(&[p, 0, 0, if i == 15 { 0 } else { 6 }, 0x57, 0, 0, 0]);
+            }
+            s.set_event_chk_inf(0xB1);
+            s.scarecrow_spawn_song_set = 1;
+            s.scarecrow_spawn_song = song;
+        },
+    },
+    SavePreset {
+        name: "scarecrow-pierre",
+        about: "scarecrow-song, and the song played back to Bonooru as an adult (EVENTCHKINF_9C, En_Kakasi3's func_80A91A90): Pierre (En_Kakasi2) rises to it; a debug start",
+        apply: |s| {
+            s.apply_preset("scarecrow-song").expect("scarecrow-song");
+            s.set_event_chk_inf(0x9C);
+        },
+    },
+    SavePreset {
         name: "boomerang",
         about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
         apply: |s| {
@@ -1342,6 +1384,15 @@ fn ocarina_of_time(s: &mut SaveContext) {
     crate::item::item_give(s, None, crate::item::ITEM_OCARINA_OF_TIME);
     crate::item::item_give(s, None, crate::item::ITEM_SONG_TIME);
     s.set_event_chk_inf(0xA9);
+}
+
+/// `ocarina-c`'s save (`frogs-choir` and `scarecrow-song` build on it): `ocarina-of-time` with
+/// the Ocarina of Time on C-Down (the item page's `KaleidoScope_SetupItemEquip`) and the Song of
+/// Storms.
+fn ocarina_c(s: &mut SaveContext) {
+    ocarina_of_time(s);
+    s.equip_item_on_c(1, crate::item::ITEM_OCARINA_OF_TIME);
+    crate::item::item_give(s, None, crate::item::ITEM_SONG_STORMS);
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

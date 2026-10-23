@@ -660,6 +660,25 @@ pub enum Step {
     /// The platform down with Big Octo and his battle on (`Bg_Bdan_Objects`'
     /// `OctoPlatformBattleInProgress`), the cameras back, Link free.
     BigOctoBattle,
+    /// The text by the frogs' log (`En_Wonder_Talk2` 0x4BBB: 0x22E) read (its switch flag 0x3B).
+    FrogsTip,
+    /// A song's reward from the frogs taken (its `EVENTCHKINF_SONGS_FOR_FROGS_*`), Link free.
+    FrogsZl,
+    FrogsEpona,
+    FrogsSaria,
+    FrogsSuns,
+    FrogsTime,
+    FrogsStorms,
+    /// The frogs' song game's fourteen notes played.
+    FrogsGame,
+    /// Its piece of heart taken (`EVENTCHKINF_SONGS_FOR_FROGS_CHOIR`), Link free.
+    FrogsChoir,
+    /// Eight notes played to Bonooru (`MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING`).
+    BonooruSong,
+    /// His texts read: the spawn song set (`scarecrowSpawnSongSet`), Link free.
+    BonooruRemembers,
+    /// Talked to, he plays the spawn song back (`OCARINA_MODE_0F`); the box closed.
+    BonooruPlayback,
 }
 
 impl Step {
@@ -922,6 +941,18 @@ impl Step {
             Step::PlatformRising => "platform_rising",
             Step::BigOctoArrived => "big_octo_arrived",
             Step::BigOctoBattle => "big_octo_battle",
+            Step::FrogsTip => "frogs_tip",
+            Step::FrogsZl => "frogs_zl",
+            Step::FrogsEpona => "frogs_epona",
+            Step::FrogsSaria => "frogs_saria",
+            Step::FrogsSuns => "frogs_suns",
+            Step::FrogsTime => "frogs_time",
+            Step::FrogsStorms => "frogs_storms",
+            Step::FrogsGame => "frogs_game",
+            Step::FrogsChoir => "frogs_choir",
+            Step::BonooruSong => "bonooru_song",
+            Step::BonooruRemembers => "bonooru_remembers",
+            Step::BonooruPlayback => "bonooru_playback",
         }
     }
 }
@@ -1239,6 +1270,14 @@ pub enum Route {
     /// Octo's arrival (Ruto taken: `INFTABLE_RUTO_ABDUCTED`) and the descent with him (3080) to
     /// the fight's start. No fight: that's the hand test's.
     JabuOcto,
+    /// Zora's River's frogs (GAME-10 milestone 9, `ocarina-c` on their log): the six songs played
+    /// to them in turn (each one's purple rupee, the Song of Storms' piece of heart), then their
+    /// song game (0x40AB: the fourteen notes of `gFrogsSongPtr`, its piece of heart).
+    Frogs,
+    /// Lake Hylia's Bonooru (`En_Kakasi3`, GAME-10 milestone 9, `ocarina-c` in front of him): the
+    /// ocarina out to him (0x40A4), eight new notes recorded (the spawn song set: 0x40A5), then
+    /// talked to: he plays it back (0x40A0).
+    Bonooru,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2219,6 +2258,50 @@ fn octo_battle(w: &PlayState) -> bool {
     w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<BgBdanObjects>(h)).any(|o| o.action == Action::OctoPlatformBattleInProgress)
 }
 
+/// En_Fr 0x0000's spot on Zora's River's log (room 0): the ocarina out within 30 of it (above it)
+/// sets it as Player's listener.
+pub const FROGS_SONG_SPOT: Vec3 = Vec3::new(990.0, 205.0, -1220.0);
+
+/// `Route::Frogs`' tasks: the log's forced text read; each of the six songs on the log (C-Down: `ocarina-c`'s), its reward
+/// taken (its flag set, Link free); then the ocarina out once more: 0x40AB and the song game.
+fn frogs_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::{OCARINA_SONG_EPONAS, OCARINA_SONG_LULLABY, OCARINA_SONG_SARIAS, OCARINA_SONG_STORMS, OCARINA_SONG_SUNS, OCARINA_SONG_TIME};
+    // The log's forced text (En_Wonder_Talk2 0x4BBB at (1000, 205, -1202): 0x22E, its switch flag
+    // 0x3B) opens as Link arrives.
+    let mut tasks = vec![Task::TextsFor(Cond::Switch(0x3B), Step::FrogsTip)];
+    for (song, played, flag, taken) in [
+        (OCARINA_SONG_LULLABY, Step::LullabyPlayed, 0xD1, Step::FrogsZl),
+        (OCARINA_SONG_EPONAS, Step::EponasSong, 0xD2, Step::FrogsEpona),
+        (OCARINA_SONG_SARIAS, Step::SariasSong, 0xD4, Step::FrogsSaria),
+        (OCARINA_SONG_SUNS, Step::SunsSong, 0xD3, Step::FrogsSuns),
+        (OCARINA_SONG_TIME, Step::TimeSongPlayed, 0xD5, Step::FrogsTime),
+        (OCARINA_SONG_STORMS, Step::SongOfStorms, 0xD6, Step::FrogsStorms),
+    ] {
+        tasks.push(Task::OcarinaHeard(1, song, played));
+        tasks.push(Task::TextsFor(Cond::EventChkInf(flag), taken));
+    }
+    tasks.push(Task::OcarinaNotes(1, |w| w.msg_ctx.msg_mode == oot_game::message::MSGMODE_FROGS_PLAYING, Tune::Frogs, Step::FrogsGame));
+    tasks.push(Task::TextsFor(Cond::EventChkInf(0xD0), Step::FrogsChoir));
+    tasks
+}
+
+/// 70 in front of Bonooru (`En_Kakasi3` at (-154, -1293, 2888), facing +z).
+pub const BONOORU_FRONT: Vec3 = Vec3::new(-154.0, -1293.0, 2958.0);
+
+/// `Route::Bonooru`'s tasks: the ocarina out in front of him, his 0x40A4 read, eight notes (A,
+/// C-Down, A, C-Up twice over: none of the songs in them); his 0x40A5 read, the song set; then a
+/// talk: 0x40A0 and his playback (one-point 2280) to `OCARINA_MODE_0F`.
+fn bonooru_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::{OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_UP};
+    let tune = vec![OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_A, OCARINA_BTN_C_UP, OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_A, OCARINA_BTN_C_UP];
+    vec![
+        Task::Settle(None),
+        Task::OcarinaNotes(1, |w| w.msg_ctx.msg_mode == oot_game::message::MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING, Tune::Notes(tune), Step::BonooruSong),
+        Task::Texts(|w| w.save.scarecrow_spawn_song_set != 0 && !w.player_in_cs_mode() && w.player().action != PA::Ocarina, Step::BonooruRemembers),
+        Task::Talk(Who::Bonooru, BONOORU_FRONT, Step::BonooruPlayback),
+    ]
+}
+
 /// `Route::JabuOcto`'s tasks.
 fn jabu_octo_tasks() -> Vec<Task> {
     use crate::en_ru1::{INFTABLE_RUTO_BROUGHT_TO_SAPPHIRE_ROOM, INFTABLE_RUTO_HAS_SAPPHIRE};
@@ -2908,6 +2991,8 @@ impl Route {
             Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
             // Spawn 0, room 0; the debug starts change room.
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal | Route::JabuSwitch | Route::JabuOcto => "ENTR_JABU_JABU_0",
+            Route::Frogs => "ENTR_ZORAS_RIVER_0",
+            Route::Bonooru => "ENTR_LAKE_HYLIA_0",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -2966,6 +3051,7 @@ impl Route {
             Route::JabuWeb => Some("jabu-room-7"),
             Route::JabuCrystal => Some("jabu-crystal"),
             Route::JabuSwitch | Route::JabuOcto => Some("jabu-room-7"),
+            Route::Frogs | Route::Bonooru => Some("ocarina-c"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
             Route::Escape => Some("zora-sapphire"),
@@ -3038,6 +3124,11 @@ impl Route {
             Route::JabuCrystal => Some((JABU_DOOR_9_START, 0x4000)),
             // Room 3's east floor west of Ruto, facing her (+x).
             Route::JabuSwitch | Route::JabuOcto => Some((JABU_ROOM_3_START, 0x4000)),
+            // On the frogs' log at its song spot (En_Fr 0x0000), facing as it does.
+            Route::Frogs => Some((FROGS_SONG_SPOT, 0x1555)),
+            // 70 in front of Bonooru (-154, -1293, 2888), facing him (within 80 he marks Link as
+            // one to play to him: PLAYER_STATE2_23).
+            Route::Bonooru => Some((BONOORU_FRONT, -0x8000)),
             _ => None,
         }
     }
@@ -3263,6 +3354,8 @@ impl Route {
             Route::OcarinaOfTime => "ocarina-of-time",
             Route::JabuSwitch => "jabu-switch",
             Route::JabuOcto => "jabu-octo",
+            Route::Frogs => "frogs",
+            Route::Bonooru => "bonooru",
         }
     }
 
@@ -3329,6 +3422,8 @@ impl Route {
             Route::OcarinaOfTime => 8000,
             Route::JabuSwitch => 3000,
             Route::JabuOcto => 6000,
+            Route::Frogs => 8000,
+            Route::Bonooru => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3336,12 +3431,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3361,6 +3456,15 @@ pub fn silver_rupees_four_taken(w: &mut PlayState) {
         }
     }
     crate::en_g_switch::statics(w).collected_count = taken.len() as i16;
+}
+
+/// `Task::OcarinaNotes`' notes (`OCARINA_BTN_*`).
+#[derive(Debug, Clone)]
+enum Tune {
+    Notes(Vec<u8>),
+    /// The frogs' song game's first (`gFrogsSongPtr`, the pack's: `EnFr_GetNextNoteFrogSong`
+    /// before `EVENTCHKINF_SONGS_FOR_FROGS_CHOIR`).
+    Frogs,
 }
 
 /// What the run does, one task at a time.
@@ -3434,6 +3538,14 @@ enum Task {
     /// the pack's: each note held 3 frames, let go 2), the step when the staff knows it
     /// (`unk_E3F2`); done when the ocarina is away.
     Ocarina(usize, u8, Step),
+    /// `Ocarina`, done when the song is heard (the listener's texts follow with the ocarina out:
+    /// the frogs').
+    OcarinaHeard(usize, u8, Step),
+    /// The ocarina out with its C button (0 C-Left) to a listener that starts its own box (a
+    /// scarecrow's recording, the frogs' song game), A through its texts until the condition holds
+    /// (the box ready for notes); then the tune, a note at a time, each begun only while the
+    /// condition holds (held 3 frames, let go 2); the step after the last.
+    OcarinaNotes(usize, fn(&PlayState) -> bool, Tune, Step),
     /// Through the text that opens (within 120 frames): each choice answered from the list in
     /// turn (the stick down for the second), each text on with A; done when it closes.
     TalkThrough(Vec<u8>, Step),
@@ -3457,6 +3569,8 @@ enum Task {
     Converse(Who, Vec3, Vec<u8>, fn(&PlayState) -> bool, Step),
     /// A through the boxes that wait (or an event's) until the condition holds with no box open.
     Texts(fn(&PlayState) -> bool, Step),
+    /// `Texts` until the `Cond` holds.
+    TextsFor(Cond, Step),
     /// A cutscene's ocarina playback (`MSGMODE_SONG_PLAYBACK`): one wrong note first (and A through
     /// the failure's text) if asked, then the song's notes; A through the texts around it; done (the
     /// step) once the playback's success is seen.
@@ -3676,7 +3790,7 @@ enum Task {
     FightStalchildren(usize, Step),
 }
 
-/// What `Task::WaitFor` waits for.
+/// What `Task::WaitFor` and `Task::TextsFor` wait for.
 #[derive(Debug, Clone, Copy)]
 enum Cond {
     /// The time-based music past `TIMESEQ_FADE_DAY_BGM` (its stop sent).
@@ -3758,6 +3872,8 @@ enum Who {
     KingZora,
     /// Ruto (`En_Ru1`).
     Ruto,
+    /// Bonooru (`En_Kakasi3`).
+    Bonooru,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -4127,6 +4243,8 @@ impl Playthrough {
             Route::JabuCrystal => jabu_crystal_tasks(),
             Route::JabuSwitch => jabu_switch_tasks(),
             Route::JabuOcto => jabu_octo_tasks(),
+            Route::Frogs => frogs_tasks(),
+            Route::Bonooru => bonooru_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -4645,7 +4763,9 @@ impl Playthrough {
             }
             Task::ClimbTo(top, step) => self.climb_to(w, top, step),
             Task::ShowItem(who, from, button, step) => self.show_item(w, who, from, button, step),
-            Task::Ocarina(button, song, step) => self.play_song(w, button, song, step),
+            Task::Ocarina(button, song, step) => self.play_song(w, button, song, step, true),
+            Task::OcarinaHeard(button, song, step) => self.play_song(w, button, song, step, false),
+            Task::OcarinaNotes(button, ready, tune, step) => self.ocarina_notes(w, button, ready, &tune, step),
             Task::TalkThrough(choices, step) => self.talk_through(w, &choices, step),
             Task::WaitDawn(step) => {
                 self.wait += 1;
@@ -5070,13 +5190,18 @@ impl Playthrough {
                 let choices = self.choices.clone().unwrap_or(choices);
                 self.converse(w, who, from, &choices, until, step)
             }
-            Task::Texts(until, step) => {
+            Task::Texts(..) | Task::TextsFor(..) => {
                 self.wait += 1;
                 if self.wait > 20000 {
                     self.failure = Some(format!("the texts never ended (text {:#x})", w.msg_ctx.text_id));
                     return None;
                 }
-                if w.message_state() == TEXT_STATE_NONE && until(w) {
+                let (done, step) = match &task {
+                    Task::Texts(until, step) => (until(w), *step),
+                    Task::TextsFor(cond, step) => (cond.holds(w), *step),
+                    _ => unreachable!(),
+                };
+                if w.message_state() == TEXT_STATE_NONE && done {
                     self.finish(Some(step));
                     return None;
                 }
@@ -7134,7 +7259,7 @@ impl Playthrough {
     /// `talkActor`), 2 its C button, 3 the texts (A whenever one waits) until closed and Link
     /// stands.
     /// `Task::Ocarina`.
-    fn play_song(&mut self, w: &PlayState, button: usize, song: u8, step: Step) -> Option<PadState> {
+    fn play_song(&mut self, w: &PlayState, button: usize, song: u8, step: Step, away: bool) -> Option<PadState> {
         use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP};
         use oot_game::audio::ocarina::{OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT, OCARINA_BTN_C_UP};
         let idle = PadState::default();
@@ -7187,6 +7312,10 @@ impl Playthrough {
             // Heard.
             3 => {
                 if w.msg_ctx.unk_e3f2 == song as u16 && w.msg_ctx.msg_mode != oot_game::message::MSGMODE_OCARINA_PLAYING {
+                    if !away {
+                        self.finish(Some(step));
+                        return None;
+                    }
                     self.mark(step);
                     self.sub = 4;
                 }
@@ -7199,6 +7328,60 @@ impl Playthrough {
                     return None;
                 }
                 Some(idle)
+            }
+        }
+    }
+
+    /// `Task::OcarinaNotes`.
+    fn ocarina_notes(&mut self, w: &PlayState, button: usize, ready: fn(&PlayState) -> bool, tune: &Tune, step: Step) -> Option<PadState> {
+        use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP};
+        let idle = PadState::default();
+        let p = w.player();
+        self.wait += 1;
+        if self.wait > 3000 {
+            self.failure = Some(format!("the tune never played (Link {:?}, msgMode {:#x}, note {})", p.action, w.msg_ctx.msg_mode, self.notes / 5));
+            return None;
+        }
+        match self.sub {
+            // The ocarina out.
+            0 => {
+                if p.action == PA::Ocarina {
+                    self.mark(Step::OcarinaOut);
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                if w.message_state() != TEXT_STATE_NONE {
+                    return Some(idle);
+                }
+                Some(self.press([BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT][button]))
+            }
+            // The listener's texts until its box is ready.
+            1 => {
+                if ready(w) {
+                    self.sub = 2;
+                    self.notes = 0;
+                    return Some(idle);
+                }
+                let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+            }
+            // The notes.
+            _ => {
+                let notes = match tune {
+                    Tune::Notes(n) => n.clone(),
+                    Tune::Frogs => w.audio.ocarina.frogs_song_notes.to_vec(),
+                };
+                let (note, phase) = (self.notes / 5, self.notes % 5);
+                let Some(&b) = notes.get(note) else {
+                    self.finish(Some(step));
+                    return None;
+                };
+                if phase == 0 && !ready(w) {
+                    return Some(idle);
+                }
+                self.notes += 1;
+                let pad = [BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CLEFT, BTN_CUP].get(b as usize).copied().unwrap_or(0);
+                Some(if phase < 3 { PadState { button: pad, ..Default::default() } } else { idle })
             }
         }
     }
@@ -8271,6 +8454,7 @@ impl Playthrough {
             Who::Owl => w.actors.downcast::<crate::en_owl::EnOwl>(h).is_some_and(|a| !a.actor.killed),
             Who::KingZora => w.actors.downcast::<crate::en_kz::EnKz>(h).is_some_and(|a| !a.actor.killed),
             Who::Ruto => w.actors.downcast::<crate::en_ru1::EnRu1>(h).is_some_and(|a| !a.actor.killed),
+            Who::Bonooru => w.actors.downcast::<crate::en_kakasi3::EnKakasi3>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

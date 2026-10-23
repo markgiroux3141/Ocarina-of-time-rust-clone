@@ -561,10 +561,9 @@ pub fn sram_open_save(save: &mut SaveContext, sram_ctx: &SramContext) {
     if save.health < 0x30 {
         save.health = 0x30;
     }
-    if save.scarecrow_long_song_set != 0 || save.scarecrow_spawn_song_set != 0 {
-        // MemCopy into gScarecrowLongSongPtr / gScarecrowSpawnSongPtr: the ocarina's.
-        log::info!("Sram_OpenSave: the scarecrow's songs aren't copied out (the ocarina isn't ported); the save keeps them");
-    }
+    // The scarecrows' songs, MemCopy'd into gScarecrowLongSongPtr / gScarecrowSpawnSongPtr: the
+    // ocarina's statics are the audio's, so the play state's start copies them
+    // (`Ocarina::sram_open_save_scarecrow_songs`).
     // Zelda's cutscene watched but no lullaby: the cutscene back, the letter a chicken again.
     if save.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) && !save.check_quest_item(QUEST_SONG_LULLABY) {
         save.event_chk_inf[(EVENTCHKINF_OBTAINED_ZELDAS_LETTER >> 4) as usize] &= !(1 << (EVENTCHKINF_OBTAINED_ZELDAS_LETTER & 0xF));

@@ -32,7 +32,7 @@ PHASES = {
     8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
     9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "done"),
     10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "done"),
-    11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "in progress"),
+    11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "done"),
     12: ("The Temple of Time and the adult world", "planned"),
     13: ("Epona and the adult Hyrule Field", "planned"),
     14: ("The Forest Temple", "planned"),

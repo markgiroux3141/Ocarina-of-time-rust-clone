@@ -608,7 +608,9 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
             // Environment_ForcePlaySequence: the first scene plays it instead of its own.
             save.forced_seq_id = m as u16;
         }
-        let audio = oot_game::audio::GameAudio::boot_logged(g.audio.clone(), g.audio_tables.clone(), a.audio_log);
+        let mut audio = oot_game::audio::GameAudio::boot_logged(g.audio.clone(), g.audio_tables.clone(), a.audio_log);
+        // Sram_OpenSave's scarecrows' songs (a loaded file's).
+        audio.ocarina.sram_open_save_scarecrow_songs(&save);
         match PlayState::play_init_with(g.clone(), a.data.clone(), a.rules.clone(), save, audio) {
             Ok(mut w) => {
                 w.sram = sram;

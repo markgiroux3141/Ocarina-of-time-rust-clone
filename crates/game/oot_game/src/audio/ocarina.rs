@@ -14,10 +14,11 @@
 //! is copied into the statics at boot, as the scarecrow's songs and the memory game write it.
 //!
 //! The Skull Kids' memory game (`AudioOcarina_MemoryGameInit`, `_MemoryGameNextNote`) came with
-//! GAME-08 milestone 2. Left out (the user's scope, GAME-07 milestone 3): the scarecrow's recording
-//! (`AudioOcarina_SetRecordingSong`, `_SetRecordingState`, `_RecordSong`) and the long
-//! scarecrow's song after the credits (`AudioOcarina_PlayLongScarecrowSong`). Their state is kept
-//! (recording off), and the calls log.
+//! GAME-08 milestone 2; the scarecrows' recording (`AudioOcarina_SetRecordingSong`,
+//! `_SetRecordingState`, `_RecordSong`) and the long scarecrow's song after the credits
+//! (`AudioOcarina_PlayLongScarecrowSong`) with GAME-10 milestone 9. `Sram_OpenSave`'s copies of
+//! the save's songs into the statics are `Ocarina::sram_open_save_scarecrow_songs`, called where a
+//! play state starts on a loaded file.
 
 use eng_input::pad::{BTN_A, BTN_B, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP, BTN_L, BTN_R, BTN_Z, Input};
 
@@ -133,6 +134,22 @@ pub const SONG_NOTES: usize = 20;
 /// `sScarecrowsLongSongNotes`' size.
 const SCARECROW_LONG_NOTES: usize = 108;
 
+/// `OcarinaNote`s as the C's memory holds them (size 8, big-endian: `pitch`, a pad byte,
+/// `length`, `volume`, `vibrato`, `bend`, `bFlat4Flag`), as many as fit.
+fn notes_to_bytes(notes: &[OcarinaNote], out: &mut [u8]) {
+    for (n, b) in notes.iter().zip(out.chunks_exact_mut(8)) {
+        let l = n.length.to_be_bytes();
+        b.copy_from_slice(&[n.pitch, 0, l[0], l[1], n.volume, n.vibrato, n.bend as u8, n.b_flat4_flag]);
+    }
+}
+
+/// The other way: `notes_to_bytes`' bytes back into notes.
+fn notes_from_bytes(bytes: &[u8], notes: &mut [OcarinaNote]) {
+    for (n, b) in notes.iter_mut().zip(bytes.chunks_exact(8)) {
+        *n = OcarinaNote { pitch: b[0], length: u16::from_be_bytes([b[2], b[3]]), volume: b[4], vibrato: b[5], bend: b[6] as i8, b_flat4_flag: b[7] };
+    }
+}
+
 /// The pad as the ocarina reads it: `cur.button` and the stick after
 /// `PadUtils_UpdateRelXY` (`rel.stick_x`, `rel.stick_y`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -187,6 +204,8 @@ pub struct Ocarina {
     pub song_buttons: Vec<OcarinaSongButtons>,
     pub button_to_pitch_map: Vec<u8>,
     pub pitch_to_button_map: Vec<u8>,
+    /// `gFrogsSongPtr` (`sFrogsSongNotes`): the frogs' song game's 14 buttons.
+    pub frogs_song_notes: Vec<u8>,
     pub playback_song: PlaybackSong,
     pub recording_state: u8,
     /// `sScarecrowsLongSongNotes`.
@@ -219,6 +238,23 @@ pub struct Ocarina {
     /// round's last.
     pub memory_game_append_pos: u8,
     pub memory_game_end_pos: u8,
+    /// `sRecordSongPos`, `sOcarinaRecordTaskStart`, `sRecordOcarinaPitch`, `sRecordOcarinaVolume`,
+    /// `sRecordOcarinaVibrato`, `sRecordOcarinaBendIndex`, `sRecordOcarinaButtonIndex`: the
+    /// scarecrows' recording, the note being held since `record_task_start`.
+    pub record_song_pos: u8,
+    pub record_task_start: u32,
+    pub record_pitch: u8,
+    pub record_volume: u8,
+    pub record_vibrato: u8,
+    pub record_bend_index: i8,
+    pub record_button_index: u8,
+    /// `sScarecrowsLongSongSecondNote`: put back when a long recording ends with no note.
+    pub scarecrows_long_song_second_note: OcarinaNote,
+    /// `AudioOcarina_PlayLongScarecrowSong`'s `sScarecrowAfterCreditsState`,
+    /// `sScarecrowAfterCreditsIntrumentId`, `sScarecrowAfterCreditsTimer`.
+    pub scarecrow_after_credits_state: u8,
+    pub scarecrow_after_credits_instrument_id: u8,
+    pub scarecrow_after_credits_timer: u16,
     /// Not in the C: the pad `PadMgr_RequestPadData` would give at this `Audio_Update`.
     pub pad: OcarinaPad,
 }
@@ -274,6 +310,7 @@ impl Ocarina {
             song_buttons: t.ocarina_song_buttons.clone(),
             button_to_pitch_map: t.button_to_pitch_map.clone(),
             pitch_to_button_map: t.pitch_to_button_map.clone(),
+            frogs_song_notes: t.frogs_song_notes.clone(),
             playback_song: PlaybackSong::Song(0),
             recording_state: OCARINA_RECORD_OFF,
             scarecrows_long_song_notes,
@@ -302,6 +339,17 @@ impl Ocarina {
             music_staff_expected_pitch: [0; OCARINA_SONG_MAX as usize],
             memory_game_append_pos: 0,
             memory_game_end_pos: 0,
+            record_song_pos: 0,
+            record_task_start: 0,
+            record_pitch: 0,
+            record_volume: 0,
+            record_vibrato: 0,
+            record_bend_index: 0,
+            record_button_index: 0,
+            scarecrows_long_song_second_note: OcarinaNote::default(),
+            scarecrow_after_credits_state: 0,
+            scarecrow_after_credits_instrument_id: OCARINA_INSTRUMENT_DEFAULT,
+            scarecrow_after_credits_timer: 1200,
             pad: OcarinaPad::default(),
         }
     }
@@ -311,6 +359,44 @@ impl Ocarina {
     pub fn song_note(&self, song: u8, pos: i32) -> OcarinaNote {
         let i = song as i32 * SONG_NOTES as i32 + pos;
         if i < 0 { OcarinaNote::default() } else { self.song_notes.get(i as usize).copied().unwrap_or_default() }
+    }
+
+    /// `AudioOcarina_SetRecordingSong`'s `recordedSong[pos]`: the long song's notes
+    /// (`gScarecrowLongSongPtr`), or for the spawn song its buffer, the memory game's song
+    /// (`sMemoryGameSongPtr`), flat as the C's memory. Past the table, none (the C writes on).
+    fn recorded_note_mut(&mut self, pos: usize) -> Option<&mut OcarinaNote> {
+        if self.recording_state == OCARINA_RECORD_SCARECROW_LONG {
+            self.scarecrows_long_song_notes.get_mut(pos)
+        } else {
+            self.song_notes.get_mut(OCARINA_SONG_MEMORY_GAME as usize * SONG_NOTES + pos)
+        }
+    }
+
+    /// `MemCopy(save, gScarecrowLongSongPtr, 0x360)`: the long song as the save keeps it.
+    pub fn scarecrow_long_song_bytes(&self) -> [u8; 0x360] {
+        let mut out = [0; 0x360];
+        notes_to_bytes(&self.scarecrows_long_song_notes, &mut out);
+        out
+    }
+
+    /// `MemCopy(save, gScarecrowSpawnSongPtr, 0x80)`: the spawn song's first 16 notes as the
+    /// save keeps them.
+    pub fn scarecrow_spawn_song_bytes(&self) -> [u8; 0x80] {
+        let mut out = [0; 0x80];
+        let base = OCARINA_SONG_SCARECROW_SPAWN as usize * SONG_NOTES;
+        notes_to_bytes(&self.song_notes[base..base + 16], &mut out);
+        out
+    }
+
+    /// `Sram_OpenSave`'s copies: the save's scarecrows' songs into the statics, each if it's set.
+    pub fn sram_open_save_scarecrow_songs(&mut self, save: &crate::save::SaveContext) {
+        if save.scarecrow_long_song_set != 0 {
+            notes_from_bytes(&save.scarecrow_long_song, &mut self.scarecrows_long_song_notes);
+        }
+        if save.scarecrow_spawn_song_set != 0 {
+            let base = OCARINA_SONG_SCARECROW_SPAWN as usize * SONG_NOTES;
+            notes_from_bytes(&save.scarecrow_spawn_song, &mut self.song_notes[base..base + 16]);
+        }
     }
 
     /// `sPlaybackSong[pos]`.
@@ -891,15 +977,148 @@ impl GameAudio {
         self.ocarina.playback_note_pos = self.ocarina.playback_note_pos.wrapping_add(1);
     }
 
-    /// `AudioOcarina_SetRecordingState`: the scarecrow's recording isn't ported (the user's
-    /// scope); turning it on logs, off does nothing.
+    /// `AudioOcarina_SetRecordingSong`: the note held since `record_task_start` written to the
+    /// recording (`recorded_note_mut`), the current one becomes the held one. Unless
+    /// `is_recording_complete` (or the long song's 107th entry), that's all. Complete: the
+    /// trailing rests cut to one, the song ended (a zero length). The spawn song is then checked
+    /// (eight notes or more): shifted down past its first entry (the rest before the first note),
+    /// its buttons mapped, and refused (`OCARINA_RECORD_REJECTED`, the spawn song's second note's
+    /// volume 0xFF: unset) if it holds any of the twelve songs or is one note eight times; else
+    /// copied into the spawn song and the input turned off. Fewer than eight: unset.
+    fn audio_ocarina_set_recording_song(&mut self, is_recording_complete: bool) {
+        let o = &mut self.ocarina;
+        let pos = o.record_song_pos as usize;
+        let (pitch, length, volume, vibrato, bend, b_flat4_flag) = (o.record_pitch, o.update_task_start.wrapping_sub(o.record_task_start) as u16, o.record_volume, o.record_vibrato, o.record_bend_index, o.record_button_index & 0xC0);
+        match o.recorded_note_mut(pos) {
+            Some(n) => *n = OcarinaNote { pitch, length, volume, vibrato, bend, b_flat4_flag },
+            None => log::warn!("AudioOcarina_SetRecordingSong: note {pos} is past the recording's table (the C writes on)"),
+        }
+        o.record_pitch = o.cur_pitch;
+        o.record_volume = o.cur_volume as u8;
+        o.record_vibrato = o.cur_vibrato as u8;
+        o.record_bend_index = o.cur_bend_index;
+        o.record_button_index = o.cur_button_index;
+        o.record_song_pos = o.record_song_pos.wrapping_add(1);
+
+        if o.record_song_pos as usize != SCARECROW_LONG_NOTES - 1 && !is_recording_complete {
+            // Continue recording.
+            return;
+        }
+
+        // Recording is complete.
+        let mut i = o.record_song_pos as u16;
+        let mut pitch = OCARINA_PITCH_NONE;
+        while i != 0 && pitch == OCARINA_PITCH_NONE {
+            i -= 1;
+            pitch = o.recorded_note_mut(i as usize).map_or(0, |n| n.pitch);
+        }
+        if o.record_song_pos as u16 != i + 1 {
+            o.record_song_pos = (i + 2) as u8;
+            let p = o.record_song_pos as usize - 1;
+            if let Some(n) = o.recorded_note_mut(p) {
+                n.length = 0;
+            }
+        }
+        let p = o.record_song_pos as usize;
+        if let Some(n) = o.recorded_note_mut(p) {
+            n.length = 0;
+        }
+
+        if o.recording_state == OCARINA_RECORD_SCARECROW_SPAWN {
+            let spawn_second = OCARINA_SONG_SCARECROW_SPAWN as usize * SONG_NOTES + 1;
+            if o.staff_playing_pos >= 8 {
+                // The first entry (the rest before the first note) dropped.
+                let base = OCARINA_SONG_MEMORY_GAME as usize * SONG_NOTES;
+                for i in 0..o.record_song_pos as usize {
+                    let next = o.song_notes.get(base + i + 1).copied().unwrap_or_default();
+                    if let Some(n) = o.song_notes.get_mut(base + i) {
+                        *n = next;
+                    }
+                }
+                // The buffer's buttons into the spawn song's, to be checked.
+                self.audio_ocarina_map_notes_to_scarecrow_buttons(OCARINA_SONG_MEMORY_GAME);
+                let o = &mut self.ocarina;
+                let spawn = o.song_buttons(OCARINA_SONG_SCARECROW_SPAWN);
+                // Each song, at each place it could start within the eight notes.
+                for s in 0..OCARINA_SONG_SCARECROW_SPAWN {
+                    let sb = o.song_buttons(s);
+                    let num = sb.num_buttons as i32;
+                    let mut j = 0i32;
+                    while j < 9 - num {
+                        let mut k = 0i32;
+                        while k < num && k + j < 8 && sb.buttons_index[k as usize] == spawn.buttons_index[(k + j) as usize] {
+                            k += 1;
+                        }
+                        // The recorded song holds a song.
+                        if k == num {
+                            o.recording_state = OCARINA_RECORD_REJECTED;
+                            o.song_notes[spawn_second].volume = 0xFF;
+                            return;
+                        }
+                        j += 1;
+                    }
+                }
+                // One note eight times.
+                let mut i = 1;
+                while i < 8 {
+                    if spawn.buttons_index[0] != spawn.buttons_index[i] {
+                        i = 9; // break
+                    } else {
+                        i += 1;
+                    }
+                }
+                if i == 8 {
+                    o.recording_state = OCARINA_RECORD_REJECTED;
+                    o.song_notes[spawn_second].volume = 0xFF;
+                    return;
+                }
+                // Accepted: the buffer copied into the spawn song.
+                let (from, to) = (OCARINA_SONG_MEMORY_GAME as usize * SONG_NOTES, OCARINA_SONG_SCARECROW_SPAWN as usize * SONG_NOTES);
+                for i in 0..o.record_song_pos as usize {
+                    o.song_notes[to + i] = o.song_notes.get(from + i).copied().unwrap_or_default();
+                }
+                o.is_input_enabled = false;
+            } else {
+                o.song_notes[spawn_second].volume = 0xFF;
+            }
+        }
+        self.ocarina.recording_state = OCARINA_RECORD_OFF;
+    }
+
+    /// `AudioOcarina_SetRecordingState`: `OCARINA_RECORD_SCARECROW_LONG` or `_SPAWN` starts a
+    /// recording (the input on, no note held yet); `OCARINA_RECORD_OFF` ends one (the last note
+    /// written and the song completed, or with nothing played the long song's second note put
+    /// back).
     pub fn audio_ocarina_set_recording_state(&mut self, recording_state: u8) {
         if recording_state as u32 == self.ocarina.recording_state as u32 {
             return;
         }
         if recording_state != OCARINA_RECORD_OFF {
-            log::info!("AudioOcarina_SetRecordingState({recording_state}): the scarecrow's recording isn't ported");
+            let o = &mut self.ocarina;
+            o.record_task_start = o.update_task_start;
+            o.record_pitch = OCARINA_PITCH_NONE;
+            o.record_volume = 0x57;
+            o.record_vibrato = 0;
+            o.record_bend_index = 0;
+            o.record_button_index = 0;
+            o.record_song_pos = 0;
+            o.is_input_enabled = true;
+            o.staff_playing_pos = 0;
+            o.scarecrows_long_song_second_note = o.scarecrows_long_song_notes[1];
+        } else {
+            if self.ocarina.record_song_pos == 0 {
+                let o = &mut self.ocarina;
+                o.scarecrows_long_song_notes[1] = o.scarecrows_long_song_second_note;
+            } else {
+                if self.ocarina.recording_state == OCARINA_RECORD_SCARECROW_SPAWN {
+                    self.ocarina.staff_playing_pos = 1;
+                }
+                self.audio_ocarina_set_recording_song(true);
+            }
+            self.ocarina.is_input_enabled = false;
+            self.ocarina.staff_playing_pos = 0;
         }
+        self.ocarina.recording_state = recording_state;
     }
 
     /// `AudioOcarina_UpdateRecordingStaff`.
@@ -956,10 +1175,46 @@ impl GameAudio {
         StaffRef::Playback
     }
 
-    /// `AudioOcarina_RecordSong`: off unless recording (the scarecrow's, not ported).
+    /// `AudioOcarina_RecordSong`: while recording, every three audio tasks or more, a change of
+    /// note (pitch, volume, vibrato or bend) writes the one held (`SetRecordingSong`). A new
+    /// note is counted on the recording staff (its button, its position 1 to 8, round again
+    /// for the long song); the spawn song ends at its eighth note's release, or at a ninth.
     fn audio_ocarina_record_song(&mut self) {
-        if self.ocarina.recording_state != OCARINA_RECORD_OFF {
-            log::debug!("AudioOcarina_RecordSong: the scarecrow's recording isn't ported");
+        let o = &mut self.ocarina;
+        if o.recording_state == OCARINA_RECORD_OFF || o.update_task_start.wrapping_sub(o.record_task_start) < 3 {
+            return;
+        }
+        let mut note_changed = false;
+        if o.record_pitch != o.cur_pitch {
+            if o.cur_pitch != OCARINA_PITCH_NONE {
+                o.recording_staff.button_index = o.cur_button_index & 0x3F;
+                o.staff_playing_pos = o.staff_playing_pos.wrapping_add(1);
+            } else if o.recording_state == OCARINA_RECORD_SCARECROW_SPAWN && o.staff_playing_pos == 8 {
+                self.audio_ocarina_set_recording_song(true);
+                return;
+            }
+            let o = &mut self.ocarina;
+            if o.staff_playing_pos > 8 {
+                if o.recording_state == OCARINA_RECORD_SCARECROW_SPAWN {
+                    // Over eight notes while recording the spawn song.
+                    self.audio_ocarina_set_recording_song(true);
+                    return;
+                }
+                o.staff_playing_pos = 1;
+            }
+            note_changed = true;
+        } else if o.record_volume as i32 != o.cur_volume as i32 {
+            note_changed = true;
+        } else if o.record_vibrato as i32 != o.cur_vibrato as i32 {
+            // !PLATFORM_N64: every version's change counts, the spawn song's too.
+            note_changed = true;
+        } else if o.record_bend_index != o.cur_bend_index {
+            note_changed = true;
+        }
+        if note_changed {
+            self.audio_ocarina_set_recording_song(false);
+            let o = &mut self.ocarina;
+            o.record_task_start = o.update_task_start;
         }
     }
 
@@ -1043,9 +1298,45 @@ impl GameAudio {
         self.audio_ocarina_update_recording_staff();
     }
 
-    /// `AudioOcarina_PlayLongScarecrowSong` (after the credits): not ported.
+    /// `AudioOcarina_PlayLongScarecrowSong` (after the credits, `CS_CMD_PLAY_LONG_SCARECROW_SONG`
+    /// each frame): every 1,200 frames the long song played on the next instrument, from the
+    /// default to the flute; then the ocarina off.
     pub fn audio_ocarina_play_long_scarecrow_song(&mut self) {
-        log::debug!("AudioOcarina_PlayLongScarecrowSong: not ported");
+        /// `OCARINA_INSTRUMENT_MAX` (`ocarina.h`).
+        const OCARINA_INSTRUMENT_MAX: u8 = 7;
+        match self.ocarina.scarecrow_after_credits_state {
+            0 => {
+                let o = &mut self.ocarina;
+                let t = o.scarecrow_after_credits_timer;
+                o.scarecrow_after_credits_timer = t.wrapping_sub(1);
+                if t == 0 {
+                    if o.scarecrow_after_credits_instrument_id < OCARINA_INSTRUMENT_MAX {
+                        // The next instrument, again.
+                        o.scarecrow_after_credits_state += 1;
+                    } else {
+                        // Finished.
+                        o.scarecrow_after_credits_state = 3;
+                        self.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    }
+                    self.ocarina.scarecrow_after_credits_timer = 1200;
+                }
+            }
+            1 => {
+                self.set_sfx_banks_mute(0);
+                let id = self.ocarina.scarecrow_after_credits_instrument_id;
+                self.audio_ocarina_set_instrument(id);
+                self.audio_ocarina_set_playback_song(OCARINA_SONG_SCARECROW_LONG as i8 + 1, 1);
+                let o = &mut self.ocarina;
+                o.scarecrow_after_credits_instrument_id += 1;
+                o.scarecrow_after_credits_state += 1;
+            }
+            2 => {
+                if self.ocarina.playback_staff.state == 0 {
+                    self.ocarina.scarecrow_after_credits_state = 0;
+                }
+            }
+            _ => {}
+        }
     }
 
     /// `AudioOcarina_ResetStaffs`.
@@ -1220,5 +1511,129 @@ mod tests {
         a.ocarina.song_notes[i].pitch = OCARINA_PITCH_D4;
         a.audio_ocarina_memory_game_init(0);
         assert_eq!(a.ocarina.song_note(OCARINA_SONG_MEMORY_GAME, 0).pitch, OCARINA_PITCH_F4);
+    }
+
+    /// `audio()` with every song but Saria's and the Sun's eight C-Ups and an A (none of the
+    /// recordings below holds them), and the spawn song unset (its second note's volume 0xFF).
+    fn recording_audio() -> GameAudio {
+        let mut a = audio();
+        for s in 0..OCARINA_SONG_SCARECROW_SPAWN {
+            if s != OCARINA_SONG_SARIAS && s != OCARINA_SONG_SUNS {
+                a.ocarina.song_buttons[s as usize] = OcarinaSongButtons { num_buttons: 8, buttons_index: [4, 4, 4, 4, 4, 4, 4, 0] };
+            }
+        }
+        a.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+        a
+    }
+
+    /// Each button pressed for two frames and let go for two.
+    fn play(a: &mut GameAudio, buttons: &[u16]) {
+        for &b in buttons {
+            for held in [b, b, 0, 0] {
+                frame(a, held);
+            }
+        }
+    }
+
+    // AudioOcarina_SetRecordingState(OCARINA_RECORD_SCARECROW_SPAWN), then eight notes: the
+    // staff counts them; the eighth's release ends the recording (AudioOcarina_RecordSong's
+    // SetRecordingSong(true)). The buffer (the memory game's song) is shifted past its first
+    // entry (the rest before the first note), its buttons mapped into the spawn song's, none of
+    // the songs in them, not one note eight times: copied into the spawn song (its rests at
+    // the boot's volume 0x57, set: its second entry's volume isn't 0xFF), the input off.
+    #[test]
+    fn the_spawn_recording_keeps_eight_new_notes() {
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_SPAWN);
+        assert!(a.ocarina.is_input_enabled);
+        let song = [BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CLEFT, BTN_CUP, BTN_A, BTN_CDOWN, BTN_CLEFT];
+        play(&mut a, &song[..7]);
+        assert_eq!((a.ocarina.recording_staff.state, a.ocarina.recording_staff.pos), (OCARINA_RECORD_SCARECROW_SPAWN, 7));
+        play(&mut a, &song[7..]);
+        assert_eq!(a.ocarina.recording_state, OCARINA_RECORD_OFF);
+        assert_eq!(a.ocarina.recording_staff.state, OCARINA_RECORD_OFF);
+        assert!(!a.ocarina.is_input_enabled);
+        let buttons = a.ocarina.song_buttons(OCARINA_SONG_SCARECROW_SPAWN).buttons_index;
+        assert_eq!(buttons, [OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_RIGHT, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_UP, OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_LEFT]);
+        let notes: Vec<OcarinaNote> = (0..15).map(|i| a.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, i)).collect();
+        let pitches: Vec<u8> = notes.iter().map(|n| n.pitch).collect();
+        let r = OCARINA_PITCH_NONE;
+        assert_eq!(pitches, vec![0x2, r, 0x5, r, 0x9, r, 0xB, r, 0xE, r, 0x2, r, 0x5, r, 0xB]);
+        // Each held two frames (six audio tasks), each rest two.
+        assert!(notes.iter().all(|n| n.length == 6 && n.volume == 0x57), "{notes:?}");
+        assert_ne!(a.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, 1).volume, 0xFF);
+        // The save's bytes, and back (Sram_OpenSave).
+        let bytes = a.ocarina.scarecrow_spawn_song_bytes();
+        assert_eq!(&bytes[..8], &[0x2, 0, 0, 6, 0x57, 0, 0, 0]);
+        let mut b = recording_audio();
+        let mut save = crate::save::SaveContext::default();
+        (save.scarecrow_spawn_song_set, save.scarecrow_spawn_song) = (1, bytes);
+        b.ocarina.sram_open_save_scarecrow_songs(&save);
+        assert_eq!((0..15).map(|i| b.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, i)).collect::<Vec<_>>(), notes);
+    }
+
+    // A spawn recording holding a song (Saria's, from its second note) is refused: the staff
+    // reads OCARINA_RECORD_REJECTED once (then off), the spawn song unset (its second entry's
+    // volume 0xFF). So is one note eight times.
+    #[test]
+    fn the_spawn_recording_refuses_a_song_or_one_note() {
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_SPAWN);
+        play(&mut a, &[BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT, BTN_CLEFT]);
+        assert_eq!(a.ocarina.recording_state, OCARINA_RECORD_SCARECROW_SPAWN);
+        // The eighth note's release.
+        for held in [BTN_A, BTN_A, 0] {
+            frame(&mut a, held);
+        }
+        assert_eq!(a.ocarina.recording_staff.state, OCARINA_RECORD_REJECTED);
+        assert_eq!(a.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, 1).volume, 0xFF);
+        frame(&mut a, 0);
+        assert_eq!(a.ocarina.recording_staff.state, OCARINA_RECORD_OFF);
+
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_SPAWN);
+        play(&mut a, &[BTN_CUP; 7]);
+        for held in [BTN_CUP, BTN_CUP, 0] {
+            frame(&mut a, held);
+        }
+        assert_eq!(a.ocarina.recording_staff.state, OCARINA_RECORD_REJECTED);
+    }
+
+    // Fewer than eight notes when the recording is turned off (the box's B): the spawn song
+    // unset. The long song's: AudioOcarina_SetRecordingState(OCARINA_RECORD_OFF) writes the
+    // note held (here the rest after the third), cuts the trailing rests to one (its length
+    // zeroed) and ends the song (a zero length); the staff's position goes round 1 to 8.
+    #[test]
+    fn recordings_turned_off() {
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_SPAWN);
+        play(&mut a, &[BTN_A, BTN_CDOWN]);
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_OFF);
+        assert_eq!(a.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, 1).volume, 0xFF);
+        assert!(!a.ocarina.is_input_enabled);
+
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_LONG);
+        play(&mut a, &[BTN_A, BTN_CUP, BTN_CDOWN]);
+        for _ in 0..10 {
+            frame(&mut a, 0);
+        }
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_OFF);
+        let notes: Vec<OcarinaNote> = a.ocarina.scarecrows_long_song_notes[..8].to_vec();
+        let r = OCARINA_PITCH_NONE;
+        assert_eq!(notes.iter().map(|n| n.pitch).collect::<Vec<_>>()[..7], [r, 0x2, r, 0xE, r, 0x5, r]);
+        // The first rest (from the start to the first press) a frame, the last zeroed, then the
+        // end.
+        assert_eq!(notes.iter().map(|n| n.length).collect::<Vec<_>>()[..8], [3, 6, 6, 6, 6, 6, 0, 0]);
+        assert_eq!(a.ocarina.recording_state, OCARINA_RECORD_OFF);
+
+        let mut a = recording_audio();
+        a.audio_ocarina_set_recording_state(OCARINA_RECORD_SCARECROW_LONG);
+        let mut seen = Vec::new();
+        for b in [BTN_A; 10] {
+            play(&mut a, &[b]);
+            seen.push(a.ocarina.recording_staff.pos);
+        }
+        assert_eq!(seen, vec![1, 2, 3, 4, 5, 6, 7, 8, 1, 2]);
     }
 }

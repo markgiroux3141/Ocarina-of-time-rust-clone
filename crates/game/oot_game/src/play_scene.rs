@@ -757,7 +757,9 @@ impl PlayState {
                 return Err(e.into());
             }
         };
-        let audio = std::mem::take(&mut self.audio);
+        let mut audio = std::mem::take(&mut self.audio);
+        // Sram_OpenSave's scarecrows' songs.
+        audio.ocarina.sram_open_save_scarecrow_songs(&save);
         let fallback = audio.clone();
         let side = self.audio_side.take();
         match PlayState::play_init_with(assets, self.data.clone(), self.rules.clone(), save, audio) {

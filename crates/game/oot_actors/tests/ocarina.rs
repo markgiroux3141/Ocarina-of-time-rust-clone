@@ -562,3 +562,153 @@ fn the_route_plays_its_songs() {
     // + song), Navi's call (0xE0), her yes/no's yes to Saria (0xE2, 0x161), and "talk again?" no.
     assert_eq!(run.texts, [0x86E, 0x86F, 0x899, 0xE0, 0xE2, 0x161, 0xE3, 0x86E, 0x86F, 0x89C, 0x86E, 0x86F, 0x89E]);
 }
+
+// GAME-10 milestone 9: the box's scarecrow and frog modes, started as the actors start them (the
+// ocarina out to them: Bonooru's func_80A915B8, En_Kakasi's func_80A8F660, En_Fr's
+// EnFr_SetupFrogSong).
+
+/// `notes` played (as `play_notes`), the box's `lastOcarinaButtonIndex` taken on each frame it's
+/// set (`Message_Update` puts it back to `OCARINA_BTN_INVALID` the next).
+fn notes_taken(w: &mut PlayState, notes: &[u16]) -> Vec<u8> {
+    let mut taken = Vec::new();
+    for &b in notes {
+        let pad = PadState { button: b, ..Default::default() };
+        for (prev, cur) in [(PadState::default(), pad), (pad, pad), (pad, pad), (pad, PadState::default()), (PadState::default(), PadState::default())] {
+            w.tick_with(scripted_input(prev, cur));
+            if w.msg_ctx.last_ocarina_button_index != OCARINA_BTN_INVALID {
+                taken.push(w.msg_ctx.last_ocarina_button_index);
+            }
+        }
+    }
+    taken
+}
+
+/// `ocarina_out`, then the free play's box replaced by `action`'s (`Message_StartOcarina`) and
+/// its text run to its ocarina (`Message_HandleOcarina`) until `mode`. The free play's listening
+/// turned off (`AudioOcarina_Start(0xFFFF)`): the ocarina out to a scarecrow starts no free play
+/// (Player's `PLAYER_STATE2_24`), so nothing listens for songs while it records.
+fn ocarina_action(w: &mut PlayState, action: u16, mode: u8) {
+    ocarina_out(w);
+    w.audio.audio_ocarina_start(0xFFFF);
+    w.message_start_ocarina(action);
+    until(w, 60, "the action's mode", |w| w.msg_ctx.msg_mode == mode);
+}
+
+// OCARINA_ACTION_SCARECROW_SPAWN_RECORDING (0x2C, >= CHECK_SARIA: 0x86E) reaches its ocarina:
+// MSGMODE_SCARECROW_SPAWN_RECORDING_START (AudioOcarina_SetRecordingState(SPAWN), the default
+// instrument), then _ONGOING. Eight notes, none a song's, not one note eight times: the
+// recording staff's state off, scarecrowSpawnSongSet, the spawn song's notes MemCopy'd into the
+// save, NA_SE_SY_TRE_BOX_APPEAR, MSGMODE_SCARECROW_SPAWN_RECORDING_DONE for 20 frames (the
+// notes flashing), then the box closed and OCARINA_MODE_03 (Bonooru's func_80A91620 waits on it).
+// Then OCARINA_ACTION_SCARECROW_SPAWN_PLAYBACK plays it back: OCARINA_MODE_0F at its end.
+#[test]
+fn the_box_records_the_spawn_song() {
+    let Some(a) = assets() else { return };
+    let mut w = field(&a, 10, FIELD_AT);
+    ocarina_action(&mut w, OCARINA_ACTION_SCARECROW_SPAWN_RECORDING, MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING);
+    assert_eq!(w.audio.ocarina.recording_state, OCARINA_RECORD_SCARECROW_SPAWN);
+    let notes = [BTN_A, BTN_CDOWN, BTN_A, BTN_CUP, BTN_A, BTN_CDOWN, BTN_A, BTN_CUP];
+    let mut m = Watch::new(&w);
+    assert_eq!(notes_taken(&mut w, &notes[..7]), [0, 1, 0, 4, 0, 1, 0]);
+    m.notes(&mut w, &notes[7..]);
+    m.until(&mut w, 40, |w| w.msg_ctx.ocarina_mode == OCARINA_MODE_03);
+    assert_eq!(m.between(MSGMODE_SCARECROW_SPAWN_RECORDING_DONE, MSGMODE_TEXT_CLOSING), 20);
+    assert_eq!(w.save.scarecrow_spawn_song_set, 1);
+    assert_eq!(w.save.scarecrow_spawn_song, w.audio.ocarina.scarecrow_spawn_song_bytes());
+    let sb = w.audio.ocarina.song_buttons(OCARINA_SONG_SCARECROW_SPAWN);
+    assert_eq!(sb.buttons_index, [0, 1, 0, 4, 0, 1, 0, 4]);
+    assert_ne!(w.audio.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, 1).volume, 0xFF);
+    // Played back: the box's playback mode takes the playback staff's notes into its buffer,
+    // OCARINA_MODE_0F once the staff's state drops to 0.
+    until(&mut w, 60, "the box closed", |w| w.message_state() == TEXT_STATE_NONE);
+    w.message_start_ocarina(OCARINA_ACTION_SCARECROW_SPAWN_PLAYBACK);
+    until(&mut w, 60, "the playback", |w| w.msg_ctx.msg_mode == MSGMODE_SCARECROW_SPAWN_PLAYBACK);
+    assert_eq!(heard_back(&mut w), [0, 1, 0, 4, 0, 1, 0, 4]);
+}
+
+/// The playback staff's notes until OCARINA_MODE_0F.
+fn heard_back(w: &mut PlayState) -> Vec<u8> {
+    let mut heard = Vec::new();
+    for _ in 0..600 {
+        if w.msg_ctx.ocarina_mode == OCARINA_MODE_0F {
+            return heard;
+        }
+        idle(w, 1);
+        let s = w.audio.ocarina.playback_staff;
+        if s.pos as usize > heard.len() {
+            heard.push(s.button_index);
+        }
+    }
+    panic!("no OCARINA_MODE_0F: {heard:?}");
+}
+
+// Seven notes that hold Saria's Song (from the second) and an eighth: refused
+// (OCARINA_RECORD_REJECTED): SetRecordingState(OFF), NA_SE_SY_OCARINA_ERROR, the box closed,
+// MSGMODE_SCARECROW_SPAWN_RECORDING_FAILED: 0x40AD ("Bonooru doesn't remember") and
+// OCARINA_MODE_04; nothing saved.
+#[test]
+fn the_box_refuses_a_song_for_the_spawn_song() {
+    let Some(a) = assets() else { return };
+    let mut w = field(&a, 10, FIELD_AT);
+    ocarina_action(&mut w, OCARINA_ACTION_SCARECROW_SPAWN_RECORDING, MSGMODE_SCARECROW_SPAWN_RECORDING_ONGOING);
+    let mut notes = vec![BTN_A];
+    notes.extend(song(&w, OCARINA_SONG_SARIAS));
+    notes.push(BTN_A);
+    play_notes(&mut w, &notes);
+    until(&mut w, 30, "0x40AD", |w| w.msg_ctx.text_id == 0x40AD);
+    assert_eq!(w.msg_ctx.ocarina_mode, OCARINA_MODE_04);
+    assert_eq!(w.save.scarecrow_spawn_song_set, 0);
+    assert_eq!(w.audio.ocarina.recording_state, OCARINA_RECORD_OFF);
+    assert_eq!(w.audio.ocarina.song_note(OCARINA_SONG_SCARECROW_SPAWN, 1).volume, 0xFF);
+}
+
+// OCARINA_ACTION_SCARECROW_LONG_RECORDING (0x2A): MSGMODE_SCARECROW_LONG_RECORDING_START
+// (SetRecordingState(LONG), the buffer emptied) then _ONGOING, each note into the buffer (eight
+// at most, scrolled) and lastOcarinaButtonIndex. B: scarecrowLongSongSet (notes were played),
+// NA_SE_SY_OCARINA_ERROR, SetRecordingState(OFF), OCARINA_MODE_04, the box closed, the long song
+// MemCopy'd into the save. Then OCARINA_ACTION_SCARECROW_LONG_PLAYBACK (Message_StartOcarinaImpl
+// itself: stateTimer 3, the playback song OCARINA_SONG_SCARECROW_LONG): OCARINA_MODE_0F at its end.
+#[test]
+fn the_box_records_the_long_song() {
+    let Some(a) = assets() else { return };
+    let mut w = field(&a, 10, FIELD_AT);
+    ocarina_action(&mut w, OCARINA_ACTION_SCARECROW_LONG_RECORDING, MSGMODE_SCARECROW_LONG_RECORDING_ONGOING);
+    assert_eq!(w.audio.ocarina.recording_state, OCARINA_RECORD_SCARECROW_LONG);
+    assert_eq!(notes_taken(&mut w, &[BTN_CUP, BTN_CLEFT, BTN_CRIGHT]), [OCARINA_BTN_C_UP, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT]);
+    press(&mut w, BTN_B, 1);
+    assert_eq!(w.msg_ctx.ocarina_mode, OCARINA_MODE_04);
+    assert_eq!(w.save.scarecrow_long_song_set, 1);
+    assert_eq!(w.audio.ocarina.recording_state, OCARINA_RECORD_OFF);
+    assert_eq!(w.save.scarecrow_long_song, w.audio.ocarina.scarecrow_long_song_bytes());
+    let pitches: Vec<u8> = w.audio.ocarina.scarecrows_long_song_notes[..7].iter().map(|n| n.pitch).collect();
+    let r = OCARINA_PITCH_NONE;
+    assert_eq!(pitches, [r, 0xE, r, 0xB, r, 0x9, r]);
+    until(&mut w, 60, "the box closed", |w| w.message_state() == TEXT_STATE_NONE && player(w).action != PA::Ocarina);
+    // Played back from Message_StartOcarinaImpl (no ocarina out: Kakasi's func_80A8F8D0).
+    w.message_start_ocarina(OCARINA_ACTION_SCARECROW_LONG_PLAYBACK);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_SCARECROW_LONG_PLAYBACK);
+    assert_eq!(heard_back(&mut w), [OCARINA_BTN_C_UP, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT]);
+}
+
+// OCARINA_ACTION_FROGS: Message_StartOcarinaImpl goes straight to MSGMODE_FROGS_START (the
+// default instrument, the playing staff, OCARINA_MODE_01, AudioOcarina_Start(flags + 0xC000)),
+// then MSGMODE_FROGS_PLAYING; a note played: lastOcarinaButtonIndex, MSGMODE_FROGS_WAITING (En_Fr
+// answers and puts MSGMODE_FROGS_START back).
+#[test]
+fn the_frogs_mode_takes_a_note_at_a_time() {
+    let Some(a) = assets() else { return };
+    let mut w = field(&a, 10, FIELD_AT);
+    ocarina_out(&mut w);
+    w.message_start_ocarina(OCARINA_ACTION_FROGS);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_FROGS_START);
+    idle(&mut w, 1);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_FROGS_PLAYING);
+    assert_eq!(w.msg_ctx.ocarina_mode, OCARINA_MODE_01);
+    assert_eq!(notes_taken(&mut w, &[BTN_CDOWN]), [OCARINA_BTN_C_DOWN]);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_FROGS_WAITING);
+    w.msg_ctx.msg_mode = MSGMODE_FROGS_START;
+    idle(&mut w, 1);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_FROGS_PLAYING);
+    assert_eq!(notes_taken(&mut w, &[BTN_A]), [OCARINA_BTN_A]);
+    assert_eq!(w.msg_ctx.msg_mode, MSGMODE_FROGS_WAITING);
+}

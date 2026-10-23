@@ -543,7 +543,7 @@ impl PlayState {
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
     /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9705, 9806, 9908;
-    /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100 and 3100). The
+    /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100, 4110, 3100, 2260, 2270 and 2280). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -1038,6 +1038,65 @@ impl PlayState {
                 }
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
                 self.player_set_cs_action_with_halted_actors(None, 8);
+            }
+            2260 => {
+                // A scarecrow's song asked for (En_Kakasi, En_Kakasi3): five keyframes
+                // (D_80120ACC: on the scarecrow, Link held by the third's PLAYER_CSACTION_1), the
+                // first's and third's at.x and eye.x from the frame's parity and Rand.
+                let t = self.onepoint.table("D_80120ACC");
+                let at_x = (if frames & 1 != 0 { -10.0 } else { 10.0 }) + self.rand.zero_one() * 8.0;
+                self.onepoint.kf(t, 0).at_target_init.x = at_x;
+                self.onepoint.kf(t, 2).at_target_init.x = at_x;
+                let eye_x = (if frames & 1 != 0 { 20.0 } else { -20.0 }) + self.rand.zero_one() * 5.0;
+                self.onepoint.kf(t, 0).eye_target_init.x = eye_x;
+                self.onepoint.kf(t, 2).eye_target_init.x = eye_x;
+                set_cs_info(self, "D_80120ACC", 5);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            2270 | 2280 => {
+                // A scarecrow dancing to its song (2270: En_Kakasi's long song, D_80120B94's eleven
+                // keyframes; 2280: En_Kakasi3's spawn song, D_80120D4C's seven): Link held
+                // (PLAYER_CSACTION_1), round the scarecrow; all but the last three rows that
+                // aren't ONEPOINT_CS_ACTION(ID_15, false, true) (0x8F) get their at's and eye's x
+                // and z from Rand; a quake on the sub camera (QUAKE_TYPE_5, speed 400).
+                let (name, n, at_x, at_z, eye_x, eye_z) =
+                    if cs_id == 2270 { ("D_80120B94", 11, (5.0, 0.0), (30.0, 10.0), (100.0, 20.0), (80.0, 50.0)) } else { ("D_80120D4C", 7, (20.0, 0.0), (40.0, 10.0), (40.0, 60.0), (40.0, 80.0)) };
+                let t = self.onepoint.table(name);
+                for i in 0..(n - 3) {
+                    if self.onepoint.kf(t, i).action_flags != 0x8F {
+                        let v = self.rand.zero_one() * at_x.0 + at_x.1;
+                        self.onepoint.kf(t, i).at_target_init.x = v;
+                        let v = self.rand.zero_one() * at_z.0 + at_z.1;
+                        self.onepoint.kf(t, i).at_target_init.z = v;
+                        let v = self.rand.zero_one() * eye_x.0 + eye_x.1;
+                        self.onepoint.kf(t, i).eye_target_init.x = v;
+                        let v = self.rand.zero_one() * eye_z.0 + eye_z.1;
+                        self.onepoint.kf(t, i).eye_target_init.z = v;
+                    }
+                }
+                // @bug (game): the row is picked by the sub camera's id (`[subCamId - 1]`), not
+                // a keyframe's index.
+                let v = (if frames & 1 != 0 { 3.0 } else { -3.0 }) + self.rand.zero_one();
+                self.onepoint.kf(t, (sub - 1).max(0) as usize).eye_target_init.y = v;
+                set_cs_info(self, name, n as i32);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                let i = self.quake_request(sub, crate::quake::QUAKE_TYPE_5);
+                self.quake_set_speed(i, 400);
+                if cs_id == 2270 {
+                    self.quake_set_perturbations(i, 4, 5, 40, 0x3C);
+                    self.quake_set_duration(i, 1600);
+                } else {
+                    self.quake_set_perturbations(i, 2, 3, 200, 0x32);
+                    self.quake_set_duration(i, 9999);
+                }
+            }
+            4110 => {
+                // The frogs on Zora's River's log (En_Fr): three keyframes (D_8012269C: from
+                // (918, 228, -1228) at the log (975, 225, -1195), then on Link), Player held
+                // (Player_SetCsAction, PLAYER_CSACTION_8: not with the actors).
+                set_cs_info(self, "D_8012269C", 3);
+                self.player_set_cs_action(player, 8);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             _ => log::warn!("onepointdemo camera: demo number not found !! ({cs_id}): not ported"),
         }

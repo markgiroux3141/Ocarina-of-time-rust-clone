@@ -185,8 +185,13 @@ pub const CHARACTERS: &[Character] = &[
     c("Lord Jabu-Jabu", "En_Jj/eye0", Some(("object_jj", "gJabuJabuAnim")), &[], &[], &[]),
     // GAME-10 milestone 2: the Octorok (En_Okuta), floating.
     skel("Octorok", "object_okuta", "gOctorokSkel", Some(("object_okuta", "gOctorokFloatAnim")), &[], &[]),
+    // GAME-10 milestone 9: the scarecrows (En_Kakasi, En_Kakasi2, En_Kakasi3), at their dance's
+    // first frame.
+    skel("Scarecrow", "object_ka", "object_ka_Skel_0065B0", Some(("object_ka", "object_ka_Anim_000214")), &[], &[]),
     // GAME-10 milestone 8: Big Octo (En_Bigokuta), swimming round.
     skel("Big Octo", "object_bigokuta", "object_bigokuta_Skel_006BC0", Some(("object_bigokuta", "object_bigokuta_Anim_001CA4")), &[], &[]),
+    // GAME-10 milestone 9: a frog (En_Fr), the yellow one, eyes open (eyeTexIndex 1), sitting.
+    c("Frog", "En_Fr/eye1", Some(("object_fr", "object_fr_Anim_001534")), &[(0x0E, Env, [200, 170, 0, 255])], &[], &[]),
     // GAME-10 milestone 4: the Stinger (En_Eiyer, En_Weiyer), gliding.
     skel("Stinger", "object_ei", "gStingerSkel", Some(("object_ei", "gStingerHitAnim")), &[], &[]),
     // GAME-10 milestone 4: the Biri (En_Bili), its tentacles' first picture, its core's colours
