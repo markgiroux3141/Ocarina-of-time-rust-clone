@@ -1072,12 +1072,15 @@ impl PlayState {
                 self.link_age_on_load = LINK_AGE_ADULT;
                 go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
+            // CS_DEST_CHAMBER_OF_SAGES_FOREST_MEDALLION, _FIRE_MEDALLION, _WATER_MEDALLION
+            // (z_demo.c:849-868): the medallion's cutscene in the Chamber's layers 0 to 3.
             29 | 30 | 31 => {
-                // gSaveContext.chamberCutsceneNum = 0, 1, 2: the Chamber of Sages isn't ported.
                 go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", None, TRANS_TYPE_FADE_WHITE, None);
                 if base == 30 {
                     crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_MEDALLION_FIRE);
                 }
+                use crate::save::{CHAMBER_CS_FIRE, CHAMBER_CS_FOREST, CHAMBER_CS_WATER};
+                self.save.chamber_cutscene_num = [CHAMBER_CS_FOREST, CHAMBER_CS_FIRE, CHAMBER_CS_WATER][(base - 29) as usize];
             }
             32 => {
                 self.link_age_on_load = LINK_AGE_CHILD;

@@ -133,7 +133,7 @@ pub fn file_select_load_game(save: &mut SaveContext, sram_ctx: &SramContext, but
     save.next_transition_type = TRANS_NEXT_TYPE_DEFAULT;
     save.next_cutscene_index = NEXT_CS_INDEX_NONE;
     save.cutscene_trigger = 0;
-    // (chamberCutsceneNum: not ported.)
+    save.chamber_cutscene_num = crate::save::CHAMBER_CS_FOREST;
     save.next_day_time = crate::clock::NEXT_TIME_NONE;
     save.retain_weather_mode = false;
     save.button_status = [crate::interface::BTN_ENABLED; 5];

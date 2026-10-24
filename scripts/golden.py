@@ -386,6 +386,20 @@ CASES = [
     ("master_sword_pull_cs", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "master-sword", "--script", "master-sword-pull", "--frames", "140", "--screenshot", "{shot}"]),
     ("master_sword_back", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "master-sword-adult", "--script", "master-sword-back", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("master_sword_back_adult", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "master-sword-adult", "--script", "master-sword-back", "--frames", "112", "--screenshot", "{shot}"]),
+    # GAME-11 milestone 2: the Door of Time to the Chamber of the Sages and out (five runs chained by
+    # presets; the stones over the altar, Ganondorf, the Chamber, Sheik, the ruined market), and
+    # Rauru fading in on the Chamber's layer 6 (type 2, translucent).
+    ("door_of_time", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "ocarina-of-time", "--script", "door-of-time", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("door_of_time_stones", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "ocarina-of-time", "--script", "door-of-time", "--frames", "1000", "--screenshot", "{shot}"]),
+    ("first_pull", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "door-of-time", "--script", "first-pull", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("first_pull_ganondorf", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "door-of-time", "--script", "first-pull", "--frames", "1500", "--screenshot", "{shot}"]),
+    ("first_pull_chamber", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "door-of-time", "--script", "first-pull", "--frames", "4400", "--screenshot", "{shot}"]),
+    ("awakening", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_4", "--child", "--preset", "light-medallion", "--script", "awakening", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("awakening_sheik", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_4", "--child", "--preset", "light-medallion", "--script", "awakening", "--frames", "1100", "--screenshot", "{shot}"]),
+    ("temple_exit", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "adult-awake", "--script", "temple-exit", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ruins", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1", "--child", "--preset", "adult-awake", "--script", "ruins", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ruins_market", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1", "--child", "--preset", "adult-awake", "--script", "ruins", "--frames", "600", "--screenshot", "{shot}"]),
+    ("chamber_rauru_fade", S, ["--entrance", "ENTR_CHAMBER_OF_THE_SAGES_0", "--child", "--preset", "adult-awake", "--cutscene", "0xFFF2", "--script", "still", "--frames", "25", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

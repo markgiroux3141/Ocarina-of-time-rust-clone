@@ -419,6 +419,18 @@ fn draw_config_great_fairys_fountain(st: &mut DrawConfigState, b: &mut Buffers) 
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigChamberOfTheSages` (`SDC_CHAMBER_OF_THE_SAGES`, `z_scene_table.c:408`: the
+/// Chamber of the Sages): the light's scroll on segment 8 (64 by 64, XLU), the floor's two
+/// scrolls on segment 0xA (OPA) and the falling light's on 9 (32 by 64 over 32 by 128, XLU).
+fn draw_config_chamber_of_the_sages(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_tex_scroll(0, f.wrapping_mul(2) % 256, 64, 64));
+    b.opa.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 256, 32, 64, 1, 0, 0, 32, 128));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 /// `Scene_DrawConfigRoyalFamilysTomb` (the royal tomb): the exit's light on segment 8, two tall
 /// scrolls on segments 9 and 0xB (XLU), and the water's on segment 0xA (OPA).
 fn draw_config_royal_familys_tomb(st: &mut DrawConfigState, b: &mut Buffers) {
@@ -736,6 +748,7 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_FAIRYS_FOUNTAIN", draw_config_fairys_fountain),
     ("SDC_GREAT_FAIRYS_FOUNTAIN", draw_config_great_fairys_fountain),
     ("SDC_ROYAL_FAMILYS_TOMB", draw_config_royal_familys_tomb),
+    ("SDC_CHAMBER_OF_THE_SAGES", draw_config_chamber_of_the_sages),
     ("SDC_LON_LON_RANCH", draw_config_spot20),
     ("SDC_LON_LON_BUILDINGS", draw_config_souko),
     ("SDC_GORON_CITY", draw_config_spot18),

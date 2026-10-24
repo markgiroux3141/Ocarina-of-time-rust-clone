@@ -214,7 +214,13 @@ impl DemoSa {
         this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         match TYPE.get(this.actor.params) {
             5 => this.init_bridge(play),
-            p => log::warn!("Demo_Sa: params {p} (the Chamber of Sages, the sages' magic, the credits, the unused one) isn't ported: drawn as nothing"),
+            p => {
+                log::warn!("Demo_Sa: params {p} (the Chamber of Sages, the sages' magic, the credits, the unused one) isn't ported: drawn as nothing");
+                // DemoSa_CsForestMedallion_CheckCutscene (types 0 and 1, the switch's default).
+                if !matches!(p, 2..=4) && play.save.chamber_cutscene_num == oot_game::save::CHAMBER_CS_FOREST && !play.is_cutscene_layer() {
+                    log::warn!("Demo_Sa: chamberCutsceneNum CHAMBER_CS_FOREST: the Forest Medallion's cutscene (gForestMedallionCs) would start (Phase 14)");
+                }
+            }
         }
         Box::new(this)
     }

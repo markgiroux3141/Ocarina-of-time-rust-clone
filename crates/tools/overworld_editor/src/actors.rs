@@ -168,6 +168,7 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Bg_Toki_Hikari", "Temple of Time windows", Group::SetPiece),
     ("Bg_Toki_Swd", "Master Sword in its pedestal", Group::SetPiece),
     ("Door_Toki", "Door of Time collision", Group::SetPiece),
+    ("Bg_Spot00_Break", "Broken drawbridge (adult field)", Group::SetPiece),
     ("Bg_Mjin", "Warp pad", Group::Door),
     ("En_Heishi3", "Castle sentry", Group::Character),
     ("En_Heishi2", "Gate guard", Group::Character),

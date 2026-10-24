@@ -686,6 +686,39 @@ pub enum Step {
     /// Arrived by time travel (`ENTR_TEMPLE_OF_TIME_2`, start mode 1): off the pedestal
     /// (`Player_Action_TimeTravelEnd` over), Link standing.
     TimeTravelled,
+    /// The Temple of Time's intro (`gTempleOfTimeIntroCs`, `EVENTCHKINF_A7`) over, Link free.
+    TempleIntro,
+    /// `gDoorOfTimeOpeningCs` over: the Door of Time open (`EVENTCHKINF_OPENED_DOOR_OF_TIME`),
+    /// Link free.
+    DoorOfTimeOpen,
+    /// `gRevealMasterSwordCs` started (`EVENTCHKINF_REVEALED_MASTER_SWORD`).
+    SwordReveal,
+    /// Its script over, Link free.
+    SwordRevealed,
+    /// The cutscene map's layer 7 (`gCutsceneMapGanondorfFromMasterSwordCs`) playing.
+    GanondorfFromSword,
+    /// The Chamber of the Sages' layer 4 (`gChamberOfSagesLightMedallionCs`) playing, Link an
+    /// adult.
+    Chamber,
+    /// The Light Medallion given (`QUEST_MEDALLION_LIGHT`: Rauru's `Item_Give`).
+    LightMedallion,
+    /// Terminator 18's transition to `ENTR_TEMPLE_OF_TIME_4` started.
+    ChamberLeft,
+    /// Back in the Temple at `ENTR_TEMPLE_OF_TIME_4`: Sheik's `gTempleOfTimeFirstAdultCs`
+    /// started (`EVENTCHKINF_C5`).
+    SheikAwakening,
+    /// Its script over and the return's time warp gone (`EVENTCHKINF_C9`), Link free.
+    AdultAwake,
+    /// Out of the Temple of Time (`ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1`: the ruins' `shrine_r` for
+    /// an adult), settled.
+    TempleExterior,
+    /// Into the ruined market (`ENTR_MARKET_DAY_2`: `market_ruins` for an adult), settled.
+    MarketRuins,
+    /// Past its ReDeads into the ruined market entrance (`ENTR_MARKET_ENTRANCE_DAY_0`: `enrui`),
+    /// settled.
+    MarketEntranceRuins,
+    /// Out to the field by the broken drawbridge (`ENTR_HYRULE_FIELD_7`), settled.
+    FieldByTheDrawbridge,
 }
 
 impl Step {
@@ -963,6 +996,20 @@ impl Step {
             Step::SwordPulled => "sword_pulled",
             Step::SwordPutBack => "sword_put_back",
             Step::TimeTravelled => "time_travelled",
+            Step::TempleIntro => "temple_intro",
+            Step::DoorOfTimeOpen => "door_of_time_open",
+            Step::SwordReveal => "sword_reveal",
+            Step::SwordRevealed => "sword_revealed",
+            Step::GanondorfFromSword => "ganondorf_from_sword",
+            Step::Chamber => "chamber",
+            Step::LightMedallion => "light_medallion",
+            Step::ChamberLeft => "chamber_left",
+            Step::SheikAwakening => "sheik_awakening",
+            Step::AdultAwake => "adult_awake",
+            Step::TempleExterior => "temple_exterior",
+            Step::MarketRuins => "market_ruins",
+            Step::MarketEntranceRuins => "market_entrance_ruins",
+            Step::FieldByTheDrawbridge => "field_by_the_drawbridge",
         }
     }
 }
@@ -1296,6 +1343,30 @@ pub enum Route {
     /// the adult arriving on the pedestal at `ENTR_TEMPLE_OF_TIME_2`): `gPlaceMasterSwordCs`,
     /// terminator 8, the child's arrival.
     MasterSwordBack,
+    /// The Door of Time (GAME-11 milestone 2, `ocarina-of-time` at the Temple's entrance,
+    /// `ENTR_TEMPLE_OF_TIME_0`): its intro (`gTempleOfTimeIntroCs`), the Ocarina of Time put on
+    /// C-Down from the item page, the Song of Time at the altar (`En_Okarina_Tag` 4) and
+    /// `gDoorOfTimeOpeningCs`. Its end is `door-of-time`.
+    DoorOfTime,
+    /// The first pull to the Chamber (`door-of-time`, from the Temple's entrance): round the altar,
+    /// through the doorway into room 0, the reveal (`gRevealMasterSwordCs`), the pull
+    /// (`gPullMasterSwordCs`, terminator 8's first time: the cutscene map), Ganondorf (terminator
+    /// 25: the age), the Chamber of the Sages (Rauru, the Light Medallion) to terminator 18's
+    /// transition. Its end is `light-medallion`.
+    FirstPull,
+    /// The awakening (`light-medallion`, `ENTR_TEMPLE_OF_TIME_4`): `En_Xc` 9 starts
+    /// `gTempleOfTimeFirstAdultCs` (Navi, Sheik), the return's time warp shrinks
+    /// (`EVENTCHKINF_C9`). Its end is `adult-awake`, Phase 13's start.
+    Awakening,
+    /// The way out (`adult-awake`, a debug start in room 0 where the awakening leaves Link): back
+    /// through the doorway and the hall, out by exit 1 (`ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1`: the
+    /// ruins' `shrine_r`). Phase 12's exit.
+    TempleExit,
+    /// The ruins (`adult-awake`, outside the Temple where `TempleExit` ends, `shrine_r`): into the
+    /// ruined market, round its eight ReDeads (none within 150, so none hears him), through the
+    /// ruined market entrance (`enrui`) to the field by the broken drawbridge
+    /// (`ENTR_HYRULE_FIELD_7`, `Bg_Spot00_Break`).
+    Ruins,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2027,6 +2098,64 @@ fn jabu_ruto_tasks() -> Vec<Task> {
     ]
 }
 
+/// The item page's 6 by 4 grid (`ITEM_GRID_COLS`, `ITEM_GRID_ROWS`).
+const ITEM_GRID_COLS: i16 = 6;
+const ITEM_GRID_ROWS: i16 = 4;
+
+/// Where one push of the stick takes the item page's cursor from `(x, y)`, by
+/// `KaleidoScope_DrawItemSelect`'s rules: left or right it passes empty slots, past the row's end
+/// going on from its starting column a row down (`None` back on its own row: the page's arrow);
+/// up or down it passes empty slots, and stays (`None`) with none that way. `filled` says which
+/// slots (`cursorPoint`) hold an item.
+fn item_cursor_move(filled: &impl Fn(i16) -> bool, (x0, y0): (i16, i16), (dx, dy): (i16, i16)) -> Option<(i16, i16)> {
+    let (mut x, mut y) = (x0, y0);
+    loop {
+        if dx != 0 {
+            if (dx < 0 && x != 0) || (dx > 0 && x < ITEM_GRID_COLS - 1) {
+                x += dx;
+            } else {
+                x = x0;
+                y = (y + 1) % ITEM_GRID_ROWS;
+                if y == y0 {
+                    return None;
+                }
+                continue;
+            }
+        } else if (dy < 0 && y != 0) || (dy > 0 && y < ITEM_GRID_ROWS - 1) {
+            y += dy;
+        } else {
+            return None;
+        }
+        if filled(x + y * ITEM_GRID_COLS) {
+            return Some((x, y));
+        }
+    }
+}
+
+/// The stick's first push (`stick_x`, `stick_y`: up the screen is the stick up) on the shortest
+/// way of `item_cursor_move`s from `from` to the slot `to`, if there's one.
+fn item_cursor_first_move(filled: impl Fn(i16) -> bool, from: (i16, i16), to: i16) -> Option<(i8, i8)> {
+    // Grid moves (x, y) and their sticks: right, left, up the screen (cursorY less one), down.
+    const MOVES: [((i16, i16), (i8, i8)); 4] = [((1, 0), (80, 0)), ((-1, 0), (-80, 0)), ((0, -1), (0, 80)), ((0, 1), (0, -80))];
+    let target = (to % ITEM_GRID_COLS, to / ITEM_GRID_COLS);
+    let mut first: std::collections::HashMap<(i16, i16), Option<(i8, i8)>> = std::collections::HashMap::from([(from, None)]);
+    let mut queue = std::collections::VecDeque::from([from]);
+    while let Some(at) = queue.pop_front() {
+        if at == target {
+            return first[&at];
+        }
+        for (d, stick) in MOVES {
+            if let Some(next) = item_cursor_move(&filled, at, d)
+                && !first.contains_key(&next)
+            {
+                first.insert(next, Some(first[&at].unwrap_or(stick)));
+                queue.push_back(next);
+            }
+        }
+    }
+    None
+}
+
 /// The item page's slots (`SLOT_BOMB` 2, `SLOT_DEKU_STICK` 0: `inventory.h`).
 const PAUSE_SLOT_BOMB: u16 = 2;
 const PAUSE_SLOT_STICK: u16 = 0;
@@ -2208,6 +2337,135 @@ fn ocarina_of_time_tasks() -> Vec<Task> {
             Step::FieldAfterOcarina,
         ),
         Task::Settle(None),
+    ]
+}
+
+/// `SCENE_CHAMBER_OF_THE_SAGES` (0x44) and `SCENE_CUTSCENE_MAP` (0x47) (`scene_table.h`).
+const SCENE_CHAMBER_OF_THE_SAGES: u16 = 0x44;
+const SCENE_CUTSCENE_MAP: u16 = 0x47;
+/// `EVENTCHKINF_A7` (the Temple's intro seen), `EVENTCHKINF_OPENED_DOOR_OF_TIME` (0x4B),
+/// `EVENTCHKINF_REVEALED_MASTER_SWORD` (0x4F), `EVENTCHKINF_C5` (Sheik's awakening),
+/// `EVENTCHKINF_C9` (the return's time warp gone) (`save.h`).
+const EVENTCHKINF_A7: u16 = 0xA7;
+const EVENTCHKINF_OPENED_DOOR_OF_TIME: u16 = 0x4B;
+const EVENTCHKINF_REVEALED_MASTER_SWORD: u16 = 0x4F;
+const EVENTCHKINF_C5: u16 = 0xC5;
+const EVENTCHKINF_C9: u16 = 0xC9;
+/// The item page's `SLOT_OCARINA` (`inventory.h`: 7).
+const PAUSE_SLOT_OCARINA: u16 = 7;
+/// Where `gTempleOfTimeFirstAdultCs` leaves Link (its last player cues, from frame 525): in room
+/// 0 between the pedestal and the doorway.
+pub const AWAKENING_END: Vec3 = Vec3::new(0.0, 40.0, 214.0);
+/// The hall's way from its entrance (spawn 0, (0, -40, 2453)) to the doorway: the altar (17 high
+/// at x -50 to 50, z 1300 to 1350; a 41 rise from the hall's floor in front of it) stands in the
+/// middle, the floor rising to the door's level (0) on slopes either side of it: round its east
+/// side, then down the middle through the doorway (z 1080) and the `En_Holl` (z 920) into room 0.
+fn temple_hall_to_room_0() -> Vec<Vec3> {
+    vec![Vec3::new(150.0, -40.0, 1450.0), Vec3::new(150.0, -20.0, 1300.0), Vec3::new(100.0, 0.0, 1200.0), Vec3::new(0.0, 0.0, 1100.0), Vec3::new(0.0, 0.0, 950.0)]
+}
+
+/// No cutscene running and Link free (not in a cutscene mode).
+fn cs_over(w: &PlayState) -> bool {
+    w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode()
+}
+
+/// `Route::DoorOfTime`'s tasks: the intro (`sEntranceCutsceneTable`'s `ENTR_TEMPLE_OF_TIME_0` row:
+/// `EVENTCHKINF_A7`), the Ocarina of Time (`ocarina-of-time` has it on no button) onto C-Down
+/// from the item page, to the altar (`En_Okarina_Tag` 0x13FF at (-1, -40, 1384): within 90 across
+/// it listens for the Song of Time), the song: `gDoorOfTimeOpeningCs` (the stones, the door
+/// sliding; `Demo_Kankyo` sets `EVENTCHKINF_OPENED_DOOR_OF_TIME` as it finishes) until Link is
+/// free.
+fn door_of_time_tasks() -> Vec<Task> {
+    vec![
+        // (The intro starts at Play_Init: EVENTCHKINF_A7 is set by then.)
+        Task::Texts(|w| w.save.get_event_chk_inf(EVENTCHKINF_A7) && cs_over(w), Step::TempleIntro),
+        Task::Settle(None),
+        Task::OpenMenu(Step::MenuOpened),
+        Task::MenuCursor(PAUSE_SLOT_OCARINA, Step::CursorOnItem),
+        Task::EquipOnC(1, Step::ItemEquipped),
+        Task::CloseMenu(Step::MenuClosed),
+        // In front of the altar, 31 from the song spot: within 50 (its interactRange 0) it marks
+        // Link as one to play to it (PLAYER_STATE2_23), and Player's ocarina waits for its check
+        // (OCARINA_ACTION_CHECK_TIME) instead of playing freely. Spawn 3's place is 66 away.
+        Task::Walk(vec![Vec3::new(0.0, -40.0, 1450.0), Vec3::new(0.0, -40.0, 1415.0)]),
+        Task::Settle(None),
+        Task::Ocarina(1, oot_game::audio::ocarina::OCARINA_SONG_TIME, Step::TimeSongPlayed),
+        Task::Texts(|w| w.save.get_event_chk_inf(EVENTCHKINF_OPENED_DOOR_OF_TIME) && cs_over(w), Step::DoorOfTimeOpen),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::FirstPull`'s tasks: through the open doorway into room 0, facing the sword within 800
+/// (`BgTokiSwd_Idle`: the reveal, `gRevealMasterSwordCs`, Navi's 0x70E6 to 0x70E8); to the
+/// pedestal and A (the pull, `gPullMasterSwordCs`; terminator 8's first time sets
+/// `EVENTCHKINF_OBTAINED_MASTER_SWORD`: `ENTR_CUTSCENE_MAP_0` with `CS_INDEX_3`), Ganondorf's
+/// 0x700A (terminator 25: `linkAgeOnLoad` adult, `ENTR_CHAMBER_OF_THE_SAGES_0` with `CS_INDEX_0`),
+/// the Chamber's layer 4: Rauru's texts with the choice (its first answer, 0x7053, goes on), the
+/// Light Medallion (0x0040), 0x70E9, until terminator 18's transition starts.
+fn first_pull_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(temple_hall_to_room_0()),
+        Task::WalkUntil(vec![Vec3::new(0.0, 0.0, 600.0)], |w| w.save.get_event_chk_inf(EVENTCHKINF_REVEALED_MASTER_SWORD) && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::SwordReveal),
+        Task::Texts(cs_over, Step::SwordRevealed),
+        Task::Walk(vec![Vec3::new(0.0, 0.0, 300.0)]),
+        Task::Pedestal(Step::SwordPulled),
+        Task::Texts(|w| w.scene_id == SCENE_CUTSCENE_MAP && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::GanondorfFromSword),
+        Task::Texts(|w| w.scene_id == SCENE_CHAMBER_OF_THE_SAGES && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::Chamber),
+        Task::Texts(|w| w.save.check_quest_item(oot_game::item::QUEST_MEDALLION_FOREST + 5), Step::LightMedallion),
+        Task::Texts(|w| w.scene_id == SCENE_CHAMBER_OF_THE_SAGES && w.transition.trigger != TRANS_TRIGGER_OFF, Step::ChamberLeft),
+    ]
+}
+
+/// `Route::Awakening`'s tasks: arrived an adult at `ENTR_TEMPLE_OF_TIME_4`, `En_Xc` 9 sets
+/// `EVENTCHKINF_C5` and starts `gTempleOfTimeFirstAdultCs`; A through Navi's and Sheik's texts
+/// until the script is over (`CS_MISC_STOP_CUTSCENE`, no terminator) with the return's time warp
+/// gone (`DemoEffect_UpdateTimeWarpReturnFromChamberOfSages`' 250 frames: `EVENTCHKINF_C9`).
+fn awakening_tasks() -> Vec<Task> {
+    vec![
+        Task::Texts(|w| w.save.get_event_chk_inf(EVENTCHKINF_C5) && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::SheikAwakening),
+        Task::Texts(|w| w.save.get_event_chk_inf(EVENTCHKINF_C9) && cs_over(w), Step::AdultAwake),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::TempleExit`'s tasks: from where the awakening leaves Link, back through the doorway
+/// (the `En_Holl` into room 1), round the altar and down the hall to its entrance's exit (exit 1,
+/// `ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1`: `shrine_r` for an adult), settled outside.
+fn temple_exit_tasks() -> Vec<Task> {
+    let mut way = temple_hall_to_room_0();
+    way.reverse();
+    way.push(Vec3::new(0.0, -40.0, 2300.0));
+    vec![Task::Settle(None), Task::Walk(way), Task::Exit("ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1", Some(Step::TempleExterior))]
+}
+
+/// The ruined market's way from the Temple's road (its north-east, spawn 2 (477, 0, -367)) to
+/// the market entrance's (exit 1, the south, between the walls at x -100 and 100): north of the
+/// ReDead at (247, 0, -460), round the square's round fountain (its wall 107 from (0, 0)) on its
+/// west, between it and the ReDeads at (-283, 0, -154) and (-199, 0, 268), then down the middle:
+/// every ReDead stays over 160 away (`EnRd_Idle` hears Link, `PLAYER_STATE2_3`, only within 150).
+fn market_ruins_way() -> Vec<Vec3> {
+    vec![
+        Vec3::new(420.0, 0.0, -240.0),
+        Vec3::new(0.0, 0.0, -150.0),
+        Vec3::new(-120.0, 0.0, -120.0),
+        Vec3::new(-150.0, 0.0, 0.0),
+        Vec3::new(-110.0, 0.0, 110.0),
+        Vec3::new(-40.0, 0.0, 200.0),
+        Vec3::new(0.0, 0.0, 300.0),
+        Vec3::new(0.0, 0.0, 600.0),
+    ]
+}
+
+/// `Route::Ruins`' tasks: from the Temple's steps (`shrine_r`) into the ruined market, round its
+/// ReDeads, into the ruined market entrance and out to the field (`ENTR_HYRULE_FIELD_7`).
+fn ruins_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Exit("ENTR_MARKET_DAY_2", Some(Step::MarketRuins)),
+        Task::Walk(market_ruins_way()),
+        Task::Exit("ENTR_MARKET_ENTRANCE_DAY_0", Some(Step::MarketEntranceRuins)),
+        Task::Exit("ENTR_HYRULE_FIELD_7", Some(Step::FieldByTheDrawbridge)),
     ]
 }
 
@@ -3021,6 +3279,13 @@ impl Route {
             Route::MasterSwordPull => "ENTR_TEMPLE_OF_TIME_0",
             // Spawn 2, room 0: start mode 1 (Player_StartMode_TimeTravel), on the pedestal.
             Route::MasterSwordBack => "ENTR_TEMPLE_OF_TIME_2",
+            // Spawn 0, the hall's entrance (room 1). The exit's debug start then moves to room 0,
+            // as the pull's does (not ENTR_TEMPLE_OF_TIME_4: see MasterSwordPull).
+            Route::DoorOfTime | Route::FirstPull | Route::TempleExit => "ENTR_TEMPLE_OF_TIME_0",
+            // Spawn 4, room 0: the return from the Chamber (terminator 18's).
+            Route::Awakening => "ENTR_TEMPLE_OF_TIME_4",
+            // The Temple's steps (shrine_r's spawn 1 for an adult): TempleExit's end.
+            Route::Ruins => "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3082,6 +3347,10 @@ impl Route {
             Route::Frogs | Route::Bonooru => Some("ocarina-c"),
             Route::MasterSwordPull => Some("master-sword"),
             Route::MasterSwordBack => Some("master-sword-adult"),
+            Route::DoorOfTime => Some("ocarina-of-time"),
+            Route::FirstPull => Some("door-of-time"),
+            Route::Awakening => Some("light-medallion"),
+            Route::TempleExit | Route::Ruins => Some("adult-awake"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
             Route::Escape => Some("zora-sapphire"),
@@ -3161,6 +3430,9 @@ impl Route {
             Route::Bonooru => Some((BONOORU_FRONT, -0x8000)),
             // Spawn 4's place on the pedestal's step, facing as it does.
             Route::MasterSwordPull => Some((MASTER_SWORD_STEP, -3641)),
+            // Where gTempleOfTimeFirstAdultCs leaves Link (its last player cue: (0, 40, 214)),
+            // facing the doorway (+z).
+            Route::TempleExit => Some((AWAKENING_END, 0)),
             _ => None,
         }
     }
@@ -3227,7 +3499,7 @@ impl Route {
             Route::JabuWeb => Some(11),
             Route::JabuCrystal => Some(1),
             Route::JabuSwitch | Route::JabuOcto => Some(3),
-            Route::MasterSwordPull => Some(0),
+            Route::MasterSwordPull | Route::TempleExit => Some(0),
             _ => None,
         }
     }
@@ -3391,6 +3663,11 @@ impl Route {
             Route::Bonooru => "bonooru",
             Route::MasterSwordPull => "master-sword-pull",
             Route::MasterSwordBack => "master-sword-back",
+            Route::DoorOfTime => "door-of-time",
+            Route::FirstPull => "first-pull",
+            Route::Awakening => "awakening",
+            Route::TempleExit => "temple-exit",
+            Route::Ruins => "ruins",
         }
     }
 
@@ -3460,6 +3737,11 @@ impl Route {
             Route::Frogs => 8000,
             Route::Bonooru => 3000,
             Route::MasterSwordPull | Route::MasterSwordBack => 2000,
+            Route::DoorOfTime => 6000,
+            Route::FirstPull => 12000,
+            Route::Awakening => 4000,
+            Route::TempleExit => 3000,
+            Route::Ruins => 4000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3467,12 +3749,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3972,6 +4254,8 @@ pub struct Playthrough {
     owl: Option<ActorHandle>,
     /// `Task::PushCrate`'s crate, kept once chosen.
     crate_handle: Option<ActorHandle>,
+    /// The item page's cursor positions `Task::MenuCursor` has been at.
+    cursor_seen: Vec<(i16, i16)>,
     /// The cucco `Task::Lift` took, until `Task::Throw` throws it.
     carried: Option<ActorHandle>,
     /// `Task::Ocarina`'s note frames, `Task::TalkThrough`'s choices answered.
@@ -4286,6 +4570,11 @@ impl Playthrough {
             Route::Bonooru => bonooru_tasks(),
             Route::MasterSwordPull => vec![Task::Pedestal(Step::SwordPulled), Task::NewScene(Step::TimeTravelled)],
             Route::MasterSwordBack => vec![Task::Settle(None), Task::Pedestal(Step::SwordPutBack), Task::NewScene(Step::TimeTravelled)],
+            Route::DoorOfTime => door_of_time_tasks(),
+            Route::FirstPull => first_pull_tasks(),
+            Route::Awakening => awakening_tasks(),
+            Route::TempleExit => temple_exit_tasks(),
+            Route::Ruins => ruins_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -4354,6 +4643,7 @@ impl Playthrough {
             reset: None,
             owl: None,
             crate_handle: None,
+            cursor_seen: Vec::new(),
             carried: None,
             notes: 0,
             max_frames: route.max_frames(),
@@ -4603,6 +4893,7 @@ impl Playthrough {
         self.sub = 0;
         self.wait = 0;
         self.crate_handle = None;
+        self.cursor_seen.clear();
     }
 
     /// The pad for the next frame, or `None` when the run is over: done, or stuck (then
@@ -4692,17 +4983,30 @@ impl Playthrough {
         if self.prev.stick_x != 0 || self.prev.stick_y != 0 || !menu_idle(w) {
             return Some(idle);
         }
-        let (tx, ty) = ((slot % 6) as i16, (slot / 6) as i16);
-        let (x, y) = (p.cursor_x[i], p.cursor_y[i]);
         let (sx, sy) = if p.cursor_special_pos == oot_game::kaleido::PAUSE_CURSOR_PAGE_LEFT {
             (80, 0)
         } else if p.cursor_special_pos == oot_game::kaleido::PAUSE_CURSOR_PAGE_RIGHT {
             (-80, 0)
-        } else if x != tx {
-            (if tx < x { -80 } else { 80 }, 0)
         } else {
-            // Up the screen is the stick up (`stickAdjY > 30`: cursorY less one).
-            (0, if ty < y { 80 } else { -80 })
+            // Along the row first, then the column; but where that would come back to a slot
+            // already passed (empty slots are skipped, rows wrap), the shortest way of the
+            // cursor's moves instead.
+            let filled = |point: i16| w.save.inventory.items[point as usize] != oot_game::item::ITEM_NONE;
+            let (tx, ty) = ((slot % 6) as i16, (slot / 6) as i16);
+            let (x, y) = (p.cursor_x[i], p.cursor_y[i]);
+            self.cursor_seen.push((x, y));
+            let (d, stick) = if x != tx { ((if tx < x { -1 } else { 1 }, 0), (if tx < x { -80 } else { 80 }, 0)) } else { ((0, if ty < y { -1 } else { 1 }), (0, if ty < y { 80 } else { -80 })) };
+            match item_cursor_move(&filled, (x, y), d) {
+                // (None: onto the page's arrow, as before.)
+                next if next.is_none_or(|n| !self.cursor_seen.contains(&n)) => stick,
+                _ => match item_cursor_first_move(filled, (x, y), slot as i16) {
+                    Some(m) => m,
+                    None => {
+                        self.failure = Some(format!("no way for the cursor from slot {} to slot {slot}", p.cursor_point[i]));
+                        return None;
+                    }
+                },
+            }
         };
         Some(PadState { button: 0, stick_x: sx, stick_y: sy })
     }
@@ -4767,9 +5071,12 @@ impl Playthrough {
                 if w.message_state() != TEXT_STATE_NONE {
                     return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
                 }
+                // The points in turn (`walk`'s), the last one held once passed.
                 let link = w.player().actor.world_pos;
-                let target = points.iter().copied().find(|&p| Self::xz_dist(link, p) >= WAYPOINT_RADIUS).unwrap_or(*points.last().unwrap());
-                Some(stick_towards(w, target, RUN))
+                while self.sub + 1 < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
+                    self.sub += 1;
+                }
+                Some(stick_towards(w, points[self.sub], RUN))
             }
             Task::Lift(near, step) => self.lift(w, near, step),
             Task::Pedestal(step) => self.pedestal(w, step),

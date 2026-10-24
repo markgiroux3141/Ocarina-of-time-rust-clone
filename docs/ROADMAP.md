@@ -837,6 +837,12 @@ and left-hand overrides, pack format 33; the runs the pull and the sword put bac
 1 and the pedestal block merged early; BACKLOG #37 and #57 closed) **done** (hand-tested
 2026-10-23). Found: the first adult's C buttons hold bombs and the Ocarina of Time (the survey said
 empty).
+**Milestone 2** (2026-10-23, ADR 0089: `SDC_CHAMBER_OF_THE_SAGES`, `chamberCutsceneNum` and
+`Bg_Spot00_Break` whole; the story's five runs chained by the presets `door-of-time`,
+`light-medallion` and `adult-awake`: the Door of Time, the first pull to the Chamber of the Sages,
+Sheik's awakening, out of the Temple (the exit) and on through the ruined market round its ReDeads
+to the field; milestone 3's `En_Xc` type 2 merged early, pack format 34) **done** (hand-tested
+2026-10-23). Phase 12's coverage row is complete. **`adult-awake` is Phase 13's start.**
 
 ## Cross-cutting debts
 

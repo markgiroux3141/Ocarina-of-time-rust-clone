@@ -291,6 +291,10 @@ impl DemoDu {
         };
         if let Some(what) = what {
             log::info!("Demo_Du: {what} isn't ported: a placeholder");
+            // DemoDu_CsFireMedallion_AdvanceTo01 (the Fire Medallion's type).
+            if !matches!(TYPE.get(actor.params), DEMO_DU_CS_CHAMBER_AFTER_GANON | DEMO_DU_CS_CREDITS) && play.save.chamber_cutscene_num == oot_game::save::CHAMBER_CS_FIRE && !play.is_cutscene_layer() {
+                log::warn!("Demo_Du: chamberCutsceneNum CHAMBER_CS_FIRE: the Fire Medallion's cutscene (gFireMedallionCs) would start (Phase 15)");
+            }
             return oot_game::spawn::Placeholder::init(actor, play);
         }
         let Some(assets) = play.assets.clone() else {

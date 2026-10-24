@@ -7,7 +7,7 @@ are [ROADMAP.md](ROADMAP.md)'s; each scene's layers are assigned in the script's
 first phase whose scenes place it. "Gaps noted": its module docs say something is left out
 (a placeholder spawned, a part not ported, a call logged); BACKLOG.md has the details.
 
-**Actor overlays:** 429 in the table, 226 ported (52%). Placed in the game's scenes: 341, 191 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 34 ported.
+**Actor overlays:** 429 in the table, 227 ported (52%). Placed in the game's scenes: 341, 192 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 34 ported.
 
 ## By phase
 
@@ -21,7 +21,7 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 | 9: The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08) | done | 10 | 10 | - |
 | 10: Death Mountain, Goron City and Dodongo's Cavern (GAME-09) | done | 33 | 33 | - |
 | 11: Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10) | done | 35 | 35 | - |
-| 12: The Temple of Time and the adult world (GAME-11) | in progress | 5 | 4 | `Bg_Spot00_Break` |
+| 12: The Temple of Time and the adult world (GAME-11) | in progress | 5 | 5 | - |
 | 13: Epona and the adult Hyrule Field | planned | 6 | 0 | `Bg_Ingate`, `Bg_Umajump`, `En_Horse`, `En_Horse_Game_Check`, `En_Ma3`, `En_Po_Field` |
 | 14: The Forest Temple | planned | 22 | 1 | `Bg_Mori_Bigst`, `Bg_Mori_Elevator`, `Bg_Mori_Hashira4`, `Bg_Mori_Hineri`, `Bg_Mori_Idomizu`, `Bg_Mori_Kaitenkabe`, `Bg_Mori_Rakkatenjo`, `Bg_Po_Event`, `Bg_Po_Syokudai`, `Boss_Ganondrof`, `En_Bb`, `En_Floormas`, `En_Hs`, `En_Mb`, `En_Mm2`, `En_Po_Relay`, `En_Test`, `En_Wallmas`, `Obj_Blockstop`, `Obj_Dekujr`, `Obj_Mure3` |
 | 15: The Fire Temple | planned | 21 | 0 | `Bg_Hidan_Dalm`, `Bg_Hidan_Firewall`, `Bg_Hidan_Fslift`, `Bg_Hidan_Fwbig`, `Bg_Hidan_Hamstep`, `Bg_Hidan_Hrock`, `Bg_Hidan_Kousi`, `Bg_Hidan_Kowarerukabe`, `Bg_Hidan_Rock`, `Bg_Hidan_Sima`, `Bg_Hidan_Syoku`, `Bg_Jya_Ironobj`, `Bg_Spot17_Bakudankabe`, `Bg_Spot17_Funen`, `Boss_Fd`, `Efc_Erupc`, `En_Bw`, `En_Fd`, `En_Ik`, `En_Yukabyun`, `Obj_Warp2block` |
@@ -145,7 +145,7 @@ each comes with its spawner.
 | `ydan` (DEKU_TREE) | 6 | `SDC_DEKU_TREE (ported)` | 28 | 28 |
 | `ydan_boss` (DEKU_TREE_BOSS) | 6 | `SDC_DEKU_TREE_BOSS` | 3 | 3 |
 | `hiral_demo` (CUTSCENE_MAP) | 7, 12 | `SDC_DEFAULT (ported)` | 3 | 3 |
-| `spot00` (HYRULE_FIELD) | 7, 8, 11, 13, 19, 20 | `SDC_HYRULE_FIELD (ported)` | 25 | 19 |
+| `spot00` (HYRULE_FIELD) | 7, 8, 11, 13, 19, 20 | `SDC_HYRULE_FIELD (ported)` | 25 | 20 |
 | `spot09` (GERUDO_VALLEY) | 7, 18 | `SDC_GERUDO_VALLEY (ported)` | 28 | 25 |
 | `spot10` (LOST_WOODS) | 7, 9, 14 | `SDC_LOST_WOODS (ported)` | 25 | 23 |
 | `spot16` (DEATH_MOUNTAIN_TRAIL) | 7, 10, 15, 19 | `SDC_DEATH_MOUNTAIN_TRAIL (ported)` | 35 | 33 |
@@ -195,7 +195,7 @@ each comes with its spawner.
 | `enrui` (MARKET_ENTRANCE_RUINS) | 12 | `SDC_DEFAULT (ported)` | 2 | 2 |
 | `market_ruins` (MARKET_RUINS) | 12 | `SDC_DEFAULT (ported)` | 1 | 1 |
 | `shrine_r` (TEMPLE_OF_TIME_EXTERIOR_RUINS) | 12 | `SDC_DEFAULT (ported)` | 2 | 2 |
-| `kenjyanoma` (CHAMBER_OF_THE_SAGES) | 12, 14, 18, 19 | `SDC_CHAMBER_OF_THE_SAGES` | 10 | 8 |
+| `kenjyanoma` (CHAMBER_OF_THE_SAGES) | 12, 14, 18, 19 | `SDC_CHAMBER_OF_THE_SAGES (ported)` | 10 | 8 |
 | `Bmori1` (FOREST_TEMPLE) | 14 | `SDC_FOREST_TEMPLE` | 38 | 24 |
 | `moribossroom` (FOREST_TEMPLE_BOSS) | 14 | `SDC_DEFAULT (ported)` | 2 | 1 |
 | `HIDAN` (FIRE_TEMPLE) | 15 | `SDC_FIRE_TEMPLE` | 45 | 27 |

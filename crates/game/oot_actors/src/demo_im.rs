@@ -268,6 +268,10 @@ impl DemoIm {
                 // the ending, not ported.
                 log::warn!("Demo_Im: type {p} (the Chamber of Sages, Ganon's sealing, the ending) isn't ported");
                 this.action = -1;
+                // func_8098544C (func_80985310's types: 0, 1 and any other but 2 and 6).
+                if !matches!(p, 2 | 6) && play.save.chamber_cutscene_num == oot_game::save::CHAMBER_CS_SHADOW && !play.is_cutscene_layer() {
+                    log::warn!("Demo_Im: chamberCutsceneNum CHAMBER_CS_SHADOW: the Shadow Medallion's cutscene (gShadowMedallionCs) would start (Phase 17)");
+                }
             }
         }
         Box::new(this)

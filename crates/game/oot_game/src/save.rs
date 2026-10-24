@@ -200,6 +200,12 @@ pub struct SaveContext {
     pub next_cutscene_index: u16,
     pub cutscene_trigger: u8,
     pub cutscene_transition_control: u8,
+    /// `chamberCutsceneNum` (`CHAMBER_CS_*`): which medallion's cutscene the Chamber of the
+    /// Sages' layers 0 to 3 play (`Demo_Sa`, `Demo_Du`, `En_Ru2`, `En_Nb`, `Demo_Im` read it
+    /// outside a cutscene layer). Not in the save: `SaveContext_Init` (`z_common_data.c:30`) and
+    /// the file select start it at `CHAMBER_CS_FOREST`; `z_demo.c`'s destinations 29 to 31 and
+    /// `Door_Warp1`'s boss warps set it.
+    pub chamber_cutscene_num: u8,
     /// `gameMode` (`GAMEMODE_NORMAL` 0), `fileNum` (0xFF for the map select's file).
     pub game_mode: u8,
     pub file_num: i32,
@@ -415,6 +421,14 @@ pub const EQUIP_AGE_REQS: [[u8; 4]; 4] = [[0, 1, 0, 0], [9, 1, 9, 0], [0, 9, 0, 
 /// `LINK_AGE_ADULT`, `LINK_AGE_CHILD`.
 pub const LINK_AGE_ADULT: u8 = 0;
 pub const LINK_AGE_CHILD: u8 = 1;
+
+/// `ChamberCutsceneNum` (`save.h:350-357`): the Chamber of the Sages' medallion cutscenes.
+pub const CHAMBER_CS_FOREST: u8 = 0;
+pub const CHAMBER_CS_FIRE: u8 = 1;
+pub const CHAMBER_CS_WATER: u8 = 2;
+pub const CHAMBER_CS_SPIRIT: u8 = 3;
+pub const CHAMBER_CS_SHADOW: u8 = 4;
+pub const CHAMBER_CS_LIGHT: u8 = 5;
 
 /// `INFTABLE_SARIA_GREETED_LINK` (`save.h`: 0x00): set when Saria's greeting
 /// (`gKokiriForestSariaGreetingCs`, `EnSa_BecomeIdle`) ends, the first time Link leaves his house.
@@ -974,6 +988,21 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: master_sword_adult,
     },
     SavePreset {
+        name: "door-of-time",
+        about: "ocarina-of-time and GAME-11 milestone 2's door run over: the Temple of Time's intro seen (EVENTCHKINF_A7), the Ocarina of Time put on C-Down from the item page (the boomerang off it), the Song of Time played at the altar and gDoorOfTimeOpeningCs seen (EVENTCHKINF_OPENED_DOOR_OF_TIME): the first pull's start, at the Temple's entrance (ENTR_TEMPLE_OF_TIME_0)",
+        apply: door_of_time,
+    },
+    SavePreset {
+        name: "light-medallion",
+        about: "door-of-time and GAME-11 milestone 2's first pull over: the Master Sword revealed (EVENTCHKINF_REVEALED_MASTER_SWORD) and pulled (Item_Give, EVENTCHKINF_OBTAINED_MASTER_SWORD), Ganondorf seen and Link an adult (terminator 25: the equips swapped as in master-sword-adult), Rauru's Light Medallion in the Chamber of the Sages: the adult's first save state, before the return to the Temple (ENTR_TEMPLE_OF_TIME_4: Sheik's awakening plays)",
+        apply: light_medallion,
+    },
+    SavePreset {
+        name: "adult-awake",
+        about: "light-medallion and GAME-11 milestone 2's awakening over: Sheik's gTempleOfTimeFirstAdultCs seen (EVENTCHKINF_C5) and the return's time warp gone (EVENTCHKINF_C9): adult Link free in the Temple of Time, Phase 12's exit and Phase 13's start",
+        apply: adult_awake,
+    },
+    SavePreset {
         name: "frogs-choir",
         about: "ocarina-c with the six songs played to Zora's River's frogs (EVENTCHKINF_SONGS_FOR_FROGS_ZL .. _STORMS, 0xD1 to 0xD6: their purple rupees and piece of heart taken): the ocarina out on their log starts the frogs' song game (0x40AB); a debug start",
         apply: |s| {
@@ -1437,6 +1466,41 @@ fn master_sword_adult(s: &mut SaveContext) {
     s.adult = true;
 }
 
+/// `door-of-time`'s save (`Route::DoorOfTime`'s end): `ocarina-of-time` with the Temple's intro
+/// (`sEntranceCutsceneTable`'s `EVENTCHKINF_A7`), the Ocarina of Time on C-Down (the item page's
+/// `KaleidoScope_SetupItemEquip`) and the door opened (`Demo_Kankyo`'s
+/// `EVENTCHKINF_OPENED_DOOR_OF_TIME`).
+fn door_of_time(s: &mut SaveContext) {
+    ocarina_of_time(s);
+    s.set_event_chk_inf(0xA7);
+    s.equip_item_on_c(1, crate::item::ITEM_OCARINA_OF_TIME);
+    s.set_event_chk_inf(0x4B);
+}
+
+/// `light-medallion`'s save (`Route::FirstPull`'s end): `door-of-time` with the reveal
+/// (`EVENTCHKINF_REVEALED_MASTER_SWORD`), the pull (`Item_Give(ITEM_SWORD_MASTER)`, terminator
+/// 8's `EVENTCHKINF_OBTAINED_MASTER_SWORD`), terminator 25's age change (`Play_Destroy`'s
+/// `Inventory_SwapAgeEquipment` while a child, then `Player_Destroy`'s `linkAge`) and Rauru's
+/// `Item_Give(ITEM_MEDALLION_LIGHT)`.
+fn light_medallion(s: &mut SaveContext) {
+    door_of_time(s);
+    s.set_event_chk_inf(0x4F);
+    crate::item::item_give(s, None, crate::item::ITEM_SWORD_MASTER);
+    s.set_event_chk_inf(0x45);
+    s.inventory_swap_age_equipment();
+    s.adult = true;
+    crate::item::item_give(s, None, crate::item::ITEM_MEDALLION_LIGHT);
+}
+
+/// `adult-awake`'s save (`Route::Awakening`'s end): `light-medallion` with Sheik's awakening
+/// (`EnXc_InitTempleOfTime`'s `EVENTCHKINF_C5`) and the return's time warp gone
+/// (`DemoEffect_UpdateTimeWarpReturnFromChamberOfSages`' `EVENTCHKINF_C9`).
+fn adult_awake(s: &mut SaveContext) {
+    light_medallion(s);
+    s.set_event_chk_inf(0xC5);
+    s.set_event_chk_inf(0xC9);
+}
+
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:
 /// 0x01): `Bg_Ddan_Kd` 0x000B's switch flag, room 2 on the map (`Map_InitRoomData`), a bomb.
 fn cavern_stairs(s: &mut SaveContext) {
@@ -1574,6 +1638,7 @@ impl SaveContext {
             next_cutscene_index: 0xFFEF,
             cutscene_trigger: 0,
             cutscene_transition_control: 0,
+            chamber_cutscene_num: CHAMBER_CS_FOREST,
             game_mode: GAMEMODE_NORMAL,
             file_num: 0,
             event_chk_inf: [0; 14],

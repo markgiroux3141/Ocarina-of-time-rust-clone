@@ -193,9 +193,12 @@ pub const CHARACTERS: &[Character] = &[
     // GAME-10 milestone 9: a frog (En_Fr), the yellow one, eyes open (eyeTexIndex 1), sitting.
     c("Frog", "En_Fr/eye1", Some(("object_fr", "object_fr_Anim_001534")), &[(0x0E, Env, [200, 170, 0, 255])], &[], &[]),
     // GAME-11 milestone 2: Rauru (En_Rl), eyes open, opaque, idling; Sheik (En_Xc), eyes open,
-    // idling.
-    c("Rauru", "En_Rl/opa", Some(("object_rl", "object_rl_Anim_000A3C")), &[OPAQUE_0E], &[], &[]),
-    c("Sheik", "En_Xc/skel", Some(("object_xc", "gSheikIdleAnim")), &[], &[], &[]),
+    // idling. Their limbs have no names: the arms are the chest's two three-limb branches, the left
+    // one's offset +z (Ruto's pattern): Rauru's chest is limb 1 (arms 2 to 4 and 5 to 7, the head
+    // 8), Sheik's limb 8 (arms 9 to 11 and 12 to 14, the head 15: EnXc_OverrideLimbDraw's torso
+    // and head, 9 and 16 counted from 1).
+    c("Rauru", "En_Rl/opa", Some(("object_rl", "object_rl_Anim_000A3C")), &[OPAQUE_0E], &[2, 3, 4], &[5, 6, 7]),
+    c("Sheik", "En_Xc/skel", Some(("object_xc", "gSheikIdleAnim")), &[], &[9, 10, 11], &[12, 13, 14]),
     // GAME-10 milestone 4: the Stinger (En_Eiyer, En_Weiyer), gliding.
     skel("Stinger", "object_ei", "gStingerSkel", Some(("object_ei", "gStingerHitAnim")), &[], &[]),
     // GAME-10 milestone 4: the Biri (En_Bili), its tentacles' first picture, its core's colours

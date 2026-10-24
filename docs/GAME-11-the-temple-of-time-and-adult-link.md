@@ -10,13 +10,13 @@ of the Temple.
 
 **Status:** surveyed, proposed and decided (2026-10-23; the user took the breakdown as
 proposed, with every recommendation: the calls' section). The phase starts from the
-`ocarina-of-time` preset (GAME-10's exit review). Milestone 1 done 2026-10-23 (its section at
-the end), hand-tested.
+`ocarina-of-time` preset (GAME-10's exit review). Milestone 1 done 2026-10-23, hand-tested;
+milestone 2 done 2026-10-23, hand-tested (their sections at the end).
 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Adult Link and the time machine | done (2026-10-23, hand-tested); milestone 2's actors merged with it |
-| 2 | The Door of Time to the Chamber of the Sages and out (the exit) | decided |
+| 2 | The Door of Time to the Chamber of the Sages and out (the exit) | done (2026-10-23, hand-tested); milestone 3's `En_Xc` type 2 merged with it |
 | 3 | Sheik's Prelude, the sword put back, the warp | decided |
 
 ## The survey
@@ -584,3 +584,158 @@ Enter Start.
    to the Door of Time behind the altar: it stops Link (before this milestone he walked through
    it). Take the ocarina out at the altar (C-Down) and play the Song of Time: the door opens and
    lets him through.
+
+## Milestone 2: The Door of Time to the Chamber of the Sages and out
+
+**Status:** done: built and hand-tested 2026-10-23 ("it works"), committed and pushed on the
+user's ask.
+
+**The answer:** the story now plays from `ocarina-of-time` to adult Link in Hyrule Field, in five
+short runs chained by presets:
+- the Temple's intro, the Ocarina of Time put on C-Down from the item page, the Song of Time at the
+  altar and the door opening (`door-of-time`);
+- the reveal, the first pull, Ganondorf on the cutscene map, the Chamber of the Sages with Rauru and
+  the Light Medallion (`light-medallion`, the adult's first save state);
+- Sheik's awakening (`adult-awake`, **Phase 13's start**);
+- out of the Temple to `shrine_r`, **the exit**;
+- on through the ruined market (round its eight ReDeads, no fight), its entrance and the field by
+  the broken drawbridge.
+
+Ported: `SDC_CHAMBER_OF_THE_SAGES`, `chamberCutsceneNum` (destinations 29 to 31, outside the save)
+and `Bg_Spot00_Break` whole, which completes Phase 12's coverage row. Milestone 3's `En_Xc` type 2
+(the Prelude) was ported alongside by a helper and merged (pack format 34). ADR 0089.
+
+Scripts: `scripts\run\game-temple-of-time.bat` (menu 172: empty, `pull`, `chamber`, `awakening`,
+`temple`, `outside`, `market`, `field`), `test-temple-of-time.bat` (173),
+`sandbox-temple-of-time.bat` (174).
+
+### What was built
+
+- **`SDC_CHAMBER_OF_THE_SAGES`** (`scene_table.rs`, `z_scene_table.c:408`): the light's scroll on
+  segment 8, the floor's two on 0xA, the falling light's on 9; in `oot_import`'s pack test against
+  the C interpreter (`kenjyanoma_scene`).
+- **`chamberCutsceneNum`** (`SaveContext::chamber_cutscene_num`, `CHAMBER_CS_*`):
+  - `SaveContext_Init` and the file select start it at `CHAMBER_CS_FOREST`; destinations 29 to 31
+    set it; the slot's copy of `SaveContext` holds it at 0x1415.
+  - Its readers (`Demo_Sa` 0 and 1, `Demo_Du` 0, `Demo_Im` 0 and 1) are later phases'
+    placeholders: each logs when the number would start its medallion's script (BACKLOG #110).
+    `Door_Warp1`'s adult warps, the other writer, wait for Phase 14.
+- **`Bg_Spot00_Break`** whole (`bg_spot00_break.rs`): the broken drawbridge (params 0) and three
+  barbed wire fences (1) on the field's adult layers 2 and 3, each with its collision and display
+  list; killed for a child. Tests `the_adults_field_has_the_broken_drawbridge_and_the_fence`,
+  `a_childs_is_killed_at_init_and_its_collision_goes`.
+- **The runs** (`playthrough.rs`; tests in `temple_of_time_runs.rs`): `Route::DoorOfTime`,
+  `FirstPull`, `Awakening`, `TempleExit`, `Ruins`; the presets `door-of-time`, `light-medallion`,
+  `adult-awake`. Two task fixes:
+  - `Task::WalkUntil` now takes its points in turn (it turned Link back and forth at a waypoint).
+  - `Task::MenuCursor` takes the cursor's own moves (`KaleidoScope_DrawItemSelect`'s: empty slots
+    skipped, rows wrapped) where its row-then-column way would loop, as it did from the bombs to
+    the ocarina's slot.
+  Earlier runs' inputs are unchanged (all 343 old hashes the same).
+- **The helper's open points:** Rauru's and Sheik's arms filled in `ootx`'s characters (their
+  limbs are unnamed: the chest's two three-limb branches, Ruto's pattern); `En_Rl`'s docs on its
+  static (per instance, one Rauru per scene) and on Link's turn (below).
+- **`En_Xc` type 2** (the helper, merged):
+  - `EnXc_Init`'s type 2 (through the beta Serenade's pass-through to action 30);
+  - actions 29 to 44, and the shared actions 6 to 18 they call;
+  - the harp's draws (`EnXc_DrawPullingOutHarp`, `EnXc_DrawHarp`; bake `En_Xc/harp`);
+  - six tests.
+  Pack format 34, re-imported into `out/data27`. Milestone 3 runs it in `gTempleOfTimePreludeCs`.
+
+### Results
+
+- The five runs (frames):
+  - the door: 1,392 (the song played on 439, the door's flag inside the script's frames 510 to 790);
+  - the first pull: 5,599 (the reveal 361, the pull 1,050, Ganondorf 1,281, the Chamber 2,016, the
+    medallion 5,067);
+  - the awakening: 2,389 (`EVENTCHKINF_C9` on the time warp's 251st update);
+  - the way out: 548;
+  - the ruins: 1,015 (the nearest ReDead 170 away).
+- Each run ends as its preset. The texts are the C's, in order: 0x70E6 to 0x70E8, 0x700A, 0x704E,
+  0x704F, 0x7050, 0x7051, 0x7053, 0x0040, 0x70E9; then 0x7054, 0x7056, 0x7057, 0x7077 to 0x707A.
+- Tests: `temple_of_time_runs` (6), `bg_spot00_break` (2), `en_xc` (12, 6 new), the
+  `SDC_CHAMBER_OF_THE_SAGES` row in `oot_import`'s pack test. 1,807 tests pass, 1 ignored;
+  `cargo test -p layering` passes; no warnings.
+- Goldens: all 343 of `out/golden_base41`'s hashes the same; 11 new cases (each run's trace and end,
+  the stones, Ganondorf, the Chamber, Sheik, the ruined market, Rauru's fade on layer 6): 359
+  hashes, 266 cases, the same over two runs (`out/golden_base42`).
+- COVERAGE: Phase 12 5 of 5; 227 ported overall.
+
+### Things to check, answered
+
+- **Who loads the Temple's layers 4 and 6:** no one in play. No destination enters the Temple with
+  `CS_INDEX_0` or `CS_INDEX_2`; `En_Xc` 9 plays their scripts (`gTempleOfTimeFirstAdultCs`,
+  `gTempleOfTimePreludeCs`) itself on the adult's layer 2. The layers are the map select's.
+- **Adult Link in the ruins' prerendered scenes:** `shrine_r` (`PREREND_FIXED`, bg cameras 0 and
+  1), `market_ruins` (`SCENE_CAM_TYPE_FIXED_MARKET`: its one bg camera, `PREREND_PIVOT` with the
+  room's skybox) and `enrui` (`PREREND_FIXED`) all take him; the runs walk through them.
+- **The ReDeads' range:** `EnRd_Idle` notices Link only when he makes a noise (`PLAYER_STATE2_3`: a
+  footstep faster than 4, a swing) within 150 across. The square's middle is a round fountain (its
+  wall 107 from (0, 0)). Round its west side every ReDead stays over 160 away, so `Route::Ruins`
+  goes round them.
+- **`ENTR_TEMPLE_OF_TIME_4`'s spawn** (0, 70, 46), facing -0x0E39: Sheik's script moves Link at
+  once (its first player cue at (0, 70, 30), facing -0x8000). It leaves him at (0, 40, 214) facing
+  30037 with the Master Sword in hand (mode 0x30's `func_80851D80`). The way out starts there.
+- **Rauru's translucent fade** (`En_Rl/xlu`): looked at on the Chamber's layer 6 (type 2, cue 4):
+  half see-through on frame 25, solid by 45 (golden `chamber_rauru_fade`). Type 0, in the Light
+  Medallion's script, is opaque throughout, as the C draws it.
+- **`func_80AE7668`'s turn of Link:** it lands (Player is in the arena during Rauru's update) and
+  stays an actor write. The C writes only `world.rot.y` and `shape.rot.y`; `PlayerIface::set_yaw`
+  would also write `player->yaw`. In the script it gives the yaw the first player cue gives anyway
+  (Rauru faces 0x4000, Link -0x4000).
+
+### Corrections and findings
+
+- The altar's song spot takes the ocarina only within 50 (Phase 11's lesson again): spawn 3's
+  place, 66 away, plays the song freely. The run plays it 31 away.
+- The hall's altar is 41 over the floor in front of it; the way to the doorway is round its sides,
+  whose floor rises in 10-high steps.
+- The first pull's run ends as terminator 18's transition starts: on the Temple's next `Play_Init`,
+  `En_Xc` 9 sets `EVENTCHKINF_C5` at once, so `light-medallion` is the save before it.
+
+### Known gaps
+
+- `chamberCutsceneNum`'s medallion scripts and `Door_Warp1`'s adult warps wait for their phases
+  (BACKLOG #110).
+- `En_Xc` type 2 isn't run in its cutscene yet (milestone 3). The helper left `EnXc_InitFlame`'s
+  Bolero flame (Phase 15) and type 8's boots check (a placeholder type) logged.
+
+### How to check
+
+```
+scripts\run\test-temple-of-time.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-temple-of-time.bat
+```
+
+### By hand
+
+`scripts\run\game-temple-of-time.bat` (menu 172). WASD the stick (Shift walks), Space A, E B,
+J/K/L the C buttons, Enter Start.
+
+1. **Empty** (the Temple's entrance, a child, the door shut): the intro plays (the camera down the
+   hall). Enter for the item page; move to the Ocarina of Time (second row, second slot) and press
+   K to put it on C-Down; Enter again. Walk up to the altar and stop just in front of it, press K,
+   and play the Song of Time: L, Space, K, L, Space, K. Check: the stones fly to the altar, the
+   door slides open, the light over it goes; Link is free after.
+2. **`pull`** (the door open): walk round the altar's side (its middle is a step too high) and
+   through the doorway into the pedestal's room: Navi flies to the sword ("...isn't that...?!",
+   "The Master Sword!!"). Walk to the sword and press A: the pull, the white-out, Ganondorf's laugh
+   on the cutscene map, then the Chamber: Rauru's texts (take the first answer to his question),
+   the Light Medallion over Link, "Find the other Sages", the black fade. Then the Temple as an
+   adult: Navi's and Sheik's texts, the time warp shrinking round the pedestal, Link drawing his
+   sword. Check: the HUD's B is the Master Sword, C-Down bombs, C-Right the ocarina; Link is an
+   adult throughout the Chamber.
+3. **`chamber`**: the Chamber's script alone (an adult): the floor's light scrolling, Rauru.
+4. **`awakening`**: the adult arriving at the pedestal's step: Sheik's whole scene.
+5. **`temple`**: the adult free where the awakening leaves him. Sheik stands in front of the
+   pedestal (A at her: "...another skill..."). Walk out through the doorway and down the hall.
+6. **`outside`**: the Temple's steps in the ruins: the fixed camera and its background, the gossip
+   stones, Death Mountain's smoke ring. Walk to the market.
+7. **`market`**: the ruined market. Walk round the fountain to the south exit. Then try a ReDead:
+   run up close (it screams, Link freezes, it grabs him: mash the stick and A to break free); walk
+   slowly near another (it doesn't hear him).
+8. **`field`**: Hyrule Field by the market's broken drawbridge (behind Link): its rubble is solid
+   to stand on; the barbed wire fences by the Lost Woods' bridge and the river.

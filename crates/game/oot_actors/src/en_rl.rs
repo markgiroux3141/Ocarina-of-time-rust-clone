@@ -14,7 +14,16 @@
 //! `kREG(5) + 10` frames, drawn translucent (`drawConfig` 2), then solid (action 7). A cue other
 //! than 4 fades him back out; the first time, his light ball (`Demo_6K` type 5, 22 above him, his
 //! child) is spawned. Cue 3 plays `object_rl_Anim_00040C` then loops `object_rl_Anim_000830`. With
-//! `DEBUG_FEATURES` (`func_80AE73D8`), the end of a script resets him to hidden.
+//! `DEBUG_FEATURES` (`func_80AE73D8`), the end of a script resets him to hidden. Its flag
+//! (`D_80AE81AC`, a script seen) is a static of the C's overlay, one for every Rauru; the port keeps
+//! it per instance (`cs_seen`), the same while only one Rauru is loaded, as every scene placing him
+//! has.
+//!
+//! Link's turn (`func_80AE7668`) is written to his actor (`play.actors.actor_mut`, as
+//! `Boss_Dodongo`'s writes): Rauru's update runs while Player is in the arena, and the C writes
+//! only `world.rot.y` and `shape.rot.y` (not `player->yaw`, which `PlayerIface::set_yaw` would).
+//! In the Chamber's script it lands on the yaw the script's first cue gives Link anyway (Rauru
+//! faces 0x4000, Link -0x4000).
 //!
 //! Every action from the first on keeps him on the floor (`Actor_UpdateBgCheckInfo`, floor and
 //! walls) and blinks (every 60 to 120 frames). Drawn by `drawConfig`: nothing,

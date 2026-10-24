@@ -493,8 +493,9 @@ impl SaveContext {
         io.pad(1);
         io.u16(&mut self.next_cutscene_index);
         io.u8(&mut self.cutscene_trigger);
-        // chamberCutsceneNum, nextDayTime.
-        io.pad(3);
+        io.u8(&mut self.chamber_cutscene_num);
+        // nextDayTime.
+        io.pad(2);
         io.check(0x1418);
         let mut fade = self.trans_fade_duration as u8;
         io.u8(&mut fade);
