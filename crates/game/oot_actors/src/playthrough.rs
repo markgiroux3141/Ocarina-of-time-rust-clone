@@ -719,6 +719,19 @@ pub enum Step {
     MarketEntranceRuins,
     /// Out to the field by the broken drawbridge (`ENTR_HYRULE_FIELD_7`), settled.
     FieldByTheDrawbridge,
+    /// Sheik's `gTempleOfTimePreludeCs` started (`EVENTCHKINF_55`, the Prelude of Light given).
+    PreludeStarted,
+    /// The Prelude played back to Sheik (`MSGMODE_SONG_PLAYBACK_SUCCESS`).
+    PreludePlayed,
+    /// Its script over, Link free.
+    PreludeLearned,
+    /// The Prelude of Light played on the ocarina (the warp's "warp?" choice follows).
+    PreludeWarpPlayed,
+    /// Its choice answered yes: the warp-out (`Demo_Kankyo`'s `DEMOKANKYO_WARP_OUT`) started.
+    PreludeWarpOut,
+    /// Arrived on the Temple of Time's light pad (`ENTR_TEMPLE_OF_TIME_7`): the warp-in's script
+    /// over, Link free.
+    PreludeWarped,
 }
 
 impl Step {
@@ -1010,6 +1023,12 @@ impl Step {
             Step::MarketRuins => "market_ruins",
             Step::MarketEntranceRuins => "market_entrance_ruins",
             Step::FieldByTheDrawbridge => "field_by_the_drawbridge",
+            Step::PreludeStarted => "prelude_started",
+            Step::PreludePlayed => "prelude_played",
+            Step::PreludeLearned => "prelude_learned",
+            Step::PreludeWarpPlayed => "prelude_warp_played",
+            Step::PreludeWarpOut => "prelude_warp_out",
+            Step::PreludeWarped => "prelude_warped",
         }
     }
 }
@@ -1367,6 +1386,24 @@ pub enum Route {
     /// ruined market entrance (`enrui`) to the field by the broken drawbridge
     /// (`ENTR_HYRULE_FIELD_7`, `Bg_Spot00_Break`).
     Ruins,
+    /// The Prelude of Light (GAME-11 milestone 3, `prelude`: a debug start, the adult with the
+    /// Forest Medallion's `EVENTCHKINF_48`, at the Temple's entrance): down the hall into room 0,
+    /// `En_Xc` 9 gives the Prelude and plays `gTempleOfTimePreludeCs` (Sheik's harp, the song
+    /// played back). Its end is `prelude-learned`.
+    Prelude,
+    /// The sword put back in the story (`prelude-learned`, a debug start where the Prelude leaves
+    /// Link in room 0): `gPlaceMasterSwordCs`, terminator 8, a child at `ENTR_TEMPLE_OF_TIME_2`.
+    /// Its end is `child-again`.
+    SwordBack,
+    /// The sword pulled again (`child-again`, the child arriving on the pedestal):
+    /// `gPullMasterSwordCs`, terminator 8, an adult at `ENTR_TEMPLE_OF_TIME_2`. Its end is
+    /// `prelude-learned` again.
+    SwordAgain,
+    /// The Prelude's warp (`prelude-learned`, in Hyrule Field by the broken drawbridge): the song on
+    /// the ocarina, "warp?" yes, the warp-out (Link hidden in its white-out), the arrival on the
+    /// Temple of Time's light pad (`ENTR_TEMPLE_OF_TIME_7`, start mode 5: hidden until the warp-in's
+    /// script). Its end is `prelude-learned`.
+    PreludeWarp,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2469,6 +2506,39 @@ fn ruins_tasks() -> Vec<Task> {
     ]
 }
 
+/// `Route::Prelude`'s tasks: down the hall and through the doorway into room 0, where `En_Xc` 9
+/// (with `EVENTCHKINF_48` and no `EVENTCHKINF_55`) sets 0x55, gives the Prelude of Light and
+/// starts `gTempleOfTimePreludeCs`; A through Sheik's texts, the song played back after her harp
+/// (`MSGMODE_SONG_PLAYBACK`), on until the script is over and Link is free.
+fn prelude_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(temple_hall_to_room_0()),
+        Task::WalkUntil(vec![Vec3::new(0.0, 0.0, 600.0)], |w| w.save.get_event_chk_inf(0x55) && w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::PreludeStarted),
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_PRELUDE, false, Step::PreludePlayed),
+        Task::Texts(cs_over, Step::PreludeLearned),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::PreludeWarp`'s tasks: the ocarina out (C-Right, the adult's), the Prelude of Light,
+/// "warp?" answered yes (the first answer): Player's warp song action, `Demo_Kankyo`'s warp-out
+/// and `Environment_WarpSongLeave`; the arrival at `ENTR_TEMPLE_OF_TIME_7` (start mode 5, the
+/// warp-in's sparkles and script) until Link is free.
+fn prelude_warp_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::OcarinaHeard(2, oot_game::audio::ocarina::OCARINA_SONG_PRELUDE, Step::PreludeWarpPlayed),
+        Task::TalkThrough(vec![0], Step::PreludeWarpOut),
+        Task::Texts(|w| w.scene_id == SCENE_TEMPLE_OF_TIME && w.save.entrance_index == ENTR_TEMPLE_OF_TIME_7 && cs_over(w) && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF, Step::PreludeWarped),
+        Task::Settle(None),
+    ]
+}
+
+/// `ENTR_TEMPLE_OF_TIME_7` (`entrance_table.h`: 0x5F4): spawn 7, room 1, on `Bg_Mjin`'s pad (the
+/// Prelude's warp).
+const ENTR_TEMPLE_OF_TIME_7: u16 = 0x5F4;
+
 /// Room 3's east floor west of Ruto (`En_Ru1` 0x0203 at (222, -1113, -3270)).
 const JABU_ROOM_3_START: Vec3 = Vec3::new(140.0, -1113.0, -3270.0);
 /// Room 3's blue switch (`Bg_Bdan_Switch` 0x3C00 at (44, -1114, -3596): switch flag 0x3C, door 12).
@@ -3286,6 +3356,12 @@ impl Route {
             Route::Awakening => "ENTR_TEMPLE_OF_TIME_4",
             // The Temple's steps (shrine_r's spawn 1 for an adult): TempleExit's end.
             Route::Ruins => "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1",
+            // The hall's entrance; SwordBack's debug start then moves to room 0.
+            Route::Prelude | Route::SwordBack => "ENTR_TEMPLE_OF_TIME_0",
+            // Spawn 2, room 0: the time travel's arrival (start mode 1).
+            Route::SwordAgain => "ENTR_TEMPLE_OF_TIME_2",
+            // The field's spawn 7, by the broken drawbridge (the Ruins run's end).
+            Route::PreludeWarp => "ENTR_HYRULE_FIELD_7",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3351,6 +3427,9 @@ impl Route {
             Route::FirstPull => Some("door-of-time"),
             Route::Awakening => Some("light-medallion"),
             Route::TempleExit | Route::Ruins => Some("adult-awake"),
+            Route::Prelude => Some("prelude"),
+            Route::SwordBack | Route::PreludeWarp => Some("prelude-learned"),
+            Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
             Route::Escape => Some("zora-sapphire"),
@@ -3433,6 +3512,9 @@ impl Route {
             // Where gTempleOfTimeFirstAdultCs leaves Link (its last player cue: (0, 40, 214)),
             // facing the doorway (+z).
             Route::TempleExit => Some((AWAKENING_END, 0)),
+            // Where gTempleOfTimePreludeCs leaves Link (its player cues from frame 107: (0, 40,
+            // 214)), facing the pedestal (-z).
+            Route::SwordBack => Some((AWAKENING_END, i16::MIN)),
             _ => None,
         }
     }
@@ -3499,7 +3581,7 @@ impl Route {
             Route::JabuWeb => Some(11),
             Route::JabuCrystal => Some(1),
             Route::JabuSwitch | Route::JabuOcto => Some(3),
-            Route::MasterSwordPull | Route::TempleExit => Some(0),
+            Route::MasterSwordPull | Route::TempleExit | Route::SwordBack => Some(0),
             _ => None,
         }
     }
@@ -3668,6 +3750,10 @@ impl Route {
             Route::Awakening => "awakening",
             Route::TempleExit => "temple-exit",
             Route::Ruins => "ruins",
+            Route::Prelude => "prelude",
+            Route::SwordBack => "sword-back",
+            Route::SwordAgain => "sword-again",
+            Route::PreludeWarp => "prelude-warp",
         }
     }
 
@@ -3742,6 +3828,9 @@ impl Route {
             Route::Awakening => 4000,
             Route::TempleExit => 3000,
             Route::Ruins => 4000,
+            Route::Prelude => 6000,
+            Route::SwordBack | Route::SwordAgain => 2000,
+            Route::PreludeWarp => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3749,12 +3838,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -4575,6 +4664,10 @@ impl Playthrough {
             Route::Awakening => awakening_tasks(),
             Route::TempleExit => temple_exit_tasks(),
             Route::Ruins => ruins_tasks(),
+            Route::Prelude => prelude_tasks(),
+            Route::SwordBack => vec![Task::Settle(None), Task::Pedestal(Step::SwordPutBack), Task::NewScene(Step::TimeTravelled)],
+            Route::SwordAgain => vec![Task::Settle(None), Task::Pedestal(Step::SwordPulled), Task::NewScene(Step::TimeTravelled)],
+            Route::PreludeWarp => prelude_warp_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),

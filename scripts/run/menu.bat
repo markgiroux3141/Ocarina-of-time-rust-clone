@@ -185,6 +185,9 @@ echo   171  sandbox-master-sword The pull's and the way back's runs' traces and 
 echo   172  game-temple-of-time  The Door of Time to the Chamber and out (asks: or pull, chamber, awakening, temple, outside, market, field)
 echo   173  test-temple-of-time  The door, the first pull, the Chamber, Sheik, the ruins and Bg_Spot00_Break (cargo test)
 echo   174  sandbox-temple-of-time The five runs' traces and screenshots, into out\run
+echo   175  game-prelude         Sheik's Prelude, the sword put back and pulled again, the warp (asks: or back, again, warp)
+echo   176  test-prelude         The Prelude, time travel both ways and the warp's runs (cargo test)
+echo   177  sandbox-prelude      The four runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -369,6 +372,9 @@ if "%pick%"=="171" set "script=sandbox-master-sword"
 if "%pick%"=="172" goto templeoftime
 if "%pick%"=="173" set "script=test-temple-of-time"
 if "%pick%"=="174" set "script=sandbox-temple-of-time"
+if "%pick%"=="175" goto prelude
+if "%pick%"=="176" set "script=test-prelude"
+if "%pick%"=="177" set "script=sandbox-prelude"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -422,6 +428,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:prelude
+set "which="
+set /p "which=Which (empty: the Temple's entrance, Sheik's Prelude; back, again or warp): "
+call "%~dp0game-prelude.bat" %which%
+echo game-prelude finished (exit code %errorlevel%).
 pause
 goto menu
 

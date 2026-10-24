@@ -1414,6 +1414,9 @@ pub struct Player {
     pub unk_3c4: Option<ActorHandle>,
     /// Start mode 0 (`Player_StartMode_Nothing`): `update` is a no-op and `draw` is NULL.
     pub inert: bool,
+    /// `actor.draw` NULL (not `Player_Draw`): a warp song's white-out (`Demo_Kankyo`'s warp-out)
+    /// and arrival (start mode 5) until its script's first cutscene action (`func_80852280`).
+    pub hidden: bool,
     /// `naviTextId`: what Navi says when C-Up talks to her (her update sets it; negative: she
     /// speaks at once), cleared at the end of every update.
     pub navi_text_id: i16,
@@ -1651,6 +1654,7 @@ impl Player {
             func_a74: None,
             unk_3c4: None,
             inert: false,
+            hidden: false,
             navi_text_id: 0,
             navi_actor: None,
             textbox_btn_cooldown_timer: 0,
@@ -1831,9 +1835,10 @@ impl Player {
                 self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 5110, timer: 40, player: true, parent: CAM_ID_MAIN });
             }
             // Player_StartMode_WarpSong: arriving by a warp song, held (PLAYER_STATE1_29) and
-            // invisible (actor.draw = NULL: Player is always drawn here, BACKLOG #26).
+            // invisible (actor.draw = NULL).
             5 => {
                 self.setup_action(&data, Action::StartWarpSongArrive, 0);
+                self.hidden = true;
                 self.state1 |= STATE1_29;
             }
             // Player_StartMode_KnockedOver: thrown down backwards (the courtyard guards' catch,
@@ -10580,8 +10585,9 @@ impl Player {
                 self.zero_speed_xz();
             }
             "func_8085225C" => self.start_anim_movement(0x98),
-            // func_80852280: actor.draw = Player_Draw (Player is always drawn here).
-            "func_80852280" | "func_80852544" | "func_80852554" => {}
+            // func_80852280: actor.draw = Player_Draw.
+            "func_80852280" => self.hidden = false,
+            "func_80852544" | "func_80852554" => {}
             "func_80852328" => self.func_80851F14(env, data.anim("link_demo_furimuki2_wait"), "D_808551E0"),
             "func_80852358" => self.func_80851F14(env, data.anim("link_demo_nozokikomi_wait"), "D_808551E8"),
             "func_80852388" => {
@@ -11233,6 +11239,8 @@ impl Player {
             self.action_var2 -= 1;
         }
         if (if t == 0 { 0 } else { t - 1 }) == 0 && self.start_cs_action(env.data) {
+            // func_80852280: actor.draw = Player_Draw.
+            self.hidden = false;
             self.setup_action(env.data, Action::Cutscene, 0);
             self.action_cs_action(env);
         }
@@ -13198,6 +13206,10 @@ impl ActorImpl for Player {
     fn as_player(&self) -> Option<&dyn PlayerIface> {
         Some(self)
     }
+    /// `actor.draw`: NULL for start mode 0 and while a warp song hides Link.
+    fn has_draw(&self) -> bool {
+        !self.inert && !self.hidden
+    }
     fn as_player_mut(&mut self) -> Option<&mut dyn PlayerIface> {
         Some(self)
     }
@@ -13329,6 +13341,9 @@ impl PlayerIface for Player {
     fn hand_over_held_actor(&mut self, actor: ActorHandle) {
         self.held_actor = Some(actor);
         self.interact_range_actor = Some(actor);
+    }
+    fn set_draw(&mut self, on: bool) {
+        self.hidden = !on;
     }
     fn set_interact_range_actor(&mut self, actor: ActorHandle) {
         self.interact_range_actor = Some(actor);

@@ -400,6 +400,14 @@ CASES = [
     ("ruins", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1", "--child", "--preset", "adult-awake", "--script", "ruins", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ruins_market", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_EXTERIOR_DAY_1", "--child", "--preset", "adult-awake", "--script", "ruins", "--frames", "600", "--screenshot", "{shot}"]),
     ("chamber_rauru_fade", S, ["--entrance", "ENTR_CHAMBER_OF_THE_SAGES_0", "--child", "--preset", "adult-awake", "--cutscene", "0xFFF2", "--script", "still", "--frames", "25", "--screenshot", "{shot}"]),
+    # GAME-11 milestone 3: Sheik's Prelude (a debug start with EVENTCHKINF_48), the sword put back and
+    # pulled again in the story, the Prelude's warp (Link gone in its white-out).
+    ("prelude", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "prelude", "--script", "prelude", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("prelude_sheik", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "prelude", "--script", "prelude", "--frames", "1300", "--screenshot", "{shot}"]),
+    ("sword_back", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_0", "--child", "--preset", "prelude-learned", "--script", "sword-back", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("sword_again", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "child-again", "--script", "sword-again", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("prelude_warp", S, ["--entrance", "ENTR_HYRULE_FIELD_7", "--child", "--preset", "prelude-learned", "--script", "prelude-warp", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("prelude_warp_white", S, ["--entrance", "ENTR_HYRULE_FIELD_7", "--child", "--preset", "prelude-learned", "--script", "prelude-warp", "--frames", "240", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

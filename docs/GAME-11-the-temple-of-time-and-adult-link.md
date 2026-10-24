@@ -11,13 +11,14 @@ of the Temple.
 **Status:** surveyed, proposed and decided (2026-10-23; the user took the breakdown as
 proposed, with every recommendation: the calls' section). The phase starts from the
 `ocarina-of-time` preset (GAME-10's exit review). Milestone 1 done 2026-10-23, hand-tested;
-milestone 2 done 2026-10-23, hand-tested (their sections at the end).
+milestone 2 done 2026-10-23, hand-tested; milestone 3 done 2026-10-24, hand-tested
+(their sections at the end). Phase 12 is built whole; its exit review is next.
 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Adult Link and the time machine | done (2026-10-23, hand-tested); milestone 2's actors merged with it |
 | 2 | The Door of Time to the Chamber of the Sages and out (the exit) | done (2026-10-23, hand-tested); milestone 3's `En_Xc` type 2 merged with it |
-| 3 | Sheik's Prelude, the sword put back, the warp | decided |
+| 3 | Sheik's Prelude, the sword put back, the warp | done (2026-10-24, hand-tested) |
 
 ## The survey
 
@@ -739,3 +740,99 @@ J/K/L the C buttons, Enter Start.
    slowly near another (it doesn't hear him).
 8. **`field`**: Hyrule Field by the market's broken drawbridge (behind Link): its rubble is solid
    to stand on; the barbed wire fences by the Lost Woods' bridge and the river.
+
+## Milestone 3: Sheik's Prelude, the sword put back, the warp
+
+**Status:** done: built and hand-tested 2026-10-24 ("that works"), committed and pushed on the
+user's ask.
+
+**The answer:** time travel now runs both ways in the story's state, and the Prelude of Light is
+taught and warps:
+- Sheik's Prelude of Light: the adult, with the Forest Temple's flag, walks into the pedestal's
+  room; `En_Xc` 9 gives the song and plays `gTempleOfTimePreludeCs`: her harp, the song played
+  back, her Deku Nut and she's gone (`prelude-learned`);
+- the Master Sword put back: a child again with his own buttons (`child-again`);
+- pulled again: an adult again;
+- the Prelude played in the field: "warp?" yes, the warp-out with Link gone in its white-out, the
+  arrival on the Temple's light pad, hidden until the warp-in's script gives him back.
+
+The Prelude needs `EVENTCHKINF_48`, the Forest Temple's (Phase 14), so its run starts from a debug
+preset, `prelude` (the user's call 2). BACKLOG #26 closes: Player's draw switch. ADR 0090.
+
+Scripts: `scripts\run\game-prelude.bat` (menu 175: empty, `back`, `again`, `warp`),
+`test-prelude.bat` (176), `sandbox-prelude.bat` (177).
+
+### What was built
+
+- **Player's draw switch** (`actor.draw` NULL): `ActorImpl::has_draw`, which `Actor_DrawAll`
+  tests after the culling as the C does (an actor without a draw isn't drawn, nor its shadow).
+  Player's `hidden` is set by `Demo_Kankyo`'s warp-out on its timer's 15
+  (`PlayerIface::set_draw`) and by start mode 5, and cleared by `func_80852280` (the warp-in
+  script's first action, through `Player_Action_WaitForCutscene`, or cutscene action 46). The sub-timer
+  half of #26 came with the timers' port earlier.
+- **The runs** (`playthrough.rs`; tests in `time_travel_runs.rs`): `Route::Prelude`,
+  `SwordBack`, `SwordAgain`, `PreludeWarp`; the presets `prelude` (a debug start), `prelude-learned`,
+  `child-again`.
+- **`En_Xc` type 2** (milestone 2's helper, merged then) runs whole in its script here.
+
+### Results
+
+- The four runs (frames):
+  - the Prelude: 2,339 (its script from 357, the song played back 1,559);
+  - the sword put back: 456 (the cutscene from 143), a child at `ENTR_TEMPLE_OF_TIME_2`;
+  - pulled again: 446 (from 84), an adult;
+  - the warp: 414 (the song heard 77, "warp?" answered 215), at `ENTR_TEMPLE_OF_TIME_7`.
+- The texts are the C's: 0x7074, 0x708B, 0x708C, the playback's 0x0875 and 0x086D, 0x0078 ("You have
+  learned the Prelude of Light!"), 0x7075; the warp's 0x086E, 0x086F, 0x0898 and "warp?" 0x0892.
+- Sheik draws plain, then pulling out the harp, then the harp, and back; she throws her nut (action
+  43) and is gone on cue 9.
+- Link is hidden from the warp-out's timer's 15 to the scene change, and after the arrival until the
+  warp-in's script takes him (40 frames and more), drawn after.
+- Tests: `time_travel_runs` (4). 1,811 tests pass, 1 ignored; `cargo test -p layering` passes; no
+  warnings.
+- Goldens: all 359 of `out/golden_base42`'s hashes the same (no earlier case plays a warp song); 6 new
+  cases (each run's trace and end, Sheik, the warp's white-out): 369 hashes, 272 cases, the same
+  over two runs (`out/golden_base43`).
+
+### Corrections and findings
+
+- **The swap keeps what it stored:** pulling again leaves `adultEquips` holding the adult's buttons
+  (the put-back stored them; nothing clears them), and `childEquips`' equipment the Master Sword's
+  nibble (the pull's `Item_Give` puts it on the child before the swap stores his equipment as it
+  is). Both are the C's (`Inventory_SwapAgeEquipment`); the pulled-again run is checked against
+  `child-again` with the pull and the swap applied, not against `prelude-learned`.
+- `En_Arrow`'s init makes Sheik's `ARROW_CS_NUT` an `ARROW_NUT` that also updates in cutscenes.
+
+### Known gaps
+
+- The Prelude's run starts from a debug preset until Phase 14 brings the Forest Temple.
+
+### How to check
+
+```
+scripts\run\test-prelude.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-prelude.bat
+```
+
+### By hand
+
+`scripts\run\game-prelude.bat` (menu 175). WASD the stick (Shift walks), Space A, E B, J/K/L the C
+buttons, I C-Up, Enter Start.
+
+1. **Empty** (the Temple's entrance, an adult with the Forest Medallion's flag): walk round the
+   altar's side and through the doorway into the pedestal's room: Sheik's scene. She pulls out her
+   harp and plays; play the song back when the staff shows: I, L, I, L, J, I (C-Up, C-Right, C-Up,
+   C-Right, C-Left, C-Up). "You have learned the Prelude of Light!", her last words, she backs off,
+   throws a Deku Nut and is gone in its flash.
+2. **`back`** (the adult in the pedestal's room, the Prelude learned): face the pedestal, A ("Drop"):
+   the sword goes back in, the white-out, a child jumping off the pedestal. Check: B the Kokiri
+   Sword, C-Down the Ocarina of Time.
+3. **`again`** (that child arriving on the pedestal): A at the sword: pulled again, an adult with the
+   Master Sword on B, bombs and the ocarina.
+4. **`warp`** (Hyrule Field by the broken drawbridge, an adult): L for the ocarina, play the
+   Prelude (I, L, I, L, J, I), "Yes": the warp's sparkles and white-out (Link should vanish into
+   the light, not stay standing in it), then the Temple's light pad: Link appears with the sparkles
+   after a moment and is free.

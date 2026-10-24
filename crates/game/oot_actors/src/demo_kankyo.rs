@@ -16,8 +16,9 @@
 //! calls, the warp's end) runs once per game frame in `draw_update`, which leaves the matrices
 //! for `draw`; the warp-in sparkles' sound is played in `draw_sfx`.
 //!
-//! Not ported: `player->actor.draw = NULL` at the warp-out's white-out (Player has no draw to
-//! take away: logged). The Door of Time's child is `Door_Toki` (its collision, `door_toki.rs`).
+//! The warp-out takes Player's draw away at its white-out (`player->actor.draw = NULL`:
+//! `PlayerIface::set_draw`); the warp-in's script gives it back. The Door of Time's child is
+//! `Door_Toki` (its collision, `door_toki.rs`).
 //!
 //! Params: `params` whole, the type (`DemoKankyoType`: 0 and 1 the blue rain, 2 to 6 Din's rocks
 //! on cue channels 0 to 4, 7 the clouds, 8 to 0xC removed, 0xD the Door of Time, 0xE the light
@@ -499,8 +500,10 @@ impl DemoKankyo {
                     fill = Some((255.0 * temp) as u8);
                 }
                 play.transition.screen_fill = fill.map(|a| [0xFF, 0xFF, 0xFF, a]);
-                if self.warp_timer == 15 {
-                    log::warn!("Demo_Kankyo: player->actor.draw = NULL isn't ported");
+                if self.warp_timer == 15
+                    && let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut())
+                {
+                    p.set_draw(false);
                 }
                 if self.warp_timer != 0 {
                     self.warp_timer -= 1;

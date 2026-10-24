@@ -843,6 +843,11 @@ empty).
 Sheik's awakening, out of the Temple (the exit) and on through the ruined market round its ReDeads
 to the field; milestone 3's `En_Xc` type 2 merged early, pack format 34) **done** (hand-tested
 2026-10-23). Phase 12's coverage row is complete. **`adult-awake` is Phase 13's start.**
+**Milestone 3** (2026-10-24, ADR 0090: Player's draw switch, `ActorImpl::has_draw`, Link gone in
+a warp song's white-out and arrival, BACKLOG #26 closed; the runs Sheik's Prelude of Light (from
+the debug preset `prelude`: the Forest Temple's `EVENTCHKINF_48` is Phase 14's), the sword put back
+and pulled again, and the Prelude's warp, on the presets `prelude-learned` and `child-again`)
+**done** (hand-tested 2026-10-24). With it Phase 12 is built whole; its exit review follows.
 
 ## Cross-cutting debts
 

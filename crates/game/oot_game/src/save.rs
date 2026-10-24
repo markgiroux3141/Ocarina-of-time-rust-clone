@@ -1003,6 +1003,21 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: adult_awake,
     },
     SavePreset {
+        name: "prelude",
+        about: "adult-awake with the Forest Medallion's blue warp's EVENTCHKINF_48 and the Forest Medallion (Item_Give, as Door_Warp1's warp out of the Forest Temple's boss room gives it): GAME-11 milestone 3's debug start (the Forest Temple is Phase 14's), at the Temple's entrance: room 0's En_Xc 9 gives the Prelude of Light",
+        apply: prelude,
+    },
+    SavePreset {
+        name: "prelude-learned",
+        about: "prelude and GAME-11 milestone 3's Prelude run over: EVENTCHKINF_55 and the Prelude of Light (ITEM_SONG_PRELUDE): the adult may put the Master Sword back, and warp to the Temple of Time with the song",
+        apply: prelude_learned,
+    },
+    SavePreset {
+        name: "child-again",
+        about: "prelude-learned and the sword put back (GAME-11 milestone 3's SwordBack run over): Link a child again (Inventory_SwapAgeEquipment: the child's buttons with the Kokiri Sword back, the adult's kept), arriving on the pedestal at ENTR_TEMPLE_OF_TIME_2",
+        apply: child_again,
+    },
+    SavePreset {
         name: "frogs-choir",
         about: "ocarina-c with the six songs played to Zora's River's frogs (EVENTCHKINF_SONGS_FOR_FROGS_ZL .. _STORMS, 0xD1 to 0xD6: their purple rupees and piece of heart taken): the ocarina out on their log starts the frogs' song game (0x40AB); a debug start",
         apply: |s| {
@@ -1499,6 +1514,30 @@ fn adult_awake(s: &mut SaveContext) {
     light_medallion(s);
     s.set_event_chk_inf(0xC5);
     s.set_event_chk_inf(0xC9);
+}
+
+/// `prelude`'s save, a debug start: `adult-awake` with what the Forest Temple's blue warp gives
+/// (`DoorWarp1_AdultWarpOut`: `EVENTCHKINF_48`, `Item_Give(ITEM_MEDALLION_FOREST)`).
+fn prelude(s: &mut SaveContext) {
+    adult_awake(s);
+    s.set_event_chk_inf(0x48);
+    crate::item::item_give(s, None, crate::item::ITEM_MEDALLION_FOREST);
+}
+
+/// `prelude-learned`'s save (`Route::Prelude`'s end): `EnXc_InitTempleOfTime`'s
+/// `EVENTCHKINF_55` and `Item_Give(ITEM_SONG_PRELUDE)` (`item.h`: 0x5F).
+fn prelude_learned(s: &mut SaveContext) {
+    prelude(s);
+    s.set_event_chk_inf(0x55);
+    crate::item::item_give(s, None, 0x5F);
+}
+
+/// `child-again`'s save (`Route::SwordBack`'s end): terminator 8's age change while an adult
+/// (`Inventory_SwapAgeEquipment`, then `Player_Destroy`'s `linkAge`).
+fn child_again(s: &mut SaveContext) {
+    prelude_learned(s);
+    s.inventory_swap_age_equipment();
+    s.adult = false;
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

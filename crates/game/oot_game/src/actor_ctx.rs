@@ -158,6 +158,9 @@ pub trait PlayerIface {
     /// `player->interactRangeActor = &this->actor` (`Bg_Toki_Swd` waiting to be taken from or
     /// put back in its pedestal, `func_808BB0AC`).
     fn set_interact_range_actor(&mut self, _actor: ActorHandle) {}
+    /// `player->actor.draw = NULL` (`on` false: `Demo_Kankyo`'s warp-out at its white-out) or
+    /// `Player_Draw`.
+    fn set_draw(&mut self, _on: bool) {}
     /// An explosive's write when it goes in Link's hand (`EnBom_Explode`, `EnBombf_Explode`,
     /// `EnBombf_GrowBomb`): `actor.child`, `heldActor` and `interactRangeActor` cleared,
     /// `PLAYER_STATE1_CARRYING_ACTOR` off.
@@ -279,6 +282,11 @@ pub trait ActorImpl: Any {
     }
     /// `ActorProfile.draw`: submit this frame's draws, from the blended state `rs`.
     fn draw(&self, _rs: &RenderState, _play: &PlayState, _view: &ViewInfo, _out: &mut DrawOut) {}
+    /// `actor->draw != NULL`: `Actor_DrawAll` draws the actor at all (Player's is NULL in a warp
+    /// song's white-out and arrival).
+    fn has_draw(&self) -> bool {
+        true
+    }
     /// `ActorProfile.destroy`.
     fn destroy(&mut self, _play: &mut PlayState) {}
     /// What `Effect_Ss_En_Fire` reads for a flame on body part `i` (`firePos`): the actor's

@@ -953,7 +953,8 @@ impl PlayState {
         if draw_scene {
             for h in self.actors.all() {
                 if let Some(mut a) = self.actors.take(h) {
-                    let drawn = actor_draw_all_cull(a.base_mut(), vp) && a.as_any().downcast_ref::<Uninit>().is_none();
+                    // (The culling test first, then `actor->draw != NULL`, as the C.)
+                    let drawn = actor_draw_all_cull(a.base_mut(), vp) && a.as_any().downcast_ref::<Uninit>().is_none() && a.has_draw();
                     a.base_mut().is_drawn = drawn;
                     if drawn {
                         self.cur_actor = Some(h);
