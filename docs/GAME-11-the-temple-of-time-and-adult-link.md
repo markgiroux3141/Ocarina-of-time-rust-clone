@@ -12,7 +12,8 @@ of the Temple.
 proposed, with every recommendation: the calls' section). The phase starts from the
 `ocarina-of-time` preset (GAME-10's exit review). Milestone 1 done 2026-10-23, hand-tested;
 milestone 2 done 2026-10-23, hand-tested; milestone 3 done 2026-10-24, hand-tested
-(their sections at the end). Phase 12 is built whole; its exit review is next.
+(their sections at the end). **Done** (2026-10-24) with its exit review (the last section): Phase
+13 starts from `adult-awake`.
 
 | # | Milestone | Status |
 |---|---|---|
@@ -836,3 +837,112 @@ buttons, I C-Up, Enter Start.
    Prelude (I, L, I, L, J, I), "Yes": the warp's sparkles and white-out (Link should vanish into
    the light, not stay standing in it), then the Temple's light pad: Link appears with the sparkles
    after a moment and is free.
+
+## Phase 12's end (the exit review, 2026-10-24)
+
+**The exit, met:** adult Link out of the Temple of Time (milestone 2: `Route::TempleExit` from the
+awakening's end through room 1 to `shrine_r`, then `Route::Ruins` through the ruined market round
+its ReDeads and its entrance to Hyrule Field by the broken drawbridge, `ENTR_HYRULE_FIELD_7`). Time
+travel both ways: a child to an adult and back (milestone 1, `Route::MasterSwordPull` and
+`MasterSwordBack`, on debug presets), then in the story's state (milestone 3: `Route::SwordBack` and
+`SwordAgain`), with the Prelude of Light taught and its warp (`Route::Prelude`, `PreludeWarp`).
+Commits: fe527aa (1), 0048fd3 (2), 547b6a4 (3); the handoffs 05b32a5 and 3a1e878.
+
+### What the phase built
+
+- **Actors, whole** (or their types this phase meets, the others placeholders chosen at init, as
+  the user's call 6): `Bg_Toki_Swd` (the pedestal: the reveal, the pull, the putting back, the
+  dimming) and `Door_Toki` (1); `En_Rl` (Rauru), `Demo_6K` types 14 to 19, `En_Xc` types 9 and 1
+  and the pedestal block (1, merged early), `Bg_Spot00_Break` (2); `En_Xc` type 2 with the harp's
+  draws (3, merged early). Every actor the phase's scenes place is ported (COVERAGE: 5 of 5); 221
+  ported actors at Phase 11's end, 227 at Phase 12's.
+- **Systems:**
+  - the age switch: `linkAgeOnLoad` set by the thirteen cutscene destinations, `Play_Destroy`'s
+    `Inventory_SwapAgeEquipment` (whole), `Player_Destroy` (ADR 0088);
+  - Player's time travel: the adult's pedestal branch, `Player_PutSwordInHand`, start mode 1 and
+    `Player_Action_TimeTravelEnd`, cutscene modes 18 and 30's updates;
+  - the adult's draw details: the gauntlets' plates, the iron and hover boots, the tunic's colour
+    at draw time from a dynamic segment (`SEG_TUNIC`), the left hand's overrides (pack format 33);
+  - `SDC_CHAMBER_OF_THE_SAGES` and `chamberCutsceneNum` (ADR 0089);
+  - Player's draw switch, `ActorImpl::has_draw` (`actor.draw` NULL: Link gone in a warp song's
+    white-out and arrival, BACKLOG #26; ADR 0090);
+  - the run tasks: `Task::Pedestal`, `Task::WalkUntil` taking its points in turn, `Task::MenuCursor`
+    by the item page's own cursor moves.
+- **Runs** (each a short start, chained by presets; no fights):
+  - milestone 1: `Route::MasterSwordPull` (366 frames, `master-sword` to `master-sword-adult`),
+    `MasterSwordBack` (425);
+  - milestone 2, the story: `Route::DoorOfTime` (1,392, `ocarina-of-time` to `door-of-time`),
+    `FirstPull` (5,599, to `light-medallion`), `Awakening` (2,389, to `adult-awake`), `TempleExit`
+    (548), `Ruins` (1,015);
+  - milestone 3: `Route::Prelude` (2,339, the debug `prelude` to `prelude-learned`), `SwordBack`
+    (456, to `child-again`), `SwordAgain` (446), `PreludeWarp` (414).
+- **Numbers:** 1,771 tests at the phase's start, 1,811 at its end (one ignored); goldens 337 hashes
+  and 251 cases (`out/golden_base40`), then 369 and 272 (`out/golden_base43`). Menu entries 169 to
+  177. Pack formats 33 and 34. ADRs 0088 to 0090.
+
+### Phase 13's start: the `adult-awake` preset
+
+The story's save at the phase's end is **`adult-awake`** (the awakening's end, `Route::Awakening`).
+The way out and the ruins set no flags (`Route::TempleExit` and `Ruins` end as `adult-awake`; their
+tests check it), and milestone 3's presets are debug starts off the story. Read from the preset (a
+probe, applied and printed, then removed), Link has:
+
+- **The age:** an adult.
+- **B and the C buttons:** the Master Sword on B; C-Left empty, C-Down bombs, C-Right the Ocarina of
+  Time (`Inventory_SwapAgeEquipment`'s first adult).
+- **Items:** Deku Sticks (1), bombs (15), the Fairy Slingshot (37 seeds), the Ocarina of Time, the
+  boomerang, an empty bottle, Zelda's Letter. No adult items yet: no bow, no hookshot.
+- **Equipment:** the Kokiri Sword and the Master Sword; the Deku and Hylian Shields; the Kokiri
+  Tunic and Boots. Worn: the Master Sword, the Hylian Shield, the Kokiri Tunic and Boots.
+  Upgrades: the Goron's Bracelet, the silver scale, the bomb bag, the bullet bag (40), the stick
+  capacity; the child's wallet (99).
+- **The child's kept buttons** (`childEquips`): the Kokiri Sword on B, sticks, the Ocarina of Time
+  (moved to C-Down by `door-of-time`), the slingshot; their equipment nibble the Master Sword's (the
+  pull's `Item_Give`, the C's). `adultEquips` is still empty: the first swap filled the adult's
+  buttons and stored only the child's.
+- **Quest:** the three spiritual stones and the Light Medallion; Zelda's Lullaby, Epona's Song,
+  Saria's Song, the Sun's Song and the Song of Time (no Prelude: that's the debug
+  `prelude-learned`); two pieces of heart.
+- **Stats:** six hearts, magic level 1 (48), 16 rupees.
+- **The ranch's flags from Phase 9:** Malon met at the castle and at the ranch
+  (`EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME`, `_TALKED_TO_CHILD_MALON_AT_RANCH`,
+  `INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE`), `EVENTCHKINF_CAN_LEARN_EPONAS_SONG`;
+  `EVENTCHKINF_EPONA_OBTAINED` (0x18) and `INFTABLE_INGO_TALKED_TO_ADULT_LINK` clear.
+- **The time:** the preset holds none; a start sets the clock (the runs use `clock_time(10, 0)`).
+  Ingo's races want the day.
+
+**Where Phase 13 starts:** Lon Lon Ranch as an adult, its layer 2 by day (3 by night): Ingo
+(`En_In`'s adult roles), adult Malon (`En_Ma3`), Epona (`En_Horse`), the corral's gates
+(`Bg_Ingate`) and fences (`Bg_Umajump`). The story's way there is across the field from where
+`Route::Ruins` ends (`ENTR_HYRULE_FIELD_7`) to its exit 7; a debug start enters the ranch at
+**`ENTR_LON_LON_RANCH_0`** (spawn 0, the gateway from the field) on `adult-awake` by day.
+
+### What's left, and where
+
+- **Phase 13:** `En_In`'s adult (the rental, the races) and `En_Ma2`'s adult, their placeholders
+  chosen at init (`en_in.rs`, `en_ma2.rs`; the survey's table).
+- **Phase 14:** the Forest Medallion in the Chamber (`Demo_Sa` 0 and 1, `chamberCutsceneNum`'s
+  first script) and `Door_Warp1`'s adult warps (BACKLOG #110); `En_Xc`'s Minuet (type 6);
+  `Obj_Bean`'s adult lift (#29, Phases 14 to 18); the `prelude` debug preset, which the Forest
+  Temple's `EVENTCHKINF_48` turns into the story's.
+- **Phases 15 to 18:** the other medallions' scripts in the Chamber (#110: `Demo_Du` 0, `En_Ru2`,
+  `Demo_Im` 0 and 1, `En_Nb`) and Rauru's last message (`kenjyanoma` layer 5, Phase 18); `En_Xc`'s
+  Bolero with its flame (15), Serenade and Lake Hylia (16), Nocturne (17); the adult's placeholders
+  `En_Go2` (15), `En_Kz`'s ice and `Bg_Spot06_Objects` (16), `En_Ossan`'s bazaar and potion shop (17,
+  #100).
+- **Phase 19:** `En_Xc`'s reveal (type 4, the Temple's layers 12 to 14), `Demo_6K` types 0 to 13
+  (Ganon's Castle, the seal), the Temple's credits layer 5 with its lens flare (#55), the Chamber's
+  layer 6, `Demo_Du` 2 and 3, `Demo_Sa` 2 to 4, `Demo_Im` 2 and 6.
+- **Phase 20:** the pause menu's equipment page and Link drawn in it (the user's call 3; the
+  stand-in stays), `En_Ko`'s saw trade.
+- **Owed:** GAME-10 milestone 9's hand test, the frogs and the scarecrows
+  ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)).
+
+### Checked
+
+- ROADMAP (Phase 12 done, in its section and in "Where things stand"), COVERAGE (`coverage.py`'s
+  phase 12 set to done; regenerated: 5 of 5, 227 ported, nothing else moved), the ADR index (0088 to
+  0090) and BACKLOG (#26, #37, #57 closed, #110 open) agree with this document.
+- `cargo test --release --workspace --no-fail-fast`: 1,811 pass, 1 ignored. `cargo test -p
+  layering` passes; the release build has no warnings. `python scripts/golden.py check --bin-dir
+  target/game26/release`: 369 of 369 identical (`out/golden_base43`); the review changed no hash.

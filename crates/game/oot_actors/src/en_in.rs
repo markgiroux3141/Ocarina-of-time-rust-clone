@@ -404,6 +404,8 @@ pub struct EnIn {
     /// `requiredObjectSlot`.
     pub required_object_slot: Option<usize>,
     pub horseback_animation_idx: i16,
+    /// `horsebackAnimFrame`: the race's rider's frame, set by his horse (`EnHorse_UpdateIngoRace`).
+    pub horseback_anim_frame: f32,
     pub unused_animation_idx: i16,
     pub blink_timer: i16,
     pub losing_scream_timer: i16,
@@ -419,6 +421,15 @@ pub struct EnIn {
     horseback: Vec<Anim>,
     /// `AnimTaskQueue_AddActorMovement` queued this frame (`EnIn_Stagger`).
     movement_queued: bool,
+}
+
+/// `En_Horse`'s write to its rider (`EnHorse_UpdateIngoRace`, `EnHorse_SetIngoAnimation`):
+/// `horsebackAnimationIdx` and `horsebackAnimFrame`. Nothing for a rider that isn't an `En_In`.
+pub fn set_horseback_animation(play: &mut PlayState, rider: oot_game::actor_ctx::ActorHandle, anim: i16, frame: f32) {
+    if let Some(i) = play.actors.downcast_mut::<EnIn>(rider) {
+        i.horseback_animation_idx = anim;
+        i.horseback_anim_frame = frame;
+    }
 }
 
 /// Link's `stateFlags1`.
@@ -477,6 +488,7 @@ impl EnIn {
             collider: ColliderCylinder::new(&CYLINDER_INIT),
             required_object_slot: None,
             horseback_animation_idx: 0,
+            horseback_anim_frame: 0.0,
             unused_animation_idx: 0,
             blink_timer: 0,
             losing_scream_timer: 0,

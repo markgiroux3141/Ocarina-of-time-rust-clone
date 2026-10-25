@@ -236,8 +236,9 @@ impl SkelAnime {
         false
     }
 
-    /// `LinkAnimation_AnimateFrame`.
-    fn animate_frame(&mut self, data: &GameData) {
+    /// `LinkAnimation_AnimateFrame`: the joint table at `cur_frame` (riding sets the frame from
+    /// the horse's), the morph blended in while it lasts.
+    pub fn animate_frame(&mut self, data: &GameData) {
         self.load(data, self.animation, self.cur_frame as i32, Table::Joint);
         if self.morph_weight != 0.0 {
             self.morph_weight -= self.morph_rate * UPDATE_SCALE;
@@ -309,6 +310,13 @@ impl SkelAnime {
         self.end_frame = end;
         self.anim_length = data.anims[anim].length();
         self.play_speed = play_speed;
+    }
+
+    /// `Animation_SetMorph`: a morph of `morph_frames` from the morph table (riding's change of
+    /// animation, which keeps the frame).
+    pub fn set_morph(&mut self, morph_frames: f32) {
+        self.morph_weight = 1.0;
+        self.morph_rate = 1.0 / morph_frames;
     }
 
     /// `LinkAnimation_PlayOnce`.

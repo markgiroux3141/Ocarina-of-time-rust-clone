@@ -587,6 +587,15 @@ impl SsSpawn<'_> {
         (new_pos, velocity, Vec3::ZERO)
     }
 
+    /// `func_80028A54`: 20 puffs of brown dust round `src_pos` (`func_800287AC`, 100 big growing
+    /// by 30, 7 frames): a horse's landing.
+    pub fn func_80028a54(&mut self, rand_scale: f32, src_pos: Vec3) {
+        for _ in 0..20 {
+            let (pos, velocity, accel) = self.func_80028894(src_pos, rand_scale);
+            self.func_800287ac(pos, velocity, accel, 100, 30, 7);
+        }
+    }
+
     /// `func_80028990`: 20 puffs of brown dust round `src_pos` (`func_8002873C`, 100 big
     /// growing by 30, 7 frames).
     pub fn func_80028990(&mut self, rand_scale: f32, src_pos: Vec3) {

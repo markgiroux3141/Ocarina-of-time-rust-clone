@@ -248,6 +248,24 @@ pub trait PlayerIface {
     fn shield_mf(&self) -> crate::sys_matrix::MtxF {
         crate::sys_matrix::MtxF::IDENTITY
     }
+    /// `rideActor`: the horse Link may mount (`Actor_SetRideActor`) or rides.
+    fn ride_actor(&self) -> Option<ActorHandle> {
+        None
+    }
+    /// `Actor_SetRideActor`'s write (`z_actor.c`): unless Link is dead, carrying, charging a spin,
+    /// hanging, climbing up, jumping, falling, in first person or climbing (`PLAYER_STATE1_DEAD`,
+    /// `_CARRYING_ACTOR`, `_CHARGING_SPIN_ATTACK`, `_13`, `_14`, `_18`, `_19`, `_20`, `_21`),
+    /// `rideActor = horse` and `mountSide` (-1 the left, 1 the right). Returns whether it took.
+    fn set_ride_actor(&mut self, _horse: ActorHandle, _mount_side: i32) -> bool {
+        false
+    }
+    /// `Actor_MountHorse`'s Player half (`z_horse.c`'s spawns on a horse): `rideActor = horse`,
+    /// `PLAYER_STATE1_23`. (The horse's `child` is set by the caller.)
+    fn mount_horse(&mut self, _horse: ActorHandle) {}
+    /// `func_8002DD78` (`z_actor.c`): the bow, slingshot or hookshot in hand and raised.
+    fn func_8002dd78(&self) -> bool {
+        false
+    }
 }
 
 /// `PLAYER_BOOTS_IRON` (`player.h`).
@@ -289,6 +307,11 @@ pub trait ActorImpl: Any {
     }
     /// `ActorProfile.destroy`.
     fn destroy(&mut self, _play: &mut PlayState) {}
+    /// `EN_HORSE_CHECK_JUMPING` (`En_Horse`'s `ENHORSE_JUMPING`): what the horse camera reads of
+    /// the horse Link rides (`Camera_CalcAtForHorse`). False for any other actor.
+    fn horse_jumping(&self) -> bool {
+        false
+    }
     /// What `Effect_Ss_En_Fire` reads for a flame on body part `i` (`firePos`): the actor's
     /// table at 0x14C, `Vec3s` with flag 0x8000 else `Vec3f`. An actor with none there has
     /// zeroes (the zeroed actor memory, as `En_Dekubaba`'s unused fields).

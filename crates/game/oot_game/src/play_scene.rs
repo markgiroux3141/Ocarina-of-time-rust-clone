@@ -652,6 +652,8 @@ impl PlayState {
         play.environment_play_scene_sequence();
         play.save.seq_id = play.sequence_ctx.seq_id;
         play.save.nature_ambience_id = play.sequence_ctx.nature_ambience_id;
+        // Actor_InitPlayerHorse: the adult's horse (crate::horse), before respawnFlag is cleared.
+        crate::horse::horse_init_player_horse(&mut play);
         for h in play.actors.all() {
             if let Some(a) = play.actors.get_mut(h) {
                 a.animation_update();

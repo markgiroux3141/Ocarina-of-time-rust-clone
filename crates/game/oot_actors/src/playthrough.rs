@@ -732,6 +732,19 @@ pub enum Step {
     /// Arrived on the Temple of Time's light pad (`ENTR_TEMPLE_OF_TIME_7`): the warp-in's script
     /// over, Link free.
     PreludeWarped,
+    /// Epona's Song played on the ocarina (`R_EPONAS_SONG_PLAYED`): Epona comes.
+    EponaSongPlayed,
+    /// On Epona, the mount over (`Player_Action_8084CC98`).
+    Mounted,
+    /// Ridden through the points, and halted.
+    RodeOver,
+    /// Off the horse (`Player_Action_8084D3E4` over), standing.
+    Dismounted,
+    /// Ridden into an exit: the transition started, Link on the horse.
+    RodeOut,
+    /// In the next scene on the horse (`R_EXITED_SCENE_RIDING_HORSE`, `HORSE_PTYPE_PLAYER_SPAWNED_RIDING`),
+    /// the fade over and the horse standing.
+    RiddenIn,
 }
 
 impl Step {
@@ -1029,6 +1042,12 @@ impl Step {
             Step::PreludeWarpPlayed => "prelude_warp_played",
             Step::PreludeWarpOut => "prelude_warp_out",
             Step::PreludeWarped => "prelude_warped",
+            Step::EponaSongPlayed => "epona_song_played",
+            Step::Mounted => "mounted",
+            Step::RodeOver => "rode_over",
+            Step::Dismounted => "dismounted",
+            Step::RodeOut => "rode_out",
+            Step::RiddenIn => "ridden_in",
         }
     }
 }
@@ -1404,6 +1423,16 @@ pub enum Route {
     /// Temple of Time's light pad (`ENTR_TEMPLE_OF_TIME_7`, start mode 5: hidden until the warp-in's
     /// script). Its end is `prelude-learned`.
     PreludeWarp,
+    /// Riding Epona in Lon Lon Ranch (`adult-awake` by day, in the corral): Epona fleeing
+    /// (`EnHorse_FleePlayer`) until Epona's Song, then coming to Link; mounted from her left; a walk,
+    /// a trot and a gallop with a spur, over one of the corral's fences (`Bg_Umajump`: a high jump),
+    /// halted, got off. Its end is `adult-awake` (no flags).
+    RideEpona,
+    /// Riding Epona in Hyrule Field (the debug `epona`, Epona had; `ENTR_HYRULE_FIELD_6`, a debug
+    /// start at the foot of the ranch's ramp): Epona's Song (she comes from where she was left),
+    /// mounted, ridden up the ramp and into the ranch through its gate on her (`R_EXITED_SCENE_RIDING_HORSE`: the ranch's start
+    /// spawns her under Link), halted, got off. Its end is `epona`.
+    FieldRide,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2535,6 +2564,51 @@ fn prelude_warp_tasks() -> Vec<Task> {
     ]
 }
 
+/// `Route::RideEpona`'s start: Lon Lon Ranch's corral, south-east of Epona's place ((0, 0, -500),
+/// `Horse_SetupInGameplay`'s spawn without her had), facing her.
+const CORRAL_START: Vec3 = Vec3::new(400.0, 0.0, -800.0);
+const CORRAL_START_YAW: i16 = -0x25C8;
+/// `Route::RideEpona`'s ride: east of the corral's fence `Bg_Umajump` 0 at (295, -27, -989) (rot y
+/// 0x4000: it runs north to south), back to its line, then west over it on a gallop with spurs
+/// (fast enough to jump: `EnHorse_UpdateBgCheckInfo` from 8).
+const CORRAL_RIDE: [Vec3; 3] = [Vec3::new(750.0, 0.0, -990.0), Vec3::new(800.0, 0.0, -990.0), Vec3::new(-300.0, 0.0, -990.0)];
+
+/// `Route::RideEpona`'s tasks: Epona's Song (C-Right: the adult's ocarina), on her, the ride over
+/// the fence, off her.
+fn ride_epona_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Mount(Step::Mounted),
+        Task::Ride(CORRAL_RIDE.to_vec(), true, Step::RodeOver),
+        Task::Dismount(Step::Dismounted),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::FieldRide`'s start: the open field at the foot of the ramp up to Lon Lon Ranch's gate
+/// (the gate's spawn 6 is on the ramp, walled from the field below: Epona called there stops at
+/// the wall), facing up it.
+const RAMP_FOOT: Vec3 = Vec3::new(-1500.0, 61.0, 5600.0);
+const RAMP_FOOT_YAW: i16 = -0x1A00;
+/// The ramp's turns up to the gate (the floor's heights: about 90 at its foot, 313 at the gate;
+/// the exit's polys start partway up).
+const GATE_RAMP: [Vec3; 2] = [Vec3::new(-1650.0, 95.0, 5780.0), Vec3::new(-1800.0, 190.0, 5930.0)];
+
+/// `Route::FieldRide`'s tasks: Epona's Song, on her, up the ramp and into the ranch's gate (the
+/// field's exit 7, `ENTR_LON_LON_RANCH_0`), in on her, off her.
+fn field_ride_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Mount(Step::Mounted),
+        Task::RideExit(GATE_RAMP.to_vec(), "ENTR_LON_LON_RANCH_0", Step::RodeOut),
+        Task::RideIn(Step::RiddenIn),
+        Task::Dismount(Step::Dismounted),
+        Task::Settle(None),
+    ]
+}
+
 /// `ENTR_TEMPLE_OF_TIME_7` (`entrance_table.h`: 0x5F4): spawn 7, room 1, on `Bg_Mjin`'s pad (the
 /// Prelude's warp).
 const ENTR_TEMPLE_OF_TIME_7: u16 = 0x5F4;
@@ -3362,6 +3436,11 @@ impl Route {
             Route::SwordAgain => "ENTR_TEMPLE_OF_TIME_2",
             // The field's spawn 7, by the broken drawbridge (the Ruins run's end).
             Route::PreludeWarp => "ENTR_HYRULE_FIELD_7",
+            // The ranch's gateway from the field (spawn 0); the debug start moves Link into the
+            // corral.
+            Route::RideEpona => "ENTR_LON_LON_RANCH_0",
+            // The field outside the ranch's gate (spawn 6, coming out of the ranch).
+            Route::FieldRide => "ENTR_HYRULE_FIELD_6",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3429,6 +3508,8 @@ impl Route {
             Route::TempleExit | Route::Ruins => Some("adult-awake"),
             Route::Prelude => Some("prelude"),
             Route::SwordBack | Route::PreludeWarp => Some("prelude-learned"),
+            Route::RideEpona => Some("adult-awake"),
+            Route::FieldRide => Some("epona"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3515,6 +3596,8 @@ impl Route {
             // Where gTempleOfTimePreludeCs leaves Link (its player cues from frame 107: (0, 40,
             // 214)), facing the pedestal (-z).
             Route::SwordBack => Some((AWAKENING_END, i16::MIN)),
+            Route::RideEpona => Some((CORRAL_START, CORRAL_START_YAW)),
+            Route::FieldRide => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
             _ => None,
         }
     }
@@ -3754,6 +3837,8 @@ impl Route {
             Route::SwordBack => "sword-back",
             Route::SwordAgain => "sword-again",
             Route::PreludeWarp => "prelude-warp",
+            Route::RideEpona => "ride-epona",
+            Route::FieldRide => "field-ride",
         }
     }
 
@@ -3831,6 +3916,7 @@ impl Route {
             Route::Prelude => 6000,
             Route::SwordBack | Route::SwordAgain => 2000,
             Route::PreludeWarp => 3000,
+            Route::RideEpona | Route::FieldRide => 4000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3838,12 +3924,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3886,6 +3972,24 @@ enum Task {
     /// The Master Sword's pedestal (`Bg_Toki_Swd`): towards it until it offers itself (Player's
     /// `interactRangeActor`), A, until its cutscene starts (the pull or the putting back).
     Pedestal(Step),
+    /// Epona standing (`ENHORSE_ACT_IDLE`, idle or whinnying): to a point 60 out on her left, then
+    /// at her slowly until she offers herself (Player's `rideActor`: "Climb" on A), A, until the
+    /// mount is over (`Player_Action_8084CC98` with `av2.actionVar2` set).
+    Mount(Step),
+    /// On the horse, through the points: the stick at full tilt turned by the angle from her
+    /// heading to the point (`EnHorse_StickDirection` reads the stick from her; farther off than
+    /// `RIDE_TURN` she's stopped and turned in place), each passed within `RIDE_RADIUS`; A (a spur:
+    /// "Faster") whenever she gallops lined up with all six carrots, if asked; past the last, the
+    /// stick let go until she stands, then the step.
+    Ride(Vec<Vec3>, bool, Step),
+    /// `Ride` through the points, not stopping, then at the exit to the entrance (the middle of its
+    /// polys), until the transition starts.
+    RideExit(Vec<Vec3>, &'static str, Step),
+    /// On the horse, idle until the scene has changed and its fade is over, then until the horse
+    /// stands (`EN_HORSE_CHECK_4`).
+    RideIn(Step),
+    /// On a standing horse ("Down": `PLAYER_STATE2_22`), A until Link is off it and standing.
+    Dismount(Step),
     /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
     /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
     Throw(Vec3, Step),
@@ -4300,6 +4404,13 @@ const RUN: f32 = 60.0;
 const SLOW: f32 = 40.0;
 /// Full tilt (the stick's relative position clamps at 60 past the dead zone).
 const FULL: f32 = 80.0;
+/// `Task::Ride`: how near a point counts as passed (a gallop covers 8 to 14 a frame), and the most
+/// the stick turns from her heading (`cos` above `EnHorse_MountedIdle`'s 0.7071: a walk, not a
+/// turn in place).
+const RIDE_RADIUS: f32 = 120.0;
+const RIDE_TURN: i32 = 0x1F00;
+/// How much more the stick turns than she's off: a gallop turns slowly.
+const RIDE_GAIN: i32 = 4;
 
 pub struct Playthrough {
     pub route: Route,
@@ -4668,6 +4779,8 @@ impl Playthrough {
             Route::SwordBack => vec![Task::Settle(None), Task::Pedestal(Step::SwordPutBack), Task::NewScene(Step::TimeTravelled)],
             Route::SwordAgain => vec![Task::Settle(None), Task::Pedestal(Step::SwordPulled), Task::NewScene(Step::TimeTravelled)],
             Route::PreludeWarp => prelude_warp_tasks(),
+            Route::RideEpona => ride_epona_tasks(),
+            Route::FieldRide => field_ride_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -5173,6 +5286,74 @@ impl Playthrough {
             }
             Task::Lift(near, step) => self.lift(w, near, step),
             Task::Pedestal(step) => self.pedestal(w, step),
+            Task::Mount(step) => self.mount(w, step),
+            Task::Ride(points, spur, step) => self.ride(w, &points, spur, step),
+            Task::RideExit(points, name, step) => {
+                self.wait += 1;
+                if self.wait > 3000 {
+                    self.failure = Some(format!("never rode into the exit to {name}"));
+                    return None;
+                }
+                if w.transition.trigger != TRANS_TRIGGER_OFF {
+                    self.finish(Some(step));
+                    return None;
+                }
+                let Some((_, c)) = exit_to(w, name) else {
+                    self.failure = Some(format!("no exit to {name} in scene {}", w.scene_id));
+                    return None;
+                };
+                let Some(horse) = Self::ridden(w) else {
+                    self.failure = Some("not on a horse".into());
+                    return None;
+                };
+                while self.sub < points.len() && Self::xz_dist(horse.actor.world_pos, points[self.sub]) < RIDE_RADIUS {
+                    self.sub += 1;
+                }
+                Some(Self::ride_stick(horse, points.get(self.sub).copied().unwrap_or(c)))
+            }
+            Task::RideIn(step) => match self.sub {
+                0 => {
+                    self.scene_changes = w.scene_changes;
+                    self.sub = 1;
+                    Some(idle)
+                }
+                1 => {
+                    if w.scene_changes > self.scene_changes {
+                        self.sub = 2;
+                        self.wait = 0;
+                    }
+                    Some(idle)
+                }
+                _ => {
+                    self.wait += 1;
+                    if self.wait > 900 {
+                        self.failure = Some(format!("never in the scene on the horse (Link {:?})", w.player().action));
+                        return None;
+                    }
+                    let fade_over = w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF;
+                    if fade_over && Self::ridden(w).is_some_and(|h| h.actor.speed_xz == 0.0 && h.check_4()) {
+                        self.finish(Some(step));
+                        return None;
+                    }
+                    Some(idle)
+                }
+            },
+            Task::Dismount(step) => {
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some(format!("never off the horse (Link {:?})", w.player().action));
+                    return None;
+                }
+                let p = w.player();
+                if p.state1 & crate::player::STATE1_23 == 0 && p.action == PA::StandingStill {
+                    self.finish(Some(step));
+                    return None;
+                }
+                if p.action == PA::Ride && p.state2 & crate::player::STATE2_22 != 0 {
+                    return Some(self.press(BTN_A));
+                }
+                Some(idle)
+            }
             Task::LiftWho(who, step) => {
                 if self.carried.is_none() {
                     self.carried = Self::find(w, who);
@@ -8015,6 +8196,117 @@ impl Playthrough {
     }
 
     /// `Task::Lift`.
+    /// The horse Link is on (Player's `rideActor`, riding).
+    fn ridden(w: &PlayState) -> Option<&crate::en_horse::EnHorse> {
+        let p = w.player();
+        if p.state1 & crate::player::STATE1_23 == 0 {
+            return None;
+        }
+        p.ride_actor.and_then(|h| crate::en_horse::ridden(&w.actors, h))
+    }
+
+    /// Epona nearest Link.
+    fn epona(w: &PlayState) -> Option<&crate::en_horse::EnHorse> {
+        let link = w.player().actor.world_pos;
+        w.actors
+            .all()
+            .into_iter()
+            .filter_map(|h| w.actors.downcast::<crate::en_horse::EnHorse>(h))
+            .filter(|e| !e.actor.killed && e.ty == crate::en_horse::HORSE_EPONA)
+            .min_by(|a, b| a.actor.world_pos.distance(link).total_cmp(&b.actor.world_pos.distance(link)))
+    }
+
+    /// The yaw from the horse's heading to `to`.
+    fn ride_angle(horse: &crate::en_horse::EnHorse, to: Vec3) -> i16 {
+        oot_game::target::yaw_to(horse.actor.world_pos, to).wrapping_sub(horse.actor.shape_rot.y)
+    }
+
+    /// The stick steering the horse at `to`: `EnHorse_StickDirection`'s angle (`atan2(-x, y)`, from
+    /// straight up) the yaw from her heading to the point times `RIDE_GAIN`, at most `RIDE_TURN`, at full tilt. Far
+    /// off her heading (more than `RIDE_TURN`), let go until she stands, then straight to the side
+    /// (`EnHorse_MountedTurn`: she turns in place).
+    fn ride_stick(horse: &crate::en_horse::EnHorse, to: Vec3) -> PadState {
+        let want = Self::ride_angle(horse, to);
+        if (want as i32).abs() > RIDE_TURN && horse.actor.speed_xz != 0.0 {
+            return PadState::default();
+        }
+        let a = if (want as i32).abs() > RIDE_TURN { if want > 0 { 0x4000 } else { -0x4000 } } else { (want as i32 * RIDE_GAIN).clamp(-RIDE_TURN, RIDE_TURN) as i16 };
+        let (sn, cs) = (eng_math::sin_s(a), eng_math::cos_s(a));
+        PadState { button: 0, stick_x: (-sn * FULL) as i8, stick_y: (cs * FULL) as i8 }
+    }
+
+    /// `Task::Mount`.
+    fn mount(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::en_horse::*;
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 2000 {
+            let horse = Self::epona(w).map(|h| (h.action, h.animation_idx, h.actor.world_pos));
+            self.failure = Some(format!("never on the horse (Link {:?} at {}; Epona's action, animation and place {horse:?})", w.player().action, w.player().actor.world_pos));
+            return None;
+        }
+        let p = w.player();
+        if p.state1 & crate::player::STATE1_23 != 0 {
+            if p.action == PA::Ride && p.action_var2 != 0 {
+                self.finish(Some(step));
+                return None;
+            }
+            // Mounting.
+            return Some(idle);
+        }
+        let Some(horse) = Self::epona(w) else { return Some(idle) };
+        // Offered (Player's `rideActor`, cleared at his update's end: the "Climb" it gave).
+        if w.interface_ctx.unk_1f0 == oot_game::interface::DO_ACTION_CLIMB {
+            return Some(self.press(BTN_A));
+        }
+        let standing = horse.action == ENHORSE_ACT_IDLE && (horse.animation_idx == ENHORSE_ANIM_IDLE || horse.animation_idx == ENHORSE_ANIM_WHINNEY);
+        if !standing {
+            self.sub = 0;
+            return Some(idle);
+        }
+        let yaw = horse.actor.shape_rot.y.wrapping_add(0x4000);
+        let left = horse.actor.world_pos + Vec3::new(eng_math::sin_s(yaw), 0.0, eng_math::cos_s(yaw)) * 60.0;
+        let link = p.actor.world_pos;
+        if self.sub == 0 {
+            if Self::xz_dist(link, left) < 15.0 {
+                self.sub = 1;
+            } else {
+                return Some(stick_towards(w, left, RUN));
+            }
+        }
+        Some(stick_towards(w, horse.actor.world_pos, SLOW))
+    }
+
+    /// `Task::Ride`.
+    fn ride(&mut self, w: &PlayState, points: &[Vec3], spur: bool, step: Step) -> Option<PadState> {
+        use crate::en_horse::*;
+        self.wait += 1;
+        if self.wait > 3000 {
+            self.failure = Some(format!("never rode through {points:?}"));
+            return None;
+        }
+        let Some(horse) = Self::ridden(w) else {
+            self.failure = Some(format!("not on a horse (Link {:?})", w.player().action));
+            return None;
+        };
+        while self.sub < points.len() && Self::xz_dist(horse.actor.world_pos, points[self.sub]) < RIDE_RADIUS {
+            self.sub += 1;
+        }
+        if self.sub >= points.len() {
+            if horse.actor.speed_xz == 0.0 && horse.check_4() {
+                self.finish(Some(step));
+                return None;
+            }
+            return Some(PadState::default());
+        }
+        let mut pad = Self::ride_stick(horse, points[self.sub]);
+        let lined_up = (Self::ride_angle(horse, points[self.sub]) as i32).abs() < 0x800;
+        if spur && lined_up && horse.action == ENHORSE_ACT_MOUNTED_GALLOP && horse.num_boosts == 6 && self.prev.button & BTN_A == 0 {
+            pad.button |= BTN_A;
+        }
+        Some(pad)
+    }
+
     /// `Task::Pedestal`.
     fn pedestal(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
         self.wait += 1;

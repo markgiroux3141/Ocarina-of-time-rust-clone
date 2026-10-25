@@ -206,6 +206,15 @@ pub struct SaveContext {
     /// the file select start it at `CHAMBER_CS_FOREST`; `z_demo.c`'s destinations 29 to 31 and
     /// `Door_Warp1`'s boss warps set it.
     pub chamber_cutscene_num: u8,
+    /// `R_EXITED_SCENE_RIDING_HORSE` (`AREG(6)`, `regs.h`): Link left the last scene on Epona
+    /// (Player's exit check while riding), so the next `Play_Init` starts him on her
+    /// (`Horse_SetupInGameplay`); `En_Horse`'s init, the dismount and `En_In`'s race clear it. A
+    /// debug register in the C, outliving the play states: the port keeps it here, beside the
+    /// save, so `Play_Init` reads it. Not in the save.
+    pub r_exited_scene_riding_horse: bool,
+    /// `minigameState`: 1 horseback archery running (its score on the HUD), 3 its end (the
+    /// Gerudo's Fortress spawns the horse back: `oot_game::horse`). Not in the save.
+    pub minigame_state: u8,
     /// `gameMode` (`GAMEMODE_NORMAL` 0), `fileNum` (0xFF for the map select's file).
     pub game_mode: u8,
     pub file_num: i32,
@@ -1003,6 +1012,11 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: adult_awake,
     },
     SavePreset {
+        name: "epona",
+        about: "adult-awake with Epona had (EVENTCHKINF_EPONA_OBTAINED, 0x18: what the field's jump out of Lon Lon Ranch sets, GAME-12 milestone 3's): a debug start for GAME-12 milestone 1's ride in Hyrule Field (Epona where the new save leaves her, horseData: the field's (-1840, 72, 5497); Epona's Song calls her)",
+        apply: epona,
+    },
+    SavePreset {
         name: "prelude",
         about: "adult-awake with the Forest Medallion's blue warp's EVENTCHKINF_48 and the Forest Medallion (Item_Give, as Door_Warp1's warp out of the Forest Temple's boss room gives it): GAME-11 milestone 3's debug start (the Forest Temple is Phase 14's), at the Temple's entrance: room 0's En_Xc 9 gives the Prelude of Light",
         apply: prelude,
@@ -1516,6 +1530,12 @@ fn adult_awake(s: &mut SaveContext) {
     s.set_event_chk_inf(0xC9);
 }
 
+/// `epona`'s save, a debug start: `adult-awake` with `EVENTCHKINF_EPONA_OBTAINED` (0x18).
+fn epona(s: &mut SaveContext) {
+    adult_awake(s);
+    s.set_event_chk_inf(0x18);
+}
+
 /// `prelude`'s save, a debug start: `adult-awake` with what the Forest Temple's blue warp gives
 /// (`DoorWarp1_AdultWarpOut`: `EVENTCHKINF_48`, `Item_Give(ITEM_MEDALLION_FOREST)`).
 fn prelude(s: &mut SaveContext) {
@@ -1678,6 +1698,8 @@ impl SaveContext {
             cutscene_trigger: 0,
             cutscene_transition_control: 0,
             chamber_cutscene_num: CHAMBER_CS_FOREST,
+            minigame_state: 0,
+            r_exited_scene_riding_horse: false,
             game_mode: GAMEMODE_NORMAL,
             file_num: 0,
             event_chk_inf: [0; 14],

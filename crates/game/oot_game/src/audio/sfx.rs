@@ -1494,6 +1494,21 @@ pub const NA_SE_SY_TIMER: u16 = 0x2821;
 pub const NA_SE_EV_WATER_WALL: u16 = 0x2828;
 pub const NA_SE_EV_HORSE_LAND2: u16 = 0x282B;
 pub const NA_SE_EV_HORSE_SANDDUST: u16 = 0x282C;
+// environmentbank, itembank, systembank, playerbank and voicebank tables: riding Epona's (GAME-12
+// milestone 1).
+pub const NA_SE_EV_HORSE_WALK: u16 = 0x2803;
+pub const NA_SE_EV_HORSE_RUN: u16 = 0x2804;
+pub const NA_SE_EV_HORSE_JUMP: u16 = 0x2818;
+pub const NA_SE_EV_HORSE_LAND: u16 = 0x2819;
+pub const NA_SE_EV_HORSE_SLIP: u16 = 0x281A;
+pub const NA_SE_IT_INGO_HORSE_NEIGH: u16 = 0x1844;
+pub const NA_SE_IT_LASH: u16 = 0x181E;
+pub const NA_SE_SY_CARROT_RECOVER: u16 = 0x4845;
+pub const NA_SE_PL_SIT_ON_HORSE: u16 = 0x0832;
+pub const NA_SE_PL_GET_OFF_HORSE: u16 = 0x0833;
+pub const NA_SE_PL_CALM_HIT: u16 = 0x0871;
+pub const NA_SE_PL_CALM_PAT: u16 = 0x0872;
+pub const NA_SE_VO_LI_LASH: u16 = 0x6802;
 pub const NA_SE_EV_BOMB_BOUND: u16 = 0x282F;
 pub const NA_SE_EV_WATERDROP: u16 = 0x2830;
 pub const NA_SE_EV_TORCH: u16 = 0x2831;

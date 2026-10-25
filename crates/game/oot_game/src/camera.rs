@@ -218,6 +218,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_BATT1",
     "CAM_FUNC_SPEC6",
     "CAM_FUNC_BATT4",
+    "CAM_FUNC_NORM3",
 ];
 
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
@@ -706,6 +707,32 @@ struct Norm1Ro {
     at_lerp_scale_max: f32,
     pitch_target: i16,
     interface_flags: i16,
+}
+
+/// `Normal3ReadOnlyData` (riding Epona, `CAM_SET_HORSE`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Norm3Ro {
+    y_offset: f32,
+    dist_min: f32,
+    dist_max: f32,
+    pitch_target: i16,
+    yaw_update_speed: f32,
+    unk_10: f32,
+    fov_target: f32,
+    max_at_lerp_scale: f32,
+    interface_field: i16,
+}
+
+/// `Normal3ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Norm3Rw {
+    swing: Swing,
+    cur_pitch: i16,
+    unk_1c: f32,
+    unk_20: f32,
+    yaw_upd_amt: i16,
+    dist_timer: i16,
+    yaw_timer: i16,
 }
 
 /// `Normal1ReadWriteData`.
@@ -1380,7 +1407,20 @@ pub struct PlayerView {
     /// `Actor_GetFocus`: `actor.focus.pos` and `actor.focus.rot` (`Camera_Subj3`'s first person).
     pub focus_pos: Vec3,
     pub focus_rot: [i16; 3],
+    /// `rideActor` while riding (`PLAYER_STATE1_23`): the horse, for `Camera_CalcAtForHorse`.
+    pub ride: Option<RideView>,
 }
+
+/// What the camera reads of the horse Link rides (`Actor_GetWorldPosShapeRot(player->rideActor)`,
+/// `EN_HORSE_CHECK_JUMPING`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RideView {
+    pub pos: Vec3,
+    pub jumping: bool,
+}
+
+/// `PLAYER_STATE1_23` (riding).
+const PLAYER_STATE1_23: u32 = 1 << 23;
 
 /// `PLAYER_STATE1_29`: Player in a cutscene-like state (walking through an exit or a door).
 const PLAYER_STATE1_29: u32 = 1 << 29;
@@ -1451,9 +1491,10 @@ fn water_box_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, u32)
 }
 
 impl PlayerView {
-    /// `Player_GetHeight` (not riding Epona).
+    /// `Player_GetHeight`: 32 more riding a horse (`PLAYER_STATE1_23`).
     pub fn height(&self) -> f32 {
-        if self.adult { 68.0 } else { 44.0 }
+        let offset = if self.state1 & PLAYER_STATE1_23 != 0 { 32.0 } else { 0.0 };
+        offset + if self.adult { 68.0 } else { 44.0 }
     }
 }
 
@@ -1581,6 +1622,9 @@ pub struct GameCamera {
     uniq1_rw: Uniq1Rw,
     ro: Norm1Ro,
     rw: Norm1Rw,
+    /// `paramData.norm3`: `Camera_Normal3`'s read-only and read-write data.
+    norm3_ro: Norm3Ro,
+    norm3_rw: Norm3Rw,
     para1_ro: Para1Ro,
     para1_rw: Para1Rw,
     keep1_ro: Keep1Ro,
@@ -1720,6 +1764,8 @@ impl GameCamera {
             uniq1_rw: Uniq1Rw::default(),
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
+            norm3_ro: Norm3Ro::default(),
+            norm3_rw: Norm3Rw::default(),
             para1_ro: Para1Ro::default(),
             para1_rw: Para1Rw::default(),
             keep1_ro: Keep1Ro::default(),
@@ -1764,7 +1810,7 @@ impl GameCamera {
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
     /// origin, `CAM_SET_FREE0`, `CAM_STAT_CUT` until made active.
     pub fn init_sub(d: &CameraData, g: &mut CameraGlobals, cam_id: i16) -> GameCamera {
-        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3], ride: None };
         let mut c = GameCamera::new(d, &origin);
         let uid = g.camera_init();
         c.eye = Vec3::ZERO;
@@ -3684,6 +3730,7 @@ impl GameCamera {
                 Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
                 Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
                 Some("CAM_FUNC_BATT4") => self.battle4(d, p),
+                Some("CAM_FUNC_NORM3") => self.normal3(d, col, p, frames),
                 Some("CAM_FUNC_SPEC6") => self.special6(d, col),
                 Some("CAM_FUNC_SPEC0") => self.special0(d, f.target.as_ref()),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
@@ -3757,8 +3804,10 @@ impl GameCamera {
         let (col, p) = (f.col, &f.player);
         let cur = p.pos;
         self.xz_speed = dist_xz(cur, self.player_pos);
-        // func_8002DCE4: R_RUN_SPEED_LIMIT / 100 when not riding or swimming.
-        self.speed_ratio = clamp_max_dist(self.xz_speed / ((p.run_speed_limit as f32 / 100.0) * d.oreg_s(8)), 1.0);
+        // func_8002DCE4: 8 riding, else R_RUN_SPEED_LIMIT / 100 (swimming, the C takes 0.6 of it:
+        // not here yet, BACKLOG #111).
+        let speed_limit = if p.state1 & PLAYER_STATE1_23 != 0 { 8.0 } else { p.run_speed_limit as f32 / 100.0 };
+        self.speed_ratio = clamp_max_dist(self.xz_speed / (speed_limit * d.oreg_s(8)), 1.0);
         self.player_pos_delta = cur - self.player_pos;
         let pos = cur + Vec3::Y * p.height();
         // BgCheck_EntityRaycastDown5.
@@ -4397,6 +4446,157 @@ impl GameCamera {
         self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.at_lerp_scale_max);
+    }
+
+    // ---- Camera_Normal3 (riding Epona) ---------------------------------------------------
+
+    /// `Camera_CalcAtForHorse`: `at` follows the horse (`rideActor`: 49 lower while it jumps, the
+    /// at's step then eased to 0.4) at Player's height (`Player_GetHeight`, riding) plus
+    /// `y_offset`, the slope taken off; `y_pos_offset` follows the horse's height.
+    fn calc_at_for_horse(&mut self, d: &CameraData, eye_at_dir: &VecSphGeo, y_offset: f32, y_pos_offset: &mut f32, calc_slope: bool, p: &PlayerView) {
+        let player_height = p.height();
+        // (A NULL rideActor would crash the C: not riding, the default.)
+        let Some(ride) = p.ride else {
+            self.calc_at_default(d, eye_at_dir, y_offset, calc_slope, p);
+            return;
+        };
+        let mut horse = ride.pos;
+        if ride.jumping {
+            horse.y -= 49.0;
+            *y_pos_offset = lerp_ceil_f(horse.y, *y_pos_offset, 0.1, 0.2);
+            self.at_lerp_step_scale = lerp_ceil_f(0.4, self.at_lerp_step_scale, 0.2, 0.02);
+        } else {
+            *y_pos_offset = lerp_ceil_f(horse.y, *y_pos_offset, 0.5, 0.2);
+        }
+        let mut target = Vec3::new(0.0, player_height + y_offset, 0.0);
+        if calc_slope {
+            target.y -= calc_slope_y_adj(self.floor_norm, self.player_rot_y, eye_at_dir.yaw, d.oreg(9) as f32);
+        }
+        let mut off = self.pos_offset;
+        lerp_ceil_vec3(target, &mut off, self.y_offset_update_rate, self.xz_offset_update_rate, 0.1);
+        self.pos_offset = off;
+        let at_target = horse + self.pos_offset;
+        let mut at = self.at;
+        lerp_ceil_vec3(at_target, &mut at, self.at_lerp_step_scale, self.at_lerp_step_scale, 0.2);
+        self.at = at;
+    }
+
+    /// `Camera_Normal3` (`CAM_SET_HORSE`'s normal and Z-parallel modes): behind the horse at the
+    /// setting's distance and pitch (less the floor's pitch ahead), its yaw following the horse's
+    /// by the speed, swung round walls (`func_80046E20`).
+    fn normal3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
+        let player_height = p.height();
+        // RELOAD_PARAMS: animState 0, 10 or 20.
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let k = self.cur();
+            let v = |i: usize| d.value(k, i) as f32;
+            // CAM_DATA_SCALED(playerHeight).
+            let s = player_height * 0.01;
+            self.norm3_ro = Norm3Ro {
+                y_offset: v(0) * s,
+                dist_min: v(1) * s,
+                dist_max: v(2) * s,
+                pitch_target: cam_deg_to_binang(v(3)),
+                yaw_update_speed: v(4),
+                unk_10: v(5),
+                fov_target: v(6),
+                max_at_lerp_scale: v(7) * 0.01,
+                interface_field: d.value(k, 8),
+            };
+        }
+        let ro = self.norm3_ro;
+        let sp7c = diff_to_sph_geo(self.at, self.eye);
+        let sp74 = diff_to_sph_geo(self.at, self.eye_next);
+        self.update_direction = true;
+        self.interface_flags = ro.interface_field;
+        if matches!(self.anim_state, 0 | 10 | 20 | 25) {
+            let anim_time = d.oreg(R_CAM_DEFAULT_ANIM_TIME);
+            let rw = &mut self.norm3_rw;
+            rw.swing.at_eye_poly = None;
+            rw.cur_pitch = 0;
+            rw.unk_1c = 0.0;
+            rw.unk_20 = self.player_ground_y;
+            rw.swing.unk_16 = 0;
+            rw.swing.unk_14 = 0;
+            rw.swing.unk_18 = 0;
+            rw.swing.swing_update_rate = ro.yaw_update_speed;
+            // (s16)((s16)(rot.y - 0x7FFF) - sp7C.yaw) * (1.0f / CAM_DEFAULT_ANIM_TIME).
+            rw.yaw_upd_amt = (self.player_rot_y.wrapping_sub(0x7FFF).wrapping_sub(sp7c.yaw) as f32 * (1.0 / anim_time as f32)) as i32 as i16;
+            rw.dist_timer = 10;
+            rw.yaw_timer = anim_time;
+            self.anim_state = 1;
+            rw.swing.swing_update_rate_timer = 0;
+        }
+        if self.norm3_rw.dist_timer != 0 {
+            self.norm3_rw.dist_timer -= 1;
+        }
+        // CAM_UPDATE_RATE_STEP_SCALE_XZ, _Y.
+        let sp98 = d.oreg_s(25) * self.speed_ratio;
+        let mut sp94 = d.oreg_s(26) * self.speed_ratio;
+        let pitch_inv = d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32;
+        if self.norm3_rw.swing.swing_update_rate_timer != 0 {
+            let t = (self.norm3_rw.swing.swing_update_rate_timer as i32 * 2) as f32;
+            self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_speed + t, self.yaw_update_rate_inv, sp98, 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(pitch_inv + t, self.pitch_update_rate_inv, sp94, 0.1);
+            self.norm3_rw.swing.swing_update_rate_timer -= 1;
+        } else {
+            self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_speed, self.yaw_update_rate_inv, sp98, 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(pitch_inv, self.pitch_update_rate_inv, sp94, 0.1);
+        }
+        self.xz_offset_update_rate = lerp_ceil_f(d.oreg_s(2), self.xz_offset_update_rate, sp98, 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, sp94, 0.1);
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.fov_update_rate, sp94, 0.1);
+
+        let t2 = self.pitch_adj_from_floor(d, col, p, sp7c.yaw.wrapping_sub(0x7FFF), true, frames);
+        sp94 = (1.0 / ro.unk_10) * 0.5;
+        let temp_f0 = ((1.0 / ro.unk_10) * 0.5) * (1.0 - self.speed_ratio);
+        self.norm3_rw.cur_pitch = lerp_ceil_s(t2, self.norm3_rw.cur_pitch, sp94 + temp_f0, 0xF);
+
+        let mut unk_20 = self.norm3_rw.unk_20;
+        self.calc_at_for_horse(d, &sp74, ro.y_offset, &mut unk_20, true, p);
+        self.norm3_rw.unk_20 = unk_20;
+        let sp90 = (ro.dist_max + ro.dist_min) * 0.5;
+        let mut sp84 = diff_to_sph_geo(self.at, self.eye_next);
+        let r = self.clamp_dist(d, sp84.r, ro.dist_min, ro.dist_max, self.norm3_rw.dist_timer);
+        self.dist = r;
+        sp84.r = r;
+        if self.xz_speed > 0.001 {
+            sp84.r += (sp90 - sp84.r) * 0.002;
+        }
+        let phi_a0 = ro.pitch_target.wrapping_sub(self.norm3_rw.cur_pitch);
+        sp84.pitch = lerp_ceil_s(phi_a0, sp74.pitch, 1.0 / self.pitch_update_rate_inv, 0xA);
+        let (max_pitch, min_pitch) = (d.oreg(R_CAM_MAX_PITCH), d.oreg(R_CAM_MIN_PITCH_1));
+        if sp84.pitch > max_pitch {
+            sp84.pitch = max_pitch;
+        }
+        if sp84.pitch < min_pitch {
+            sp84.pitch = min_pitch;
+        }
+
+        let mut phi_a0 = self.player_rot_y.wrapping_sub(sp74.yaw.wrapping_sub(0x7FFF));
+        if (phi_a0 as i32).abs() > 0x2AF8 {
+            phi_a0 = if phi_a0 > 0 { 0x2AF8 } else { -0x2AF8 };
+        }
+        let half = 0.5f32;
+        let s = half + (self.speed_ratio * (1.0 - half));
+        let sp98 = (s * phi_a0 as f32) / self.yaw_update_rate_inv;
+        sp84.yaw = if sp98.abs() > 150.0 * (1.0 - self.speed_ratio) { (sp74.yaw as f32 + sp98) as i32 as i16 } else { sp74.yaw };
+        if self.norm3_rw.yaw_timer > 0 {
+            sp84.yaw = sp84.yaw.wrapping_add(self.norm3_rw.yaw_upd_amt);
+            self.norm3_rw.yaw_timer -= 1;
+        }
+        self.eye_next = sph_geo_add(self.at, sp84);
+        if self.status == CAM_STAT_ACTIVE {
+            let mut sp8c = 0.0;
+            let mut anim = self.norm3_rw.swing;
+            self.swing_anim(d, col, &sp84, ro.dist_min, ro.yaw_update_speed, &mut sp8c, &mut anim);
+            self.norm3_rw.swing = anim;
+        } else {
+            self.eye = self.eye_next;
+        }
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.max_at_lerp_scale);
     }
 
     /// `Camera_ClampLERPScale`.

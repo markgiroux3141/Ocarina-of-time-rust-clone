@@ -58,6 +58,8 @@ pub trait SurfaceType {
     /// `SurfaceType_IsIgnoredByProjectiles`: the poly's `COLPOLY_IGNORE_PROJECTILES` flag (a bg
     /// actor's poly always has its header here, which the C checks first).
     fn is_ignored_by_projectiles(&self, id: PolyId) -> bool;
+    /// `SurfaceType_IsHorseBlocked`: surface data[0] bit 31 (a horse can't step on it).
+    fn is_horse_blocked(&self, id: PolyId) -> bool;
 }
 
 impl SurfaceType for CollisionContext {
@@ -105,6 +107,9 @@ impl SurfaceType for CollisionContext {
     }
     fn echo(&self, id: PolyId) -> u32 {
         self.surface_word(id, 1) >> 11 & 0x3F
+    }
+    fn is_horse_blocked(&self, id: PolyId) -> bool {
+        self.surface_word(id, 0) >> 31 & 1 != 0
     }
     fn is_ignored_by_projectiles(&self, id: PolyId) -> bool {
         self.poly(id).vtx[0] & ((COLPOLY_IGNORE_PROJECTILES & 7) << 13) != 0

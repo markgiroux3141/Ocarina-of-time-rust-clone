@@ -515,7 +515,7 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3], ride: None };
         let game_camera = GameCamera::new(&data.camera, &pv);
         let view = crate::camera::CamView::new(game_camera.eye, game_camera.at, game_camera.fov);
         PlayState {
@@ -663,6 +663,11 @@ impl PlayState {
             iron_boots: pi.current_boots() == crate::actor_ctx::PLAYER_BOOTS_IRON,
             focus_pos: a.focus_pos,
             focus_rot: [a.focus_rot.x, a.focus_rot.y, a.focus_rot.z],
+            ride: if pi.state_flags1() & (1 << 23) != 0 {
+                pi.ride_actor().and_then(|h| self.actors.get(h)).map(|horse| crate::camera::RideView { pos: horse.base().world_pos, jumping: horse.horse_jumping() })
+            } else {
+                None
+            },
         })
     }
 

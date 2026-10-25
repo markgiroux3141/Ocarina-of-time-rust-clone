@@ -188,6 +188,9 @@ echo   174  sandbox-temple-of-time The five runs' traces and screenshots, into o
 echo   175  game-prelude         Sheik's Prelude, the sword put back and pulled again, the warp (asks: or back, again, warp)
 echo   176  test-prelude         The Prelude, time travel both ways and the warp's runs (cargo test)
 echo   177  sandbox-prelude      The four runs' traces and screenshots, into out\run
+echo   178  game-epona           Riding Epona: her song, on her, a fence jumped (asks: or field, ranch, night)
+echo   179  test-epona           The riding runs, En_Horse, Bg_Umajump and the horse camera (cargo test)
+echo   180  sandbox-epona        The two riding runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -375,6 +378,9 @@ if "%pick%"=="174" set "script=sandbox-temple-of-time"
 if "%pick%"=="175" goto prelude
 if "%pick%"=="176" set "script=test-prelude"
 if "%pick%"=="177" set "script=sandbox-prelude"
+if "%pick%"=="178" goto epona
+if "%pick%"=="179" set "script=test-epona"
+if "%pick%"=="180" set "script=sandbox-epona"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -428,6 +434,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:epona
+set "which="
+set /p "which=Which (empty: the ranch's corral before Epona; field, ranch or night): "
+call "%~dp0game-epona.bat" %which%
+echo game-epona finished (exit code %errorlevel%).
 pause
 goto menu
 

@@ -137,6 +137,9 @@ pub struct InterfaceContext {
     pub unk_1ec: u16,
     /// `unk_1EE`: the do-action the A button shows; `unk_1F0`: the one it's turning to.
     pub unk_1ee: u16,
+    /// `numHorseBoosts`: the ridden horse's carrots (`EnHorse_RegenBoost`), drawn while the A button
+    /// reads "Faster".
+    pub num_horse_boosts: u8,
     pub unk_1f0: u16,
     /// `unk_1F4`: the flip's angle, in 1/10000 radians.
     pub unk_1f4: f32,
@@ -203,6 +206,7 @@ impl Default for InterfaceContext {
             scene_id: 0,
             unk_1ec: 0,
             unk_1ee: 0,
+            num_horse_boosts: 0,
             unk_1f0: 0,
             unk_1f4: 0.0,
             unk_1fa: false,
@@ -1084,6 +1088,18 @@ impl InterfaceContext {
             let transform = Mat4::from_translation(Vec3::new(x0, y0, 0.0)) * Mat4::from_scale(Vec3::new(x1 - x0, y0 - y1, 1.0));
             out.push(Sprite { name: crate::kaleido::gfx::bake_name(tex, crate::kaleido::gfx::Cc::ModulateIaPrim), transform, prim: Some(prim), env: Some([0, 0, 0, 255]) });
         }
+        // The carrots while riding (the A button's "Faster"), not paused nor in horseback archery
+        // (minigameState 1): six from ZREG(14) (110) at ZREG(15) (56), 16 apart, white while the
+        // horse has them (numHorseBoosts), else blue, at the A button's alpha.
+        if !pause.start && save.minigame_state != 1 && self.unk_1ee == DO_ACTION_FASTER {
+            let a = self.a_alpha as u8;
+            let mut x = ZREG_14;
+            for i in 1..7u8 {
+                let prim = if self.num_horse_boosts == 0 || self.num_horse_boosts < i { [0, 150, 255, a] } else { [255, 255, 255, a] };
+                out.push(Sprite::rect(CARROT_ICON, x as f32, ZREG_15 as f32, (x + 16) as f32, (ZREG_15 + 16) as f32, Some(prim), None));
+                x += 16;
+            }
+        }
     }
 
     /// `Health_DrawMeter` (without double defence): each heart's quarter from `health`, the
@@ -1215,6 +1231,11 @@ fn a_button_view(top: f32, bottom: f32, left: f32, right: f32) -> Mat4 {
 
 // The HUD's sprites.
 const RUPEE_ICON: &str = "hud/rupee_icon";
+/// The horse's carrots (`gCarrotIconTex`).
+const CARROT_ICON: &str = "hud/carrot_icon";
+/// `ZREG(14)`, `ZREG(15)` (`z_construct.c`): the carrots' left and top.
+const ZREG_14: i16 = 110;
+const ZREG_15: i16 = 56;
 /// The timers' clock (`gClockIconTex`).
 pub(crate) const CLOCK_ICON: &str = "hud/clock_icon";
 /// The magic meter's ends (`gMagicMeterEndTex`, the right one mirrored).
@@ -1399,6 +1420,16 @@ pub fn bakes() -> Vec<SpriteBake> {
             quad: Quad::Rect { s: w as u32, t: 7 },
         });
     }
+    // Interface_Draw's carrots: gCarrotIconTex, 16x16 RGBA32 after Gfx_SetupDL_39Overlay.
+    v.push(SpriteBake {
+        name: CARROT_ICON.into(),
+        tex: param("gCarrotIconTex"),
+        load: Load::new(G_IM_FMT_RGBA, G_IM_SIZ_32B, 16, 16, G_TX_WRAP),
+        setup: setup_dl::setup_dl_39(),
+        prim: true,
+        env: false,
+        quad: Quad::Rect { s: 16, t: 16 },
+    });
     // Interface_DrawItemButtons: G_CC_MODULATEIA_PRIM after Gfx_SetupDL_39Overlay.
     let button = |name: &str, symbol: &str| SpriteBake { name: name.into(), tex: param(symbol), load: ia8(32, 32), setup: setup_dl::setup_dl_39(), prim: true, env: false, quad: Quad::Rect { s: 32, t: 32 } };
     v.push(button(BUTTON, "gButtonBackgroundTex"));

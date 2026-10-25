@@ -299,6 +299,13 @@ pub enum PlayRequest {
     SpawnBottleDrop { id: i16, pos: Vec3, rot: [i16; 3], params: i16 },
     /// `Health_ChangeBy(play, amount)`.
     HealthChangeBy(i16),
+    /// The horse's `child`: Player (`Actor_MountHorse`, `mounted`) or none (`func_8084C9BC`'s
+    /// `rideActor->actor.child = NULL`).
+    HorseChild { horse: ActorHandle, mounted: bool },
+    /// `rideActor->stateFlags &= ~ENHORSE_FLAG_8`: the lash over.
+    HorseClearFlag8(ActorHandle),
+    /// `Actor_RequestHorseCameraSetting(play, this)`.
+    HorseCameraSetting,
 }
 
 /// `Player_UpdateBottleHeld` (`z_player_lib.c`): the bottle on the button Link used holds `item`
@@ -381,6 +388,56 @@ const UNK6AE_ROT_FOCUS_X: u16 = 1 << 0;
 const UNK6AE_ROT_FOCUS_Y: u16 = 1 << 1;
 const UNK6AE_ROT_UPPER_X: u16 = 1 << 6;
 const UNK6AE_ROT_UPPER_Z: u16 = 1 << 8;
+const UNK6AE_ROT_UPPER_Y: u16 = 1 << 7;
+/// `D_80854578`: the mount's animation and Link's offset from the horse's `riderPos` (from its
+/// left, from its right).
+const D_80854578: [(&str, f32, f32); 2] = [("link_uma_left_up", 35.17, 6.609_999_7), ("link_uma_right_up", -34.16, 7.91)];
+/// `D_808548FC`, `D_80854914`, `D_8085492C`: where `func_8084C89C` tests for getting off (the
+/// floor; the walls 20 up and 20 down), by side.
+const D_808548FC: [Vec3; 2] = [Vec3::new(40.0, 0.0, 0.0), Vec3::new(-40.0, 0.0, 0.0)];
+const D_80854914: [Vec3; 2] = [Vec3::new(60.0, 20.0, 0.0), Vec3::new(-60.0, 20.0, 0.0)];
+const D_8085492C: [Vec3; 2] = [Vec3::new(60.0, -20.0, 0.0), Vec3::new(-60.0, -20.0, 0.0)];
+/// `D_80854944`: Link's animation for the horse's (`ENHORSE_ANIM_*` less 2).
+const D_80854944: [Option<&str>; 9] = [
+    Some("link_uma_anim_stop"),
+    Some("link_uma_anim_stand"),
+    Some("link_uma_anim_walk"),
+    Some("link_uma_anim_slowrun"),
+    Some("link_uma_anim_fastrun"),
+    Some("link_uma_anim_jump100"),
+    Some("link_uma_anim_jump200"),
+    None,
+    None,
+];
+/// `D_80854968`: the lash, by the horse's animation (less 2).
+const D_80854968: [Option<&str>; 9] = [
+    Some("link_uma_anim_walk_muti"),
+    Some("link_uma_anim_walk_muti"),
+    Some("link_uma_anim_walk_muti"),
+    Some("link_uma_anim_slowrun_muti"),
+    Some("link_uma_anim_fastrun_muti"),
+    Some("link_uma_anim_fastrun_muti"),
+    Some("link_uma_anim_fastrun_muti"),
+    None,
+    None,
+];
+/// `D_8085498C`: standing on the horse.
+const D_8085498C: [&str; 3] = ["link_uma_wait_3", "link_uma_wait_1", "link_uma_wait_2"];
+/// `D_80854998`: the mount's climb and sitting frames, by side.
+const D_80854998: [[u8; 2]; 2] = [[32, 58], [25, 42]];
+/// `D_8085499C`: the riding animations' `prevTransl`.
+const D_8085499C: [i16; 3] = [-69, 7146, -266];
+/// `D_808549A4`: the pats of `link_uma_wait_1` (`ANIMSFX_DATA(ANIMSFX_TYPE_GENERAL, frame)`).
+const D_808549A4: [(u16, i16); 8] = [
+    (NA_SE_PL_CALM_HIT, 0x800 | 48),
+    (NA_SE_PL_CALM_HIT, 0x800 | 58),
+    (NA_SE_PL_CALM_HIT, 0x800 | 68),
+    (NA_SE_PL_CALM_PAT, 0x800 | 92),
+    (NA_SE_PL_CALM_PAT, 0x800 | 110),
+    (NA_SE_PL_CALM_PAT, 0x800 | 126),
+    (NA_SE_PL_CALM_PAT, 0x800 | 132),
+    (NA_SE_PL_CALM_PAT, -(0x800 | 136)),
+];
 /// `CAM_STATE_LOCK_MODE` (`camera.h`): the main camera takes no mode request.
 const CAM_STATE_LOCK_MODE: i16 = 1 << 5;
 /// `BowSlingshotStringData` (`Player_PostLimbDrawGameplay`, `sBowSlingshotStringData`): the
@@ -669,6 +726,10 @@ pub enum Action {
     BlueWarpArrive,
     /// `Player_Action_TimeTravelEnd`: arriving by time travel, on the Master Sword's pedestal.
     TimeTravelEnd,
+    /// `Player_Action_8084CC98`: riding a horse (`rideActor`).
+    Ride,
+    /// `Player_Action_8084D3E4`: getting off the horse.
+    Dismount,
     /// `Player_Action_8084E3C4`: the ocarina out and played.
     Ocarina,
     /// `Player_Action_StartWarpSongArrive`: the warp song's arrival's first frame.
@@ -897,6 +958,8 @@ pub enum A74 {
     PushWait,
     /// `func_8083A0F4`: lifting `interactRangeActor`.
     Lift,
+    /// `func_8083A360`: riding (`Player_ActionHandler_3`'s mount).
+    Ride,
 }
 
 /// Player's upper-body action (`this->upperActionFunc`), run from `Player_UpdateUpperBody`.
@@ -950,6 +1013,8 @@ impl Action {
             Action::JumpSlash => "Player_Action_80844AF4",
             Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
             Action::TimeTravelEnd => "Player_Action_TimeTravelEnd",
+            Action::Ride => "Player_Action_8084CC98",
+            Action::Dismount => "Player_Action_8084D3E4",
             Action::Ocarina => "Player_Action_8084E3C4",
             Action::StartWarpSongArrive => "Player_Action_StartWarpSongArrive",
             Action::WaitForCutscene => "Player_Action_WaitForCutscene",
@@ -1475,6 +1540,14 @@ pub struct Player {
     /// `play->roomCtx.curRoom.type` as this update began (`func_8083C61C` reads it from
     /// `Player_UseItem`, which the item change reaches without the play state).
     pub room_type_view: u8,
+    /// `rideActor`: the horse offering itself this frame (`Actor_SetRideActor`, cleared at the
+    /// update's end while Link isn't on it) or the one he rides (`actor.parent`).
+    pub ride_actor: Option<ActorHandle>,
+    /// `mountSide`: the horse's side Link mounts from or gets off on (-1 its left, 1 its right).
+    pub mount_side: i32,
+    /// `unk_878`: the height left to ease Link up or down by while mounting or getting off
+    /// (`func_8084CBF4`).
+    pub unk_878: f32,
 }
 
 /// `sSkeletonBaseTransl`: the root translation Link's animations are authored around.
@@ -1681,6 +1754,9 @@ impl Player {
             unk_3bc: [0; 3],
             unk_836: 0,
             room_type_view: 0,
+            ride_actor: None,
+            mount_side: 0,
+            unk_878: 0.0,
         };
         // Player_InitCommon: ActorShape_Init(&shape, 0, ActorShadow_DrawFeet, ageProperties->unk_04).
         p.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Feet, p.age.shadow_scale);
@@ -1989,6 +2065,19 @@ impl Player {
             self.update_body_burn(env);
         }
 
+        // On a horse z_horse.c spawned under Link at the scene's start (Actor_MountHorse), not yet
+        // riding it: riding (link_uma_wait_1 at its end).
+        if self.actor.parent.is_none() && self.state1 & STATE1_23 != 0 {
+            self.actor.parent = self.ride_actor;
+            self.func_8083a360(data);
+            self.state1 |= STATE1_23;
+            self.skel.play_once(data, data.anim("link_uma_wait_1"));
+            // ANIM_FLAG_UPDATE_XZ | _UPDATE_Y | _ENABLE_MOVEMENT | _ADJUST_STARTING_POS |
+            // _OVERRIDE_MOVEMENT.
+            self.start_anim_movement(0x9B);
+            self.action_var2 = 99;
+        }
+
         // The spin attack's countdown (in the C's !PLAYER_STATE2_15 branch; nothing in the port
         // sets PLAYER_STATE2_15): a slash's unk_844 (8) to 0, through 1 while B is held (the
         // charge's moment, Player_ActionHandler_8), from -8 up once B is let go
@@ -2024,9 +2113,26 @@ impl Player {
             self.process_scene_collision(env);
         } else {
             // The animation moves Link (ANIM_FLAG_OVERRIDE_MOVEMENT): no floor type or property,
-            // no current. (Riding's exits: Epona isn't ported.)
+            // no current. Riding, the exits are the horse's floor's (its own, or 200 ahead while
+            // it's in the air): through one, the next scene starts him on her
+            // (R_EXITED_SCENE_RIDING_HORSE; DREG(25), a debug register, stays 0).
             self.s.floor_type = 0;
             self.floor_property = 0;
+            if self.state1 & STATE1_0 == 0
+                && self.state1 & STATE1_23 != 0
+                && let Some(horse) = self.ride_actor.and_then(|h| crate::en_horse::ridden(env.actors, h))
+            {
+                let poly = if horse.actor.bg_check_flags & BGCHECKFLAG_GROUND == 0 {
+                    // func_808396F4(play, this, &D_80854814, ..): 200 ahead.
+                    let p = self.get_relative_position(self.actor.world_pos, Vec3::new(0.0, 0.0, 200.0));
+                    env.col.entity_raycast_down(p).1
+                } else {
+                    horse.actor.floor_poly
+                };
+                if poly.is_some() && self.handle_exits_and_voids(env, poly) {
+                    env.io.borrow_mut().save.r_exited_scene_riding_horse = true;
+                }
+            }
             self.s.conveyor_speed = 0;
             self.pushed_speed = 0.0;
         }
@@ -2260,6 +2366,8 @@ impl Player {
             Action::JumpSlash => self.action_80844af4(env),
             Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
             Action::TimeTravelEnd => self.action_time_travel_end(env),
+            Action::Ride => self.action_8084cc98(env),
+            Action::Dismount => self.action_8084d3e4(env),
             Action::Ocarina => self.action_8084e3c4(env),
             Action::StartWarpSongArrive => self.action_start_warp_song_arrive(env),
             Action::WaitForCutscene => self.action_wait_for_cutscene(env),
@@ -3003,8 +3111,304 @@ impl Player {
                 Some(A74::Crawl) => self.func_8083A40C(env.data),
                 Some(A74::PushWait) => self.func_8083A388(env.data),
                 Some(A74::Lift) => self.func_8083a0f4(env),
+                Some(A74::Ride) => self.func_8083a360(env.data),
                 None => {}
             }
+        }
+    }
+
+    // ================================================================================
+    // Riding a horse (`Player_ActionHandler_3`, `Player_Action_8084CC98`, `Player_Action_8084D3E4`)
+
+    /// `func_8083A360`: riding (`Player_Action_8084CC98`), keeping the animation's movement.
+    fn func_8083a360(&mut self, data: &GameData) {
+        self.setup_action_preserve_anim_movement(data, Action::Ride, 0);
+    }
+
+    /// `Player_ActionHandler_3` (interrupt 3): with a horse offering itself (`rideActor`,
+    /// `Actor_SetRideActor`), A mounts it from its side (`D_80854578`'s offsets from its
+    /// `riderPos`): `Actor_MountHorse`, `link_uma_left_up` or `_right_up` moving Link up
+    /// (`unk_878` eased in), riding once anything in hand is put away.
+    fn action_handler_3(&mut self, env: &Env) -> bool {
+        let Some(h) = self.ride_actor else { return false };
+        if !self.input.press.held(BTN_A) {
+            return false;
+        }
+        let Some(horse) = crate::en_horse::ridden(env.actors, h) else { return false };
+        let (hpos, hyaw, rider) = (horse.actor.world_pos, horse.actor.shape_rot.y, horse.rider_pos);
+        let data = env.data;
+        let sp38 = cos_s(hyaw);
+        let sp34 = sin_s(hyaw);
+        self.setup_wait_for_put_away(data, env, A74::Ride);
+        self.state1 |= STATE1_23;
+        self.actor.bg_check_flags &= !BGCHECKFLAG_WATER;
+        let (anim, unk_04, unk_08) = D_80854578[if self.mount_side < 0 { 0 } else { 1 }];
+        self.actor.world_pos.x = hpos.x + rider.x + ((unk_04 * sp38) + (unk_08 * sp34));
+        self.actor.world_pos.z = hpos.z + rider.z + ((unk_08 * sp38) - (unk_04 * sp34));
+        self.unk_878 = hpos.y - self.actor.world_pos.y;
+        self.current_yaw = hyaw;
+        self.actor.shape_rot.y = hyaw;
+        // Actor_MountHorse: rideActor, PLAYER_STATE1_23 (above), the horse's child.
+        self.play_requests.push(PlayRequest::HorseChild { horse: h, mounted: true });
+        self.skel.play_once(data, data.anim(anim));
+        // ANIM_FLAG_UPDATE_XZ | _UPDATE_Y | _ENABLE_MOVEMENT | _ADJUST_STARTING_POS |
+        // _OVERRIDE_MOVEMENT.
+        self.start_anim_movement(0x9B);
+        self.actor.parent = Some(h);
+        self.func_80832224();
+        // (Actor_DisableLens: the Lens of Truth is Phase 17's.)
+        true
+    }
+
+    /// `func_8084C89C`: whether Link can get off on side `side` (0 the horse's left, 1 its right):
+    /// the floor 40 out within 20 of the horse's height, and no wall 60 out 20 up or 20 down. With
+    /// the floor's height.
+    fn func_8084c89c(&self, env: &Env, horse_y: f32, side: usize) -> (bool, f32) {
+        let sp50 = horse_y + 20.0;
+        let sp4c = horse_y - 20.0;
+        let y = self.func_8083973C(env, D_808548FC[side]);
+        let ok = sp4c < y && y < sp50 && self.pos_vs_wall_line_test(env, D_80854914[side]).is_none() && self.pos_vs_wall_line_test(env, D_8085492C[side]).is_none();
+        (ok, y)
+    }
+
+    /// `func_8084C9BC`: getting off. On his side, else the other (`mountSide` turned), where he
+    /// can (`func_8084C89C`); the horse standing (`EN_HORSE_CHECK_4`, "Down" on A,
+    /// `PLAYER_STATE2_22`) or asking him off (`EN_HORSE_CHECK_1`, `ENHORSE_FLAG_6`): the horse's
+    /// `child` cleared and `Player_Action_8084D3E4` with `link_uma_left_down` or `_right_down`.
+    fn func_8084c9bc(&mut self, env: &Env) -> bool {
+        let Some(h) = self.ride_actor else { return false };
+        let Some(horse) = crate::en_horse::ridden(env.actors, h) else { return false };
+        let (hy, check1, check4) = (horse.actor.world_pos.y, horse.state_flags & crate::en_horse::ENHORSE_FLAG_6 != 0, horse.check_4());
+        let data = env.data;
+        if self.action_var2 < 0 {
+            self.action_var2 = 99;
+            return false;
+        }
+        let mut sp38 = if self.mount_side < 0 { 0 } else { 1 };
+        let (ok, mut sp34) = self.func_8084c89c(env, hy, sp38);
+        if !ok {
+            sp38 ^= 1;
+            let (ok2, y2) = self.func_8084c89c(env, hy, sp38);
+            sp34 = y2;
+            if !ok2 {
+                return false;
+            }
+            self.mount_side = -self.mount_side;
+        }
+        let transition_off = env.io.borrow().transition.mode == oot_game::transition::TRANS_MODE_OFF;
+        if env.cs_state == oot_game::cutscene::CS_STATE_IDLE && transition_off && (check1 || check4) {
+            self.state2 |= STATE2_22;
+            if check1 || (check4 && self.input.press.held(BTN_A)) {
+                self.play_requests.push(PlayRequest::HorseChild { horse: h, mounted: false });
+                self.setup_action_preserve_anim_movement(data, Action::Dismount, 0);
+                self.unk_878 = sp34 - hy;
+                let a = if self.mount_side < 0 { "link_uma_left_down" } else { "link_uma_right_down" };
+                self.skel.play_once(data, data.anim(a));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `func_8084CBF4`: from frame `arg2` on, `unk_878` eased into Link's height, `arg1` a frame.
+    fn func_8084cbf4(&mut self, arg1: f32, arg2: f32) {
+        if self.unk_878 != 0.0 && arg2 <= self.skel.cur_frame {
+            let temp = if arg1 < self.unk_878.abs() { (if self.unk_878 >= 0.0 { 1.0 } else { -1.0 }) * arg1 } else { self.unk_878 };
+            self.actor.world_pos.y += temp;
+            self.unk_878 -= temp;
+        }
+    }
+
+    /// `Player_Action_8084CC98`: riding. The mount plays (`av2.actionVar2` 0: the climb's and the
+    /// sitting's sounds, the horse camera on its frame), then Link follows the horse:
+    /// - his animation by the horse's (`D_80854944`: stop, stand, walk, slow run, fast run, the
+    ///   jumps, at the horse's frame; standing, `link_uma_wait_1` to `_3` at random, the pats);
+    /// - at its `riderPos` 27 down, facing its way, the horse camera asked for each frame;
+    /// - the lash (`av1.actionVar1`) when the horse is spurred (`ENHORSE_FLAG_8`: the run's
+    ///   `_muti` on the upper body) or brought to a stop from standing (`ENHORSE_FLAG_9`:
+    ///   `link_uma_stop_muti` on the whole body);
+    /// - talking (standing), the upper body's items (the bow's aim), first person, getting off
+    ///   (`func_8084C9BC`), the C buttons (`Player_ActionHandler_13`).
+    fn action_8084cc98(&mut self, env: &Env) {
+        let data = env.data;
+        let Some(h) = self.ride_actor else { return };
+        let Some(horse) = crate::en_horse::ridden(env.actors, h) else { return };
+        let (h_anim, h_frame, h_pos, h_rider, h_yaw, h_speed, h_flags) =
+            (horse.animation_idx, horse.cur_frame, horse.actor.world_pos, horse.rider_pos, horse.actor.shape_rot.y, horse.actor.speed_xz, horse.state_flags);
+        self.state2 |= STATE2_6;
+        self.func_8084cbf4(1.0, 10.0);
+        if self.action_var2 == 0 {
+            if self.skel.update(data) {
+                self.skel.animation = data.anim("link_uma_wait_1");
+                self.action_var2 = 99;
+                return;
+            }
+            let arr = D_80854998[if self.mount_side < 0 { 0 } else { 1 }];
+            if self.skel.on_frame(arr[0] as f32) {
+                self.play_sfx(NA_SE_PL_CLIMB_CLIFF);
+                return;
+            }
+            if self.skel.on_frame(arr[1] as f32) {
+                self.play_requests.push(PlayRequest::HorseCameraSetting);
+                self.play_sfx(NA_SE_PL_SIT_ON_HORSE);
+            }
+            return;
+        }
+        self.play_requests.push(PlayRequest::HorseCameraSetting);
+        self.skel.prev_transl = D_8085499C;
+        if h_anim != self.action_var2 as i32 && (h_anim >= 2 || self.action_var2 >= 2) {
+            self.action_var2 = h_anim as i16;
+            if self.action_var2 < 2 {
+                let rand = self.rand_zero_one();
+                self.action_var2 = 1;
+                let temp = if rand < 0.1 {
+                    2
+                } else if rand < 0.2 {
+                    1
+                } else {
+                    0
+                };
+                self.skel.play_once(data, data.anim(D_8085498C[temp]));
+            } else {
+                if let Some(a) = D_80854944[(self.action_var2 - 2) as usize] {
+                    self.skel.animation = data.anim(a);
+                }
+                self.skel.set_morph(8.0);
+                if self.action_var2 < 4 {
+                    self.func_80834644(data);
+                    self.action_var1 = 0;
+                }
+            }
+        }
+        if self.action_var2 == 1 {
+            if self.s.item_action != 0 || self.is_talking() {
+                self.skel.play_once(data, data.anim("link_uma_wait_3"));
+            } else if self.skel.update(data) {
+                self.action_var2 = 99;
+            } else if self.skel.animation == data.anim("link_uma_wait_1") {
+                self.process_anim_sfx_list(&D_808549A4);
+            }
+        } else {
+            self.skel.cur_frame = h_frame;
+            self.skel.animate_frame(data);
+        }
+        // AnimTaskQueue_AddCopy(play, limbCount, morphTable, jointTable).
+        self.skel.copy_joint_to_morph();
+
+        if env.cs_state != oot_game::cutscene::CS_STATE_IDLE || self.cs_mode != 0 {
+            // PLAYER_CSACTION_7.
+            if self.cs_mode == 7 {
+                self.cs_mode = 0;
+            }
+            self.unk_6AD = 0;
+            self.action_var1 = 0;
+        } else if self.action_var2 < 2 || self.action_var2 >= 4 {
+            self.s.item_action = self.update_upper_body(env) as i32;
+            if self.s.item_action != 0 {
+                self.action_var1 = 0;
+            }
+        }
+
+        self.actor.world_pos.x = h_pos.x + h_rider.x;
+        self.actor.world_pos.y = (h_pos.y + h_rider.y) - 27.0;
+        self.actor.world_pos.z = h_pos.z + h_rider.z;
+        self.current_yaw = h_yaw;
+        self.actor.shape_rot.y = h_yaw;
+
+        if self.cs_mode != 0 || (!self.is_talking() && (h_speed != 0.0 || !self.action_handler_talk(env)) && !self.action_handler_roll(env)) {
+            if self.s.item_action == 0 {
+                if self.action_var1 != 0 {
+                    if self.skel2.update(data) {
+                        self.play_requests.push(PlayRequest::HorseClearFlag8(h));
+                        self.action_var1 = 0;
+                    }
+                    let stop = self.skel2.animation == data.anim("link_uma_stop_muti");
+                    let lash_frame = if stop { 23.0 } else { 10.0 };
+                    if self.skel2.on_frame(lash_frame) {
+                        self.play_sfx(NA_SE_IT_LASH);
+                        self.play_voice_sfx(NA_SE_VO_LI_LASH);
+                    }
+                    let src = self.skel2.joint;
+                    if stop {
+                        // AnimTaskQueue_AddCopy: the whole body.
+                        self.skel.request_copy_external(&src, None);
+                    } else {
+                        // AnimTaskQueue_AddCopyUsingMap(.., sUpperBodyLimbCopyMap).
+                        self.skel.request_copy_external(&src, Some(data.items.upper_body));
+                    }
+                } else {
+                    let mut anim = None;
+                    if h_flags & crate::en_horse::ENHORSE_FLAG_9 != 0 {
+                        anim = Some("link_uma_stop_muti");
+                    } else if h_flags & crate::en_horse::ENHORSE_FLAG_8 != 0 && self.action_var2 >= 2 && self.action_var2 != 99 {
+                        anim = D_80854968[(self.action_var2 - 2) as usize];
+                    }
+                    if let Some(a) = anim {
+                        self.skel2.play_once(data, data.anim(a));
+                        self.action_var1 = 1;
+                    }
+                }
+            }
+
+            if self.state1 & STATE1_20 != 0 {
+                if self.func_8083ad4c(env) == oot_game::camera::CAM_MODE_NORMAL as i32 || self.input.press.held(BTN_A) || self.is_z_targeting() {
+                    self.unk_6AD = 0;
+                    self.state1 &= !STATE1_20;
+                } else {
+                    self.upper_limb_rot_y = self.func_8084abd8(true, -5000).wrapping_sub(self.actor.shape_rot.y);
+                    self.upper_limb_rot_y = self.upper_limb_rot_y.wrapping_add(5000);
+                    self.upper_limb_yaw_secondary = -5000;
+                }
+                return;
+            }
+
+            if self.cs_mode != 0 || (!self.func_8084c9bc(env) && !self.action_handler_13(env)) {
+                if self.focus_actor.is_some() {
+                    if self.func_8002dd78() {
+                        self.upper_limb_rot_y = self.func_8083DB98(env, true).wrapping_sub(self.actor.shape_rot.y);
+                        self.upper_limb_rot_y = self.upper_limb_rot_y.clamp(-0x4AAA, 0x4AAA);
+                        self.actor.focus_rot.y = self.actor.shape_rot.y.wrapping_add(self.upper_limb_rot_y);
+                        self.upper_limb_rot_y = self.upper_limb_rot_y.wrapping_add(5000);
+                        self.unk_6AE_rot_flags |= UNK6AE_ROT_UPPER_Y;
+                    } else {
+                        self.func_8083DB98(env, false);
+                    }
+                } else if self.func_8002dd78() {
+                    self.upper_limb_rot_y = self.func_8084abd8(true, -5000).wrapping_sub(self.actor.shape_rot.y);
+                    self.upper_limb_rot_y = self.upper_limb_rot_y.wrapping_add(5000);
+                    self.upper_limb_yaw_secondary = -5000;
+                }
+            }
+        }
+    }
+
+    /// `Player_Action_8084D3E4`: getting off, `unk_878` eased in from frame 10, the sounds
+    /// (`D_808549C4`: the landing on the side's frame, `NA_SE_PL_GET_OFF_HORSE`,
+    /// `NA_SE_PL_SLIPDOWN`), `CAM_SET_NORMAL0`. At its end: standing (`func_8083C0E8`), off the
+    /// horse, and with Epona had, where she was left (`horseData`).
+    fn action_8084d3e4(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_6;
+        self.func_8084cbf4(1.0, 10.0);
+        if self.skel.update(data) {
+            let horse = self.ride_actor.and_then(|h| crate::en_horse::ridden(env.actors, h)).map(|h| (h.actor.world_pos, h.actor.shape_rot.y));
+            self.func_8083C0E8(data);
+            self.state1 &= !STATE1_23;
+            self.actor.parent = None;
+            let mut io = env.io.borrow_mut();
+            io.save.r_exited_scene_riding_horse = false;
+            use oot_game::horse::{EVENTCHKINF_EPONA_OBTAINED, R_DEBUG_FORCE_EPONA_OBTAINED};
+            if io.save.get_event_chk_inf(EVENTCHKINF_EPONA_OBTAINED) || R_DEBUG_FORCE_EPONA_OBTAINED != 0 {
+                if let Some((p, yaw)) = horse {
+                    io.save.horse_data.pos = [p.x as i32 as i16, p.y as i32 as i16, p.z as i32 as i16];
+                    io.save.horse_data.angle = yaw;
+                }
+            }
+        } else {
+            self.play_requests.push(PlayRequest::ChangeSetting(oot_game::camera::CAM_SET_NORMAL0));
+            // ANIMSFX_DATA(ANIMSFX_TYPE_LANDING, 40 or 29), (GENERAL, 10), -(GENERAL, 25).
+            let landing: i16 = 0x2800 | if self.mount_side < 0 { 40 } else { 29 };
+            self.process_anim_sfx_list(&[(0, landing), (NA_SE_PL_GET_OFF_HORSE, 0x800 | 10), (NA_SE_PL_SLIPDOWN, -(0x800 | 25))]);
         }
     }
 
@@ -5243,6 +5647,9 @@ impl Player {
                 return true;
             }
             if idx == 2 && self.action_handler_2(env) {
+                return true;
+            }
+            if idx == 3 && self.action_handler_3(env) {
                 return true;
             }
             if idx == 11 && self.action_handler_11(env) {
@@ -11079,7 +11486,20 @@ impl Player {
             self.actor.flags |= ACTOR_FLAG_TALK;
             self.actor.text_id = text_id;
         }
-        // (Riding isn't ported.)
+        if self.state1 & STATE1_23 != 0 {
+            // On a horse: talk without getting off.
+            let sp24 = self.action_var2;
+            self.put_away_held_item(data);
+            self.setup_talk(data);
+            self.action_var2 = sp24;
+            self.state1 |= STATE1_6 | STATE1_29;
+            // schema: 0x02xx, Navi's lines (not a text shown).
+            if is_navi && self.target_actor == Some(h) && (text_id & 0xFF00) != 0x200 {
+                self.play_requests.push(PlayRequest::TalkRequest(h));
+                self.set_turn_around_camera(0xB);
+            }
+            return;
+        }
         let backspace = data.anim("link_normal_backspace");
         if self.func_808332B8() {
             self.setup_wait_for_put_away(data, env, A74::Talk);
@@ -11280,7 +11700,12 @@ impl Player {
                 self.textbox_btn_cooldown_timer = 10;
                 return;
             }
-            if self.func_808332B8() {
+            if self.state1 & STATE1_23 != 0 {
+                // Back to riding, keeping av2.actionVar2.
+                let sp24 = self.action_var2;
+                self.func_8083a360(data);
+                self.action_var2 = sp24;
+            } else if self.func_808332B8() {
                 self.func_80838F18(data);
             } else {
                 self.func_80853080(data);
@@ -11288,7 +11713,9 @@ impl Player {
             self.textbox_btn_cooldown_timer = 10;
             return;
         }
-        if self.func_808332B8() {
+        if self.state1 & STATE1_23 != 0 {
+            self.action_8084cc98(env);
+        } else if self.func_808332B8() {
             self.action_8084d610(env);
         } else if self.state1 & STATE1_4 == 0 && self.skel.update(data) {
             if self.skel.move_flags != 0 {
@@ -11923,11 +12350,20 @@ impl Player {
                     };
                 } else if !sp1c && self.state2 & STATE2_0 != 0 {
                     do_action = DO_ACTION_GRAB;
-                } else if self.state2 & STATE2_2 != 0 {
+                } else if self.state2 & STATE2_2 != 0 || (self.state1 & STATE1_23 == 0 && self.ride_actor.is_some()) {
                     do_action = DO_ACTION_CLIMB;
+                } else if self.state1 & STATE1_23 != 0
+                    && !self.ride_actor.and_then(|h| crate::en_horse::ridden(env.actors, h)).is_some_and(|horse| horse.check_4())
+                    && self.action != Action::Dismount
+                {
+                    if self.state2 & STATE2_1 != 0 && target_category.is_some() {
+                        do_action = if target_category == Some(ACTORCAT_NPC) { DO_ACTION_SPEAK } else { DO_ACTION_CHECK };
+                    } else if !self.func_8002dd78() && self.state1 & STATE1_20 == 0 {
+                        do_action = DO_ACTION_FASTER;
+                    }
                 } else if self.state2 & STATE2_1 != 0 && target_category.is_some() {
                     do_action = if target_category == Some(ACTORCAT_NPC) { DO_ACTION_SPEAK } else { DO_ACTION_CHECK };
-                } else if self.state1 & (STATE1_13 | STATE1_21) != 0 {
+                } else if self.state1 & (STATE1_13 | STATE1_21) != 0 || (self.state1 & STATE1_23 != 0 && self.state2 & STATE2_22 != 0) {
                     do_action = DO_ACTION_DOWN;
                 } else if self.state2 & STATE2_16 != 0 {
                     do_action = DO_ACTION_ENTER;
@@ -12004,7 +12440,11 @@ impl Player {
             self.interact_range_actor = None;
             self.get_item_direction = 0x6000;
         }
-        // (rideActor: no riding.) Navi's text is set again by her next update.
+        // rideActor: kept only while Link is on it (a horse offers itself again next frame).
+        if self.actor.parent.is_none() {
+            self.ride_actor = None;
+        }
+        // Navi's text is set again by her next update.
         self.navi_text_id = 0;
         // The ocarina's listener: asked for again each frame.
         if self.state2 & STATE2_25 == 0 {
@@ -12497,7 +12937,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("infTable[INFTABLE_INDEX_1AX]")).sets().note("the scene's bit: the scenes visited, for the pause map (not ported)"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_B0", 0xB0)).reads().note("Dodongo's Cavern's title card").indirect("ported in oot_game::play_scene"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_25", 0x25)).reads().note("the Bombchu Shop's title card").indirect("ported in oot_game::play_scene"),
-        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_EPONA_OBTAINED", 0x18)).reads().note("dismounting: Epona's place kept").indirect("the horse isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_EPONA_OBTAINED", 0x18)).reads().note("getting off: Epona's place kept (`Player_Action_8084D3E4`)"),
         FlagUse::new(Flag::TempClear).sets().note("debug: the fly mode's L and D-left").indirect("debug, not ported"),
     ],
     todo: false,
@@ -13222,6 +13662,25 @@ impl ActorImpl for Player {
 }
 
 impl PlayerIface for Player {
+    fn ride_actor(&self) -> Option<ActorHandle> {
+        self.ride_actor
+    }
+    fn set_ride_actor(&mut self, horse: ActorHandle, mount_side: i32) -> bool {
+        // PLAYER_STATE1_DEAD, _CARRYING_ACTOR, _CHARGING_SPIN_ATTACK, _13, _14, _18, _19, _20, _21.
+        if self.state1 & (STATE1_7 | STATE1_11 | STATE1_12 | STATE1_13 | STATE1_14 | STATE1_18 | STATE1_19 | STATE1_20 | STATE1_21) == 0 {
+            self.ride_actor = Some(horse);
+            self.mount_side = mount_side;
+            return true;
+        }
+        false
+    }
+    fn mount_horse(&mut self, horse: ActorHandle) {
+        self.ride_actor = Some(horse);
+        self.state1 |= STATE1_23;
+    }
+    fn func_8002dd78(&self) -> bool {
+        Player::func_8002dd78(self)
+    }
     fn adult(&self) -> bool {
         self.adult
     }
@@ -13429,6 +13888,18 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::OcarinaSetInstrument(i) => play.audio.audio_ocarina_set_instrument(i),
         PlayRequest::StartOcarina(a) => play.message_start_ocarina(a),
         PlayRequest::CamViewTarget(t) => play.game_camera.set_target(t),
+        PlayRequest::HorseChild { horse, mounted } => {
+            let me = play.player;
+            if let Some(a) = play.actors.actor_mut(horse) {
+                a.child = if mounted { me } else { None };
+            }
+        }
+        PlayRequest::HorseClearFlag8(h) => {
+            if let Some(horse) = play.actors.downcast_mut::<crate::en_horse::EnHorse>(h) {
+                horse.state_flags &= !crate::en_horse::ENHORSE_FLAG_8;
+            }
+        }
+        PlayRequest::HorseCameraSetting => oot_game::horse::actor_request_horse_camera_setting(play),
         // CAM_STATE_EXTERNAL_FINISHED.
         PlayRequest::CamClearFinished => play.game_camera.state_flags &= !0x8,
         PlayRequest::WarpSparkles(params) => {

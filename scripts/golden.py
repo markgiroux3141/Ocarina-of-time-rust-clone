@@ -408,6 +408,11 @@ CASES = [
     ("sword_again", S, ["--entrance", "ENTR_TEMPLE_OF_TIME_2", "--child", "--preset", "child-again", "--script", "sword-again", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("prelude_warp", S, ["--entrance", "ENTR_HYRULE_FIELD_7", "--child", "--preset", "prelude-learned", "--script", "prelude-warp", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("prelude_warp_white", S, ["--entrance", "ENTR_HYRULE_FIELD_7", "--child", "--preset", "prelude-learned", "--script", "prelude-warp", "--frames", "240", "--screenshot", "{shot}"]),
+    # GAME-12 milestone 1: riding Epona.
+    ("ride_epona", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--script", "ride-epona", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ride_epona_jump", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--script", "ride-epona", "--frames", "594", "--screenshot", "{shot}"]),
+    ("field_ride", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona", "--script", "field-ride", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("field_ride_ramp", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona", "--script", "field-ride", "--frames", "480", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

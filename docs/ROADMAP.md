@@ -245,6 +245,16 @@ and scarecrow modes, `En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Kakasi2`, [ADR 0087
 is done (2026-10-23, its hand test deferred: HAND-TESTS-OWED.md). **Phase 11 is done** with its
 exit review (2026-10-23, GAME-10's last section): Phase 12 starts from `ocarina-of-time`.
 
+Phase 12 (GAME-11, [GAME-11-the-temple-of-time-and-adult-link.md](GAME-11-the-temple-of-time-and-adult-link.md)):
+surveyed and proposed (2026-10-23), three milestones, every call the recommended one. Milestone 1
+(adult Link and the time machine: the age switch, the pedestal, Player's time travel,
+[ADR 0088](adr/0088-the-age-switch.md)), milestone 2 (the Door of Time to the Chamber of the Sages
+and out, the exit, [ADR 0089](adr/0089-the-door-of-time-to-the-chamber-and-out.md)) and milestone
+3 (Sheik's Prelude, time travel both ways and the warp,
+[ADR 0090](adr/0090-the-prelude-and-time-travel-both-ways.md)) are done, all hand-tested.
+**Phase 12 is done** with its exit review (2026-10-24, GAME-11's last section): Phase 13 starts
+from `adult-awake`.
+
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
 the 2026-09-30 deferral: the scripted runs play the cutscenes.
@@ -847,7 +857,24 @@ to the field; milestone 3's `En_Xc` type 2 merged early, pack format 34) **done*
 a warp song's white-out and arrival, BACKLOG #26 closed; the runs Sheik's Prelude of Light (from
 the debug preset `prelude`: the Forest Temple's `EVENTCHKINF_48` is Phase 14's), the sword put back
 and pulled again, and the Prelude's warp, on the presets `prelude-learned` and `child-again`)
-**done** (hand-tested 2026-10-24). With it Phase 12 is built whole; its exit review follows.
+**done** (hand-tested 2026-10-24). **Phase 12 is done** (2026-10-24) with its exit review
+(GAME-11's last section): Phase 13 starts from `adult-awake`.
+
+## Phase 13: Epona, Ingo's races and the adult Hyrule Field (GAME-12)
+
+**Goal:** from `adult-awake`, Lon Lon Ranch as an adult: Ingo's rental, Epona called with Epona's
+Song and ridden, the two races and the bet, Epona won, the gate shut and the jump out, riding in
+Hyrule Field; then the ranch after Epona and the field's Poes. Exit: Epona won. See
+[GAME-12](GAME-12-epona-and-the-adult-field.md)'s survey. **Surveyed and proposed** (2026-10-24):
+four milestones (riding Epona; Ingo, the rental and the races; Epona won and out, the exit; the
+ranch after and the field's Poes). About 7,100 lines of C, `En_Horse` (3,868) and Player's riding
+the most of it. Decided 2026-10-24 (every recommendation: no scripted race, the race's presets
+with rupees, `En_Po_Field` in, a debug `epona` preset for the field).
+
+**Milestone 1, riding Epona, is done** (2026-10-25, ADR 0091; hand-tested, committed and pushed): `En_Horse` whole but Phase 18's parts, `Bg_Umajump`, `z_horse.c`, Player's riding
+whole, the horse camera (`Camera_Normal3`), the carrots; the runs `ride-epona` (the corral: her
+song, on her, a fence jumped, off her) and `field-ride` (the debug `epona`: up the ramp and into the
+ranch on her). BACKLOG #51 closed. Next: milestone 2, Ingo, the rental and the races.
 
 ## Cross-cutting debts
 

@@ -1123,6 +1123,7 @@ impl PlayState {
             iron_boots: false,
             focus_pos: a.focus_pos,
             focus_rot: [a.focus_rot.x, a.focus_rot.y, a.focus_rot.z],
+            ride: None,
         })
     }
 }
