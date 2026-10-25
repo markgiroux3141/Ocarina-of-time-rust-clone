@@ -413,6 +413,12 @@ CASES = [
     ("ride_epona_jump", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--script", "ride-epona", "--frames", "594", "--screenshot", "{shot}"]),
     ("field_ride", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona", "--script", "field-ride", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("field_ride_ramp", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona", "--script", "field-ride", "--frames", "480", "--screenshot", "{shot}"]),
+    # GAME-12 milestone 2: Ingo, the rental and the races.
+    ("ingo_rental", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--script", "ingo-rental", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ingo_race", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "ingo-rental", "--script", "ingo-race", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ingo_race_intro", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "ingo-rental", "--script", "ingo-race", "--frames", "1000", "--screenshot", "{shot}"]),
+    ("ingo_lost", S, ["--entrance", "ENTR_LON_LON_RANCH_8", "--child", "--preset", "ingo-race-lost", "--script", "ingo-lost", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ingo_won", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-first-win", "--script", "ingo-won", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

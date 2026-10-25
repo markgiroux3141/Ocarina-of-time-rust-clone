@@ -1017,6 +1017,21 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: epona,
     },
     SavePreset {
+        name: "ingo-rental",
+        about: "adult-awake past a first ridden rental of Ingo's horse (INFTABLE_INGO_TALKED_TO_ADULT_LINK 0x9A, INFTABLE_AB, EVENTCHKINF_1B: what EnIn_EndRentalPeriod sets), with 60 Rupees (a debug start's: 10 for the rental, 50 for the race's bet; the story's 16 aren't enough): Ingo offers the rental again (0x2031), then the race from horseback (0x2038)",
+        apply: ingo_rental,
+    },
+    SavePreset {
+        name: "ingo-race-lost",
+        about: "ingo-rental with the rental paid (50 Rupees) and the race lost (eventInf's race state INGO_RACE_STATE_PLAYER_LOSE, 3, and EVENTINF_INGO_RACE_0F, as EnHorseGameCheck_FinishIngoRace leaves them): entered at ENTR_LON_LON_RANCH_8, Ingo gloats (0x203D, -50 Rupees) and offers a rematch",
+        apply: ingo_race_lost,
+    },
+    SavePreset {
+        name: "ingo-first-win",
+        about: "ingo-rental with the rental paid (50 Rupees) and the first race won (race state INGO_RACE_STATE_FIRST_WIN, 4, and EVENTINF_INGO_RACE_0F): entered at ENTR_LON_LON_RANCH_7, Ingo (0x203A) calls the second race",
+        apply: ingo_first_win,
+    },
+    SavePreset {
         name: "prelude",
         about: "adult-awake with the Forest Medallion's blue warp's EVENTCHKINF_48 and the Forest Medallion (Item_Give, as Door_Warp1's warp out of the Forest Temple's boss room gives it): GAME-11 milestone 3's debug start (the Forest Temple is Phase 14's), at the Temple's entrance: room 0's En_Xc 9 gives the Prelude of Light",
         apply: prelude,
@@ -1534,6 +1549,34 @@ fn adult_awake(s: &mut SaveContext) {
 fn epona(s: &mut SaveContext) {
     adult_awake(s);
     s.set_event_chk_inf(0x18);
+}
+
+/// `ingo-rental`'s save: `adult-awake` past a first ridden rental, with 60 Rupees.
+fn ingo_rental(s: &mut SaveContext) {
+    adult_awake(s);
+    s.set_inf_table(0x9A);
+    s.set_inf_table(0xAB);
+    s.set_event_chk_inf(0x1B);
+    s.rupees = 60;
+}
+
+/// `eventInf[EVENTINF_INDEX_HORSES]` after `EnHorseGameCheck_FinishIngoRace`: the race's state
+/// (bits 0 to 3) and `EVENTINF_INGO_RACE_0F` (bit 15); the race was on Epona
+/// (`EVENTINF_INGO_RACE_HORSETYPE` 0).
+fn ingo_race_over(s: &mut SaveContext, state: u16) {
+    ingo_rental(s);
+    s.rupees = 50;
+    s.event_inf[0] = state | (1 << 15);
+}
+
+/// `ingo-race-lost`'s save.
+fn ingo_race_lost(s: &mut SaveContext) {
+    ingo_race_over(s, 3);
+}
+
+/// `ingo-first-win`'s save.
+fn ingo_first_win(s: &mut SaveContext) {
+    ingo_race_over(s, 4);
 }
 
 /// `prelude`'s save, a debug start: `adult-awake` with what the Forest Temple's blue warp gives

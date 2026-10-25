@@ -745,6 +745,20 @@ pub enum Step {
     /// In the next scene on the horse (`R_EXITED_SCENE_RIDING_HORSE`, `HORSE_PTYPE_PLAYER_SPAWNED_RIDING`),
     /// the fade over and the horse standing.
     RiddenIn,
+    /// Ingo's rental paid (0x205C): the transition to the corral (`ENTR_LON_LON_RANCH_6`) started.
+    RentalPaid,
+    /// In the corral for the rental, Link free (the timer at 60).
+    InCorral,
+    /// The race taken from horseback (0x2038, "Do it"): the transition to the race's intro
+    /// (`ENTR_LON_LON_RANCH_0`, `CS_INDEX_0`) started.
+    RaceTaken,
+    /// The race's start: Ingo's horse racing (`EnHorseGameCheck_UpdateIngoRace`'s start, its
+    /// `inRace`).
+    RaceStarted,
+    /// Ingo's gloat over (0x203D, -50 Rupees): his rematch offered (`INGO_RACE_STATE_REMATCH`).
+    IngoGloated,
+    /// Ingo's loss over (0x203A): the second race's intro (the ranch's layer 4) reached.
+    SecondRaceCalled,
 }
 
 impl Step {
@@ -1048,6 +1062,12 @@ impl Step {
             Step::Dismounted => "dismounted",
             Step::RodeOut => "rode_out",
             Step::RiddenIn => "ridden_in",
+            Step::RentalPaid => "rental_paid",
+            Step::InCorral => "in_corral",
+            Step::RaceTaken => "race_taken",
+            Step::RaceStarted => "race_started",
+            Step::IngoGloated => "ingo_gloated",
+            Step::SecondRaceCalled => "second_race_called",
         }
     }
 }
@@ -1433,6 +1453,21 @@ pub enum Route {
     /// mounted, ridden up the ramp and into the ranch through its gate on her (`R_EXITED_SCENE_RIDING_HORSE`: the ranch's start
     /// spawns her under Link), halted, got off. Its end is `epona`.
     FieldRide,
+    /// Ingo's rental (`adult-awake`, a debug start by Ingo at the corral's gate): 0x2030, "Ride",
+    /// "Don't listen", 10 Rupees (0x205C); the corral (`ENTR_LON_LON_RANCH_6`, the minute's timer);
+    /// Epona's Song, on her (`INFTABLE_AB`). Ends mounted, the timer running (the user's call: the
+    /// rental's minute isn't waited out).
+    IngoRental,
+    /// The race offered and taken (`ingo-rental`): 0x2031, the rental paid; the corral, Epona's
+    /// Song, on her, ridden up to Ingo and 0x2038 from horseback, "Do it"; the race's intro
+    /// (`gLonLonRanchRaceIntroCs`) to the race's start. The race itself is the hand test's.
+    IngoRace,
+    /// The race lost (`ingo-race-lost`, at `ENTR_LON_LON_RANCH_8`): Ingo gloats at once (0x203D),
+    /// -50 Rupees, the rematch offered. Its end: race state `INGO_RACE_STATE_REMATCH`, 0 Rupees.
+    IngoLost,
+    /// The first race won (`ingo-first-win`, at `ENTR_LON_LON_RANCH_7`): Ingo at once (0x203A),
+    /// the second race called (the transition to its intro).
+    IngoWon,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2609,6 +2644,53 @@ fn field_ride_tasks() -> Vec<Task> {
     ]
 }
 
+/// The Ingo runs' debug start: before Ingo (`En_In` params 2 at (-158, 0, -1596), rot y 0x5DDE)
+/// by the corral's gate, facing him.
+const BY_INGO: Vec3 = Vec3::new(-40.0, 0.0, -1700.0);
+const BY_INGO_YAW: i16 = -0x2290;
+/// Where Link talks to him from: before him.
+const INGO_FRONT: Vec3 = Vec3::new(-60.0, 0.0, -1640.0);
+/// Where Link rides to in the corral to talk to the rental's Ingo (params 3 at (-154, 0, -1439),
+/// rot y 0x1C72): before him.
+const RENTAL_INGO_FRONT: Vec3 = Vec3::new(-60.0, 0.0, -1300.0);
+
+/// The rental's start, as Ingo's offer takes it: 0x2030 (or 0x2031), "Ride" (0); 0x2034, "Don't
+/// listen" (1): 10 Rupees (0x205C), its event ends the talk; the corral.
+fn ingo_rental_start() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Converse(Who::Ingo, INGO_FRONT, vec![0, 1], |w| w.transition.trigger != TRANS_TRIGGER_OFF, Step::RentalPaid),
+        Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.entrance_index == crate::playthrough::ENTR_LON_LON_RANCH_6 && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF && w.player().cs_mode == 0, Step::InCorral),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Mount(Step::Mounted),
+    ]
+}
+
+/// `Route::IngoRental`'s tasks.
+fn ingo_rental_tasks() -> Vec<Task> {
+    ingo_rental_start()
+}
+
+/// `Route::IngoRace`'s tasks: the rental, ridden up to Ingo, 0x2038 "Do it" (0), the race's intro
+/// to its start.
+fn ingo_race_tasks() -> Vec<Task> {
+    let mut t = ingo_rental_start();
+    t.extend([
+        Task::RideTalk(Who::Ingo, RENTAL_INGO_FRONT, vec![0], |w| w.transition.trigger != TRANS_TRIGGER_OFF, Step::RaceTaken),
+        Task::Texts(race_started, Step::RaceStarted),
+    ]);
+    t
+}
+
+/// `Step::RaceStarted`'s condition: Ingo's horse (`En_Horse` type 1, `ENHORSE_ACT_INGO_RACE`)
+/// racing.
+fn race_started(w: &PlayState) -> bool {
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_horse::EnHorse>(h)).any(|h| h.ty == crate::en_horse::HORSE_HNI && h.action == crate::en_horse::ENHORSE_ACT_INGO_RACE && h.in_race)
+}
+
+/// `ENTR_LON_LON_RANCH_6` (`entrance_table.h`: 0x4CA): the rental's corral.
+pub const ENTR_LON_LON_RANCH_6: u16 = 0x4CA;
+
 /// `ENTR_TEMPLE_OF_TIME_7` (`entrance_table.h`: 0x5F4): spawn 7, room 1, on `Bg_Mjin`'s pad (the
 /// Prelude's warp).
 const ENTR_TEMPLE_OF_TIME_7: u16 = 0x5F4;
@@ -3441,6 +3523,10 @@ impl Route {
             Route::RideEpona => "ENTR_LON_LON_RANCH_0",
             // The field outside the ranch's gate (spawn 6, coming out of the ranch).
             Route::FieldRide => "ENTR_HYRULE_FIELD_6",
+            // The ranch's gateway (spawn 0); the debug start moves Link to Ingo by the corral's gate.
+            Route::IngoRental | Route::IngoRace => "ENTR_LON_LON_RANCH_0",
+            Route::IngoLost => "ENTR_LON_LON_RANCH_8",
+            Route::IngoWon => "ENTR_LON_LON_RANCH_7",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3510,6 +3596,10 @@ impl Route {
             Route::SwordBack | Route::PreludeWarp => Some("prelude-learned"),
             Route::RideEpona => Some("adult-awake"),
             Route::FieldRide => Some("epona"),
+            Route::IngoRental => Some("adult-awake"),
+            Route::IngoRace => Some("ingo-rental"),
+            Route::IngoLost => Some("ingo-race-lost"),
+            Route::IngoWon => Some("ingo-first-win"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3598,6 +3688,7 @@ impl Route {
             Route::SwordBack => Some((AWAKENING_END, i16::MIN)),
             Route::RideEpona => Some((CORRAL_START, CORRAL_START_YAW)),
             Route::FieldRide => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
+            Route::IngoRental | Route::IngoRace => Some((BY_INGO, BY_INGO_YAW)),
             _ => None,
         }
     }
@@ -3839,6 +3930,10 @@ impl Route {
             Route::PreludeWarp => "prelude-warp",
             Route::RideEpona => "ride-epona",
             Route::FieldRide => "field-ride",
+            Route::IngoRental => "ingo-rental",
+            Route::IngoRace => "ingo-race",
+            Route::IngoLost => "ingo-lost",
+            Route::IngoWon => "ingo-won",
         }
     }
 
@@ -3916,7 +4011,8 @@ impl Route {
             Route::Prelude => 6000,
             Route::SwordBack | Route::SwordAgain => 2000,
             Route::PreludeWarp => 3000,
-            Route::RideEpona | Route::FieldRide => 4000,
+            Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoLost | Route::IngoWon => 4000,
+            Route::IngoRace => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -3924,12 +4020,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoRace)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3990,6 +4086,9 @@ enum Task {
     RideIn(Step),
     /// On a standing horse ("Down": `PLAYER_STATE2_22`), A until Link is off it and standing.
     Dismount(Step),
+    /// On the horse: ridden to the point, halted, turned to `Who`, A until the talk starts, then
+    /// as `Converse` (the choices in order, until the condition once the box is gone).
+    RideTalk(Who, Vec3, Vec<u8>, fn(&PlayState) -> bool, Step),
     /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
     /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
     Throw(Vec3, Step),
@@ -4388,6 +4487,8 @@ enum Who {
     Ruto,
     /// Bonooru (`En_Kakasi3`).
     Bonooru,
+    /// The ranch's adult Ingo on foot (`En_In` params 2 to 4).
+    Ingo,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -4411,6 +4512,8 @@ const RIDE_RADIUS: f32 = 120.0;
 const RIDE_TURN: i32 = 0x1F00;
 /// How much more the stick turns than she's off: a gallop turns slowly.
 const RIDE_GAIN: i32 = 4;
+/// `Task::RideTalk`'s approach: the stick at this share of full tilt, a walk.
+const RIDE_WALK: f32 = 0.45;
 
 pub struct Playthrough {
     pub route: Route,
@@ -4781,6 +4884,13 @@ impl Playthrough {
             Route::PreludeWarp => prelude_warp_tasks(),
             Route::RideEpona => ride_epona_tasks(),
             Route::FieldRide => field_ride_tasks(),
+            Route::IngoRental => ingo_rental_tasks(),
+            Route::IngoRace => ingo_race_tasks(),
+            Route::IngoLost => vec![
+                Task::Texts(|w| crate::en_in::race_state(w) == crate::en_in::INGO_RACE_STATE_REMATCH && w.transition.trigger == TRANS_TRIGGER_OFF, Step::IngoGloated),
+                Task::Settle(None),
+            ],
+            Route::IngoWon => vec![Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.scene_layer == 4, Step::SecondRaceCalled)],
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -5338,6 +5448,71 @@ impl Playthrough {
                     Some(idle)
                 }
             },
+            Task::RideTalk(who, to, choices, until, step) => {
+                if self.sub >= 3 {
+                    return self.converse(w, who, to, &choices, until, step);
+                }
+                self.wait += 1;
+                if self.wait > 3000 {
+                    self.failure = Some(format!("never talked to {who:?} from horseback (sub {})", self.sub));
+                    return None;
+                }
+                let Some(horse) = Self::ridden(w) else {
+                    self.failure = Some(format!("not on a horse (Link {:?})", w.player().action));
+                    return None;
+                };
+                if w.message_state() != TEXT_STATE_NONE || w.player().action == PA::Talk {
+                    self.sub = 3;
+                    self.notes = 0;
+                    return Some(idle);
+                }
+                let Some(h) = Self::find(w, who) else {
+                    self.failure = Some(format!("no {who:?} to talk to"));
+                    return None;
+                };
+                let at = w.actors.actor(h).unwrap().world_pos;
+                let walk = |mut pad: PadState| {
+                    // At a walk (`EnHorse_MountedWalk` under the trot's stick): she stops at once.
+                    pad.stick_x = (pad.stick_x as f32 * RIDE_WALK) as i8;
+                    pad.stick_y = (pad.stick_y as f32 * RIDE_WALK) as i8;
+                    pad
+                };
+                let offered = w.player().target_actor == Some(h);
+                match self.sub {
+                    0 => {
+                        if Self::xz_dist(horse.actor.world_pos, to) < 40.0 || offered {
+                            self.sub = 1;
+                            return Some(idle);
+                        }
+                        Some(walk(Self::ride_stick(horse, to)))
+                    }
+                    1 => {
+                        if horse.actor.speed_xz == 0.0 && horse.check_4() {
+                            self.sub = 2;
+                        }
+                        Some(idle)
+                    }
+                    _ => {
+                        // Turned to him (in place: the stick to the side), then A.
+                        if (Self::ride_angle(horse, at) as i32).abs() > 0x800 && horse.actor.speed_xz == 0.0 {
+                            let mut pad = Self::ride_stick(horse, at);
+                            if (Self::ride_angle(horse, at) as i32).abs() <= RIDE_TURN {
+                                pad.stick_y = 0;
+                                pad.stick_x = if Self::ride_angle(horse, at) > 0 { -FULL as i8 } else { FULL as i8 };
+                            }
+                            return Some(pad);
+                        }
+                        if horse.actor.speed_xz != 0.0 {
+                            return Some(idle);
+                        }
+                        // A only on his offer (Player's `targetActor`): A standing is "Down".
+                        if !offered {
+                            return Some(walk(Self::ride_stick(horse, at)));
+                        }
+                        Some(self.press(BTN_A))
+                    }
+                }
+            }
             Task::Dismount(step) => {
                 self.wait += 1;
                 if self.wait > 600 {
@@ -9216,6 +9391,7 @@ impl Playthrough {
             Who::KingZora => w.actors.downcast::<crate::en_kz::EnKz>(h).is_some_and(|a| !a.actor.killed),
             Who::Ruto => w.actors.downcast::<crate::en_ru1::EnRu1>(h).is_some_and(|a| !a.actor.killed),
             Who::Bonooru => w.actors.downcast::<crate::en_kakasi3::EnKakasi3>(h).is_some_and(|a| !a.actor.killed),
+            Who::Ingo => w.actors.downcast::<crate::en_in::EnIn>(h).is_some_and(|a| !a.actor.killed && (2..=4).contains(&crate::en_in::TYPE.get(a.actor.params))),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

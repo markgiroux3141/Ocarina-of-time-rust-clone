@@ -1,7 +1,9 @@
 //! GAME-08 milestone 3 against the C: the child's Ingo (`z_en_in.c`): which Ingo lives where for a
 //! child (`EnIn_GetStartMode`), his texts and the flags they set (`EnIn_GetTextIdChild`,
 //! `EnIn_UpdateTalkStateOnClosing`), his tracking, `sIsObedient`'s reset of the horses' `eventInf`
-//! word, and the adult's placeholders. Adult Malon's init is `en_ma2.rs`'s.
+//! word; and the adult's Ingos (GAME-12 milestone 2): who stays by the race's state, and the
+//! rental's minute running out. (The rental and the race: `ingo_runs.rs`.) Adult Malon's init is
+//! `en_ma2.rs`'s.
 //!
 //! Expected values are worked out from the C in the comments.
 
@@ -240,24 +242,84 @@ fn no_ingo_in_talons_house_for_a_child() {
 }
 
 #[test]
-fn an_adults_ranch_by_day_has_the_placeholder() {
+fn an_adults_ranch_by_day_has_the_rentals_ingo() {
     let Some(a) = assets() else { return };
     // spot20 layer 2 (an adult by day): rot.z 7 -1 at (854, -2429); rot.z 5 params 2, 3 and 4 at
     // (-158, -1596), (-154, -1439), (899, -2536). No Epona, race state 0 (OFFER_RENTAL):
-    // ENIN_START_MODE_RUNNING_RANCH keeps params 2 (EnIn_StartRentalPeriod: not ported, a
-    // placeholder); 3 and 4 are killed; rot.z 7 is ENIN_START_MODE_NULL, killed.
+    // ENIN_START_MODE_RUNNING_RANCH keeps params 2 (EnIn_StartRentalPeriod,
+    // ENIN_ANIM_STANDING_FOOT_FORWARD); 3 and 4 are killed; rot.z 7 is ENIN_START_MODE_NULL, killed.
     let w = enter_age(&a, "ENTR_LON_LON_RANCH_0", true, 10, "deku-tree-dead", |_| {});
-    assert!(all::<EnIn>(&w).is_empty());
-    let p = placeholders(&w, en_in::ACTOR_EN_IN);
-    assert_eq!(p.len(), 1, "{p:?}");
-    assert_eq!((p[0].x, p[0].z), (-158.0, -1596.0));
-    // With Epona: rot.z 7 is ENIN_START_MODE_OBEDIENT (a placeholder); the rot.z 5 ones need no
-    // Epona: ENIN_START_MODE_NULL.
+    let h = one::<EnIn>(&w);
+    let i = ingo(&w, h);
+    assert_eq!((i.actor.home_pos.x, i.actor.home_pos.z, i.actor.params), (-158.0, -1596.0, 2));
+    assert_eq!(i.action, en_in::Action::StartRentalPeriod);
+    assert!(i.skel.is("gIngoStandingFootForwardAnim"));
+    assert!(placeholders(&w, en_in::ACTOR_EN_IN).is_empty());
+    // The rental (race state 1, in the corral: not by spawn 0, whose respawn point resets the word):
+    // params 3 (EnIn_RentalPeriod, ATTENTION_RANGE_3, the timer at 60).
+    let w = enter_age(&a, "ENTR_LON_LON_RANCH_6", true, 10, "ingo-rental", |s| s.event_inf[0] = en_in::INGO_RACE_STATE_HORSE_RENTAL_PERIOD);
+    let h = one::<EnIn>(&w);
+    let i = ingo(&w, h);
+    assert_eq!((i.actor.home_pos.x, i.actor.home_pos.z, i.actor.params, i.actor.target_mode), (-154.0, -1439.0, 3, 3));
+    assert_eq!(i.action, en_in::Action::RentalPeriod);
+    assert_eq!(w.save.timer_state, oot_game::save::TIMER_STATE_DOWN_INIT);
+    // Trapped by his loss (race state 6): params 4 (EnIn_PlayerWonSecondRace, losing).
+    let w = enter_age(&a, "ENTR_LON_LON_RANCH_7", true, 10, "ingo-rental", |s| s.event_inf[0] = en_in::INGO_RACE_STATE_TRAPPED_WIN_EPONA);
+    let h = one::<EnIn>(&w);
+    assert_eq!((base(&w, h).home_pos.x, base(&w, h).params), (899.0, 4));
+    // With Epona: rot.z 7 is ENIN_START_MODE_OBEDIENT (ENIN_ANIM_OBEDIENT, his eyes shut for good:
+    // 3); the rot.z 5 ones need no Epona: ENIN_START_MODE_NULL.
     let w = enter_age(&a, "ENTR_LON_LON_RANCH_0", true, 10, "deku-tree-dead", |s| s.set_event_chk_inf(en_in::EVENTCHKINF_EPONA_OBTAINED));
-    assert!(all::<EnIn>(&w).is_empty());
-    let p = placeholders(&w, en_in::ACTOR_EN_IN);
-    assert_eq!(p.len(), 1, "{p:?}");
-    assert_eq!((p[0].x, p[0].z), (854.0, -2429.0));
+    let h = one::<EnIn>(&w);
+    let i = ingo(&w, h);
+    assert_eq!((i.actor.home_pos.x, i.actor.home_pos.z), (854.0, -2429.0));
+    assert_eq!((i.action, i.eye_index), (en_in::Action::Idle, 3));
+    assert!(i.skel.is("gIngoObedientAnim"));
+}
+
+#[test]
+fn the_rentals_minute_runs_out() {
+    let Some(a) = assets() else { return };
+    // The rental (race state 1, in the corral at ENTR_LON_LON_RANCH_6), Link having ridden
+    // (INFTABLE_AB) on his first rental (no EVENTCHKINF_1B).
+    let mut w = enter_age(&a, "ENTR_LON_LON_RANCH_6", true, 10, "adult-awake", |s| {
+        s.event_inf[0] = en_in::INGO_RACE_STATE_HORSE_RENTAL_PERIOD;
+        s.set_inf_table(en_in::INFTABLE_AB);
+    });
+    let h = one::<EnIn>(&w);
+    assert_eq!(ingo(&w, h).action, en_in::Action::RentalPeriod);
+    // The timer out (TIMER_STATE_STOP): EnIn_RentalTimeExpired: a sub camera on him, 0x2025, Link
+    // put 100 before him and held (freezeTimer 10), the HUD gone; EnIn_EndRentalPeriod.
+    w.save.timer_state = oot_game::save::TIMER_STATE_STOP;
+    idle(&mut w, 1);
+    let i = ingo(&w, h);
+    assert_eq!(i.action, en_in::Action::EndRentalPeriod);
+    assert_eq!(w.save.timer_state, 0);
+    assert_eq!(w.msg_ctx.text_id, 0x2025);
+    assert_ne!(w.active_cam_id, oot_game::camera::CAM_ID_MAIN);
+    // His yaw then is the one to the camera's eye, straight along +z (the eye 40 out in z over
+    // him; his tracking turns him again later in the update): Link 100 out in +z.
+    let p = i.actor.world_pos;
+    let link = w.player().actor.world_pos;
+    assert!((link.x - p.x).abs() < 1.0 && (link.z - (p.z + 100.0)).abs() < 1.0, "{link} {p}");
+    assert_eq!(i.actor.flags & oot_game::actor::ACTOR_FLAG_ATTENTION_ENABLED, 0);
+    // 0x2025 read: back to the gate (EnIn_StartTransition 0: ENTR_LON_LON_RANCH_8), the race's
+    // state OFFER_RENTAL, and the first ridden rental's EVENTCHKINF_1B.
+    let a_btn = PadState { button: BTN_A, ..Default::default() };
+    let mut prev = PadState::default();
+    for _ in 0..600 {
+        // TRANS_TRIGGER_START (the corral's own fade-in is still TRANS_TRIGGER_END).
+        if w.transition.trigger == oot_game::transition::TRANS_TRIGGER_START {
+            break;
+        }
+        let pad = if prev.button == 0 && w.message_state() != TEXT_STATE_NONE { a_btn } else { PadState::default() };
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+    }
+    assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_LON_LON_RANCH_8").unwrap());
+    assert_eq!(en_in::race_state(&w), en_in::INGO_RACE_STATE_OFFER_RENTAL);
+    assert!(w.save.get_event_chk_inf(en_in::EVENTCHKINF_1B));
+    assert!(!w.save.r_exited_scene_riding_horse);
 }
 
 // The horses' eventInf word.
@@ -274,8 +336,8 @@ fn entering_the_ranch_by_its_entrance_resets_the_horses_event_inf() {
     // By night (layer 1) the ranch has no Ingo, so no init: no reset.
     let w = enter_age(&a, "ENTR_LON_LON_RANCH_0", false, 22, preset(false), |s| s.event_inf[0] = 0x1234);
     assert_eq!(w.save.event_inf[0], 0x1234);
-    // An adult by day (layer 2: four Ingos, the first init resets it; three are then killed or a
-    // placeholder, as below).
+    // An adult by day (layer 2: four Ingos, the first init resets it; three are then killed, as
+    // below).
     let w = enter_age(&a, "ENTR_LON_LON_RANCH_0", true, 10, "deku-tree-dead", |s| s.event_inf[0] = 0x1234);
     assert_eq!(w.save.event_inf[0], 0);
     // In the stable (its own spawn): no reset.

@@ -1503,6 +1503,13 @@ pub const NA_SE_EV_HORSE_LAND: u16 = 0x2819;
 pub const NA_SE_EV_HORSE_SLIP: u16 = 0x281A;
 pub const NA_SE_IT_INGO_HORSE_NEIGH: u16 = 0x1844;
 pub const NA_SE_IT_LASH: u16 = 0x181E;
+/// `NA_SE_VO_IN_*` (`voicebank_table.h`): Ingo's voice.
+pub const NA_SE_VO_IN_CRY_0: u16 = 0x6854;
+pub const NA_SE_VO_IN_LOST: u16 = 0x6855;
+pub const NA_SE_VO_IN_LASH_0: u16 = 0x6856;
+pub const NA_SE_VO_IN_LASH_1: u16 = 0x6857;
+/// `NA_SE_EV_RONRON_DOOR_CLOSE` (`environmentbank_table.h`): the ranch's gate.
+pub const NA_SE_EV_RONRON_DOOR_CLOSE: u16 = 0x28E6;
 pub const NA_SE_SY_CARROT_RECOVER: u16 = 0x4845;
 pub const NA_SE_PL_SIT_ON_HORSE: u16 = 0x0832;
 pub const NA_SE_PL_GET_OFF_HORSE: u16 = 0x0833;
@@ -1629,6 +1636,7 @@ pub const NA_SE_SY_WIN_SCROLL_LEFT: u16 = 0x4825;
 pub const NA_SE_SY_WIN_SCROLL_RIGHT: u16 = 0x4826;
 pub const NA_SE_SY_OCARINA_ERROR: u16 = 0x4827;
 pub const NA_SE_SY_FOUND: u16 = 0x482C;
+pub const NA_SE_SY_START_SHOT: u16 = 0x4835;
 pub const NA_SE_SY_MESSAGE_END: u16 = 0x482E;
 pub const NA_SE_SY_RUPY_COUNT: u16 = 0x482F;
 pub const NA_SE_SY_LOCK_ON: u16 = 0x4830;
@@ -1865,6 +1873,12 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_SY_CORRECT_CHIME", NA_SE_SY_CORRECT_CHIME),
     ("NA_SE_SY_GET_RUPY", NA_SE_SY_GET_RUPY),
     ("NA_SE_SY_FOUND", NA_SE_SY_FOUND),
+    ("NA_SE_SY_START_SHOT", NA_SE_SY_START_SHOT),
+    ("NA_SE_VO_IN_CRY_0", NA_SE_VO_IN_CRY_0),
+    ("NA_SE_VO_IN_LOST", NA_SE_VO_IN_LOST),
+    ("NA_SE_VO_IN_LASH_0", NA_SE_VO_IN_LASH_0),
+    ("NA_SE_VO_IN_LASH_1", NA_SE_VO_IN_LASH_1),
+    ("NA_SE_EV_RONRON_DOOR_CLOSE", NA_SE_EV_RONRON_DOOR_CLOSE),
     ("NA_SE_SY_WARNING_COUNT_E", NA_SE_SY_WARNING_COUNT_E),
     ("NA_SE_SY_WARNING_COUNT_N", NA_SE_SY_WARNING_COUNT_N),
     ("NA_SE_SY_MESSAGE_WOMAN", NA_SE_SY_MESSAGE_WOMAN),

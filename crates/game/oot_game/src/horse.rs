@@ -43,6 +43,20 @@ pub const ENTR_HYRULE_FIELD_13: u16 = 0x292;
 pub const ENTR_HYRULE_FIELD_15: u16 = 0x476;
 pub const ENTR_LON_LON_RANCH_0: u16 = 0x157;
 pub const ENTR_LON_LON_RANCH_7: u16 = 0x4CE;
+/// `ENTR_LON_LON_RANCH_6` (0x4CA: the rental's start in the corral), `_8` (0x558: Ingo's win).
+pub const ENTR_LON_LON_RANCH_6: u16 = 0x4CA;
+pub const ENTR_LON_LON_RANCH_8: u16 = 0x558;
+
+/// `TransitionCircleAppearance`, `TransitionCircleColor`, `TransitionCircleSpeed` (`transition_circle.h`).
+pub const TCA_NORMAL: u8 = 0;
+pub const TCA_STARBURST: u8 = 3;
+pub const TCC_BLACK: u8 = 0;
+pub const TCC_WHITE: u8 = 1;
+pub const TCS_FAST: u8 = 0;
+/// `TRANS_TYPE_CIRCLE(appearance, color, speed)` (`transition.h`).
+pub const fn trans_type_circle(appearance: u8, color: u8, speed: u8) -> u8 {
+    (1 << 5) | ((color & 3) << 3) | ((appearance & 3) << 1) | (speed & 1)
+}
 
 // `CS_INDEX_*` (`save.h`).
 pub const CS_INDEX_0: u16 = 0xFFF0;
@@ -59,12 +73,22 @@ pub const R_DEBUG_FORCE_EPONA_OBTAINED: i16 = 0;
 
 /// `INGO_RACE_STATE_TRAPPED_WIN_EPONA` (`save.h`): Epona won, Ingo shuts Link in the ranch.
 pub const INGO_RACE_STATE_TRAPPED_WIN_EPONA: u16 = 6;
+/// `INGO_RACE_STATE_PLAYER_LOSE`, `INGO_RACE_STATE_FIRST_WIN` (`save.h`'s `IngoRaceState`: 3, 4).
+pub const INGO_RACE_STATE_PLAYER_LOSE: u16 = 3;
+pub const INGO_RACE_STATE_FIRST_WIN: u16 = 4;
 /// `EVENTINF_INGO_RACE_SECOND_RACE` (`save.h`): the race for Epona.
 pub const EVENTINF_INGO_RACE_SECOND_RACE: u16 = 0x06;
+/// `EVENTINF_INGO_RACE_0F` (`save.h`: 0x0F, "unused?"): written as a race ends.
+pub const EVENTINF_INGO_RACE_0F: u16 = 0x0F;
 
 /// `GET_EVENTINF_INGO_RACE_STATE()`: `eventInf[EVENTINF_INDEX_HORSES]`'s low four bits.
 pub fn ingo_race_state(save: &crate::save::SaveContext) -> u16 {
     save.event_inf[0] & 0xF
+}
+
+/// `SET_EVENTINF_INGO_RACE_STATE(v)`: `eventInf[EVENTINF_INDEX_HORSES]`'s low four bits to `v`.
+pub fn set_ingo_race_state(save: &mut crate::save::SaveContext, v: u16) {
+    save.event_inf[0] = (save.event_inf[0] & !0xF) | v;
 }
 
 /// `GET_EVENTINF_INGO_RACE_HORSETYPE()` (`EVENTINF_INGO_RACE_HORSETYPE`, bit 4): the horse Link

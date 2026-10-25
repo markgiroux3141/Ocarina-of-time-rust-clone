@@ -7,12 +7,13 @@ obstacle course, Malon at night) and the field's Poes. Exit (ROADMAP's outline):
 
 **Status:** surveyed, proposed and decided (2026-10-24; the user took every recommendation: the
 calls' section). The phase starts from the `adult-awake` preset (GAME-11's exit review).
-Milestone 1 is done (hand-tested 2026-10-25, committed and pushed).
+Milestone 1 is done (hand-tested 2026-10-25, committed and pushed). Milestone 2 is done
+(hand-tested 2026-10-25, committed and pushed).
 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Riding Epona | done (2026-10-25) |
-| 2 | Ingo, the rental and the races | |
+| 2 | Ingo, the rental and the races | done (2026-10-25) |
 | 3 | Epona won and out (the exit) | |
 | 4 | The ranch after and the field's Poes | |
 
@@ -391,3 +392,121 @@ buttons, I C-Up, Enter Start.
    galloping in. Ride about the field and try the low walls.
 3. **`ranch`** (the ranch with Epona had): no rental horse in the corral; her song calls her.
 4. **`night`** (the ranch at 22:00 before Epona): no horses in the corral.
+
+## Milestone 2: Ingo, the rental and the races
+
+**Status:** done: built and hand-tested 2026-10-25 ("this works"), committed and pushed on the
+user's ask.
+
+**The answer:** adult Link rents a horse from Ingo and races him:
+- Ingo by the corral's gate offers the rental (0x2030, then 0x2031): 10 Rupees, the riding
+  lesson if wanted. Link is taken into the corral with a minute on the timer and the horse's music.
+  He can ride the rental horse or call Epona. When the minute runs out, Ingo stops him (0x2025) and
+  takes him back to the gate.
+- After a first rental Link rode in (`EVENTCHKINF_1B`), Ingo offers the race from horseback
+  (0x2038: 50 Rupees). The race's intro is a 50-frame cutscene with Link and Ingo at the start line
+  by the gate, then the timer and the start shot. One lap round the corral, by three checkpoints.
+- The race lost: Ingo gloats (0x203D, or 0x203E after a loss before), takes the 50 Rupees and
+  offers a rematch (0x205B).
+- The first race won: Ingo, shaken, calls the second race at once (0x203A), for the horse.
+- The second race won: Ingo gives the horse but shuts the gate (0x203B, 0x203C, the gate's
+  sound, the gates swinging shut) and guards it. That run is milestone 3's: it ends in the jump out.
+
+ADR 0092. Scripts: `scripts\run\game-ingo.bat` (menu 181: empty, `race`, `lost`, `won`),
+`test-ingo.bat` (182), `sandbox-ingo.bat` (183).
+
+### What was built
+
+- **`En_In`'s adult whole:** the rental (`EnIn_StartRentalPeriod`, `EnIn_RentalPeriod`,
+  `EnIn_RentalTimeExpired`, `EnIn_EndRentalPeriod`), the race's rider (`EnIn_Racing`), the outcomes
+  (`EnIn_PlayerLostRace`, `EnIn_OfferingRematch`, `EnIn_PlayerWonFirstRace`), the second win and
+  the gate (`EnIn_PlayerWonSecondRace`, `EnIn_ClosingGate`, `EnIn_FinishClosingGate`,
+  `EnIn_GuardingGate`), `EnIn_StartTransition`, and the tracking's rental cases. His init no longer
+  stands in placeholders for the adult. His obedient and sleeping roles (milestone 4's in the
+  proposal) are whole with it. The adult's 22 lines are in his schema's texts.
+- **`Bg_Ingate`** (the helper's) whole: the ranch's four gates, and the trapped gates' swing by
+  the cutscene's frame.
+- **`En_Horse_Game_Check`** (the helper's) whole: Ingo's race (spawning Ingo's horse, the timer,
+  the start, the checkpoints, the finish and its transitions), Gerudo archery's start, type 3,
+  Malon's obstacle course.
+- **The runs** (`playthrough.rs`; tests in `ingo_runs.rs`): `Route::IngoRental`, `IngoRace`,
+  `IngoLost`, `IngoWon`; the task `RideTalk` (ridden to a point at a walk, halted, turned to him, A
+  on his offer, then as `Converse`); `Who::Ingo`. The presets `ingo-rental` (`adult-awake` past a
+  first ridden rental, with 60 Rupees: the user's call 4), `ingo-race-lost` and `ingo-first-win`
+  (the race word as the referee leaves it).
+
+### Results
+
+- The four runs (frames):
+  - the rental (`ingo-rental`): 1,244. Paid 776, in the corral 798, the song heard 843, on Epona
+    1,244, the timer still running;
+  - the race (`ingo-race`): 1,054. Paid 273, in the corral 295, on Epona 741, the race taken from
+    horseback 971, the intro, both horses racing 1,054 (Link's from the referee's 81st frame,
+    Ingo's from its 82nd, the timer from its 51st);
+  - the loss (`ingo-lost`): 92 (0x203D, -50 Rupees, the rematch's state);
+  - the first win (`ingo-won`): 211 (0x203A, the second race's intro: layer 4).
+- The texts are the C's. The rental: 0x2030 running on into 0x2031, 0x2034, 0x205C. The race:
+  0x2031, 0x2034, 0x205C, Epona's Song's three, 0x2038.
+- The rental's minute (a test): 0x2025 by a sub camera, Link put 100 before Ingo and held, then
+  `ENTR_LON_LON_RANCH_8`, the race word back to the offer, `EVENTCHKINF_1B` for a ridden first
+  rental.
+- Tests: `ingo_runs` (4); `en_in` (9, two of them new or rewritten for the adult: which Ingo stays
+  by the race's state, the minute running out); `bg_ingate` (2) and `en_horse_game_check` (4),
+  the helper's. 1,831 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings.
+- Goldens: 4 of `out/golden_base44`'s 375 hashes changed, each proven in `target/game26proof`.
+  With the adult Ingo's placeholder put back and the gates and referee unregistered, all four are
+  as before. With only Ingo's placeholder back, `ride_epona`'s trace and end shot are (Ingo by the
+  corral now), and `ride_epona_jump/shot.png` and `field_ride/trace.json` still differ (the
+  corral's gates drawn, the ranch's gates in the trace). 5 new cases (9 hashes): 384 hashes, 281
+  cases, the same over two runs (`out/golden_base45`).
+
+### Corrections and findings
+
+- **Talking from horseback needs no Z:** the talk offer comes within his range facing him. A with
+  no offer is "Down" (getting off), so `RideTalk` presses A only on the offer.
+- **The race starts from the scene's start:** the referee counts from its first frame. The intro
+  cutscene is 50 frames, the timer starts at 51, the horses at 81 and 82.
+- **Spawn 0 resets the race:** Ingo's init clears the race's word when Link's respawn point is the
+  ranch's entrance (`sIsObedient`). So the presets past the race enter at `_7` and `_8`, as the
+  referee sends Link, and tests of the rental enter at `_6`.
+- **Malon's obstacle course, two game bugs** (the helper's, marked `@bug (game)`): it reads Link's
+  horse without checking he has one, and the first fence's foul check reads `fenceCheck[-1]`
+  (`raceFlags`).
+- **The helper's share went as proposed:** `Bg_Ingate` and `En_Horse_Game_Check`, in parallel with
+  Ingo.
+
+### Known gaps
+
+- The race itself, and the rental's minute run out, are the hand test's (the user's calls 3 and 5).
+- The referee's `DREG(25) = 0` (a debug register nothing reads) is left out.
+
+### How to check
+
+```
+scripts\run\test-ingo.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-ingo.bat
+```
+
+### By hand
+
+`scripts\run\game-ingo.bat` (menu 181). WASD the stick (Shift walks), Space A, E B, Q Z, J/K/L the
+C buttons, I C-Up, Enter Start.
+
+1. **Empty** (the ranch by day before Epona, by Ingo at the corral's gate): talk to him: his rant,
+   then "Pay me 10 Rupees": "Ride". Listen to the lesson or not; 10 Rupees go. The corral, the
+   horse's music, a 1:00 timer counting down. Ride the rental horse, or play Epona's Song (L,
+   then I J L I J L) and ride her. Ride up to Ingo and talk from horseback: "going home?" Let the
+   timer run out: Ingo stops you ("Time's up!"), the screen goes, back at the gate.
+2. **`race`** (past a first ridden rental, 60 Rupees): rent again, call Epona, ride to Ingo and
+   talk to him: the race for 50 Rupees, "Do it". The start line by the gate, the timer, the shot.
+   Race him one lap round the corral (A spurs; keep inside the course). Win: Ingo, shaken, calls
+   the second race (win that too: the gate scene, milestone 3's end). Lose: he gloats and takes 50
+   Rupees.
+3. **`lost`** (the race just lost): Ingo laughs at once, the Rupees count down by 50, then "another
+   race?" (0x205B): with 50 Rupees "Race" races again; with none left (this start's case) he
+   scoffs (0x2039).
+4. **`won`** (the first race just won): Ingo at once: another race, for the horse. The second
+   race's start line follows.

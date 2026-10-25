@@ -29,20 +29,29 @@
 //! working (`EnIn_PostLimbDraw`), the adult-era body for `params > 0` (`sAdultEraDLs`, every limb
 //! but the head), from meshes baked per eye and era (docs/adr/0012-actor-bakes.md).
 //!
-//! **Ported:** the child's Ingo whole (`EnIn_Init`, `EnIn_WaitForObject` with `EnIn_StartingRace`
-//! and `EnIn_GetStartMode` for both ages, `EnIn_Idle`, the texts and `EnIn_UpdateTalkState` with its
-//! helpers for every text, `EnIn_UpdateTracking`, `EnIn_UpdateEyes`, `EnIn_Fidget`, `EnIn_Stagger`,
-//! `EnIn_Update`, the draw).
-//! **Not ported** (the adult's race and rental, Phase 13): `EnIn_Racing`, `EnIn_StartRentalPeriod`,
-//! `EnIn_RentalPeriod`, `EnIn_OfferingRematch`, `EnIn_PlayerLostRace`, `EnIn_PlayerWonFirstRace`,
-//! `EnIn_PlayerWonSecondRace`, `EnIn_ClosingGate`, `EnIn_FinishClosingGate`, `EnIn_GuardingGate`,
-//! `EnIn_PlayerEscapesRanch`, `EnIn_EndRentalPeriod`, `EnIn_StartTransition` and
-//! `EnIn_RentalTimeExpired`. Where `EnIn_WaitForObject` would start the race (`EnIn_StartingRace`)
-//! or an adult's start mode (`_RUNNING_RANCH` that stays, `_OBEDIENT`, `_SLEEPING`), his init
-//! spawns a placeholder instead (the port can't turn a live actor into one on its first update, so
-//! `EnIn_Init` makes the same checks), so the adult's texts (`EnIn_GetTextIdAdult`, his choices'
-//! replies) are here but never show. The mask reactions (`MaskReaction_GetTextId`, 0x717C to
-//! 0x717F: taken as 0, so none).
+//! **The adult's rental and race** (GAME-12 milestone 2), by the race's state
+//! (`eventInf[EVENTINF_INDEX_HORSES]`, which the ranch's Ingos stay by: params 2, 3, 4):
+//! - offering the rental (`EnIn_StartRentalPeriod`): 0x2030 or 0x2031, 10 Rupees, the riding
+//!   lesson or not; on its end, the rental's minute (`ENTR_LON_LON_RANCH_6`, the corral, the
+//!   horse's music, `INFTABLE_A2` cleared);
+//! - the rental (`EnIn_RentalPeriod`, the timer at 60): `INFTABLE_AB` once Link rides; talking from
+//!   horseback, 0x2036 (going home) or, after a first ridden rental (`EVENTCHKINF_1B`), 0x2038 (the
+//!   race for 50 Rupees: `ENTR_LON_LON_RANCH_0` with `CS_INDEX_0`, the race's intro, the rented
+//!   horse's type kept); the timer out (`EnIn_RentalTimeExpired`: 0x2025 by a sub camera, Link put
+//!   before him) and `EnIn_EndRentalPeriod` back to the gate (`ENTR_LON_LON_RANCH_8`), the first
+//!   ridden rental's `EVENTCHKINF_1B` set;
+//! - the race's rider (`EnIn_Racing`, on the horse `En_Horse` spawns: its animations, his lashes and
+//!   cries);
+//! - Link lost (`EnIn_PlayerLostRace`: gloating, 0x203D or 0x203E, -50 Rupees) and the rematch
+//!   (`EnIn_OfferingRematch`: 0x205B);
+//! - Link won the first race (`EnIn_PlayerWonFirstRace`: 0x203A, the second race at once);
+//! - Link won the second (`EnIn_PlayerWonSecondRace`, `EnIn_ClosingGate`: 0x203B, 0x203C by a sub
+//!   camera, the gate's sound at 44; `EnIn_FinishClosingGate`; `EnIn_GuardingGate`: past him,
+//!   `ENTR_HYRULE_FIELD_15`).
+//! `EnIn_StartTransition` takes Link out (Player's cs action 8, the HUD gone, the timer off).
+//!
+//! **Ported:** the whole actor. The mask reactions (`MaskReaction_GetTextId`, 0x717C to 0x717F:
+//! taken as 0, so none).
 //!
 //! Params: `params` whole: -1 placed (the scene, the age, the time and rot.z decide); 1 the race's
 //! rider (`En_Horse` spawns him); 2 the ranch's adult Ingo offering the rental or the race (race
@@ -55,13 +64,15 @@
 //! INFTABLE_INGO_TALKED_TO_CHILD_LINK_BEFORE_TALON_RETURNED (0x203F closed, which also sets
 //! EVENTCHKINF_11) and INFTABLE_INGO_TALKED_TO_CHILD_LINK_AFTER_TALON_RETURNED (0x2045 closed);
 //! reads and sets INFTABLE_INGO_TALKED_TO_ADULT_LINK (0x2030 or 0x2031's choice); reads and sets
-//! INFTABLE_A2 (0x2038's choice; the rental clears it: not ported) and reads EVENTCHKINF_1B (the
-//! rental's texts; the rental sets it: not ported); the rental (not ported) reads and sets
-//! INFTABLE_AB. `eventInf[EVENTINF_INDEX_HORSES]`: the race's state (bits 0 to 3, read by the start
-//! and the adult's texts, 0x205B's "no" sets INGO_RACE_STATE_OFFER_RENTAL), EVENTINF_INGO_RACE_LOST_ONCE
-//! and EVENTINF_INGO_RACE_SECOND_RACE (read by the adult's texts, cleared by 0x205B's "no", set by
-//! the race: not ported), EVENTINF_INGO_RACE_HORSETYPE and EVENTINF_INGO_RACE_0F (written by the
-//! race: not ported); the whole word cleared by `sIsObedient`'s reset and the rental's start.
+//! INFTABLE_A2 (0x2038's choice; cleared as the rental starts) and reads and sets EVENTCHKINF_1B
+//! (the rental's texts; set when a rental Link rode in ends); the rental reads and sets
+//! INFTABLE_AB (Link rode). `eventInf[EVENTINF_INDEX_HORSES]`: the race's state (bits 0 to 3, read
+//! by the start and the adult's texts, set by every step of the rental and the race),
+//! EVENTINF_INGO_RACE_LOST_ONCE and EVENTINF_INGO_RACE_SECOND_RACE (read by the adult's texts; set
+//! by a loss and by the first win; cleared by the rematch), EVENTINF_INGO_RACE_HORSETYPE (the
+//! rented horse's type, as the race starts) and EVENTINF_INGO_RACE_0F (set by each transition out,
+//! cleared by the race's rider); the whole word cleared by `sIsObedient`'s reset and the rental's
+//! start.
 
 use std::sync::Arc;
 
@@ -81,6 +92,14 @@ use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::save::{RESPAWN_MODE_DOWN, SUBTIMER_STATE_OFF};
 use oot_game::skelanime_std::*;
+use oot_game::actor::ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+use oot_game::actor_ctx::{ActorHandle, audio_play_actor_sfx2};
+use oot_game::audio::NA_BGM_HORSE;
+use oot_game::audio::sfx::*;
+use oot_game::camera::{CAM_ID_MAIN, CAM_STAT_ACTIVE, CAM_STAT_WAIT};
+use oot_game::horse::{ENTR_HYRULE_FIELD_15, ENTR_LON_LON_RANCH_0, ENTR_LON_LON_RANCH_6, ENTR_LON_LON_RANCH_8, TCA_NORMAL, TCA_STARBURST, TCC_BLACK, TCS_FAST, trans_type_circle};
+use oot_game::save::{TIMER_STATE_OFF, TIMER_STATE_STOP};
+use oot_game::transition::{TRANS_TRIGGER_START, TRANS_TYPE_FADE_BLACK, TRANS_TYPE_FADE_WHITE_FAST};
 
 /// `ACTOR_EN_IN` (`actor_table.h`: 0x00CB).
 pub const ACTOR_EN_IN: i16 = 0x00CB;
@@ -165,21 +184,21 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("where the child's Ingo works; his texts"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_EPONA_OBTAINED)).reads().note("where the adult's Ingo is; his texts; asleep's params 5"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_11)).sets().note("text 0x203F closed"),
-        FlagUse::new(event_chk_inf!(EVENTCHKINF_1B)).reads().sets().note("the rental's texts (0x2036 to 0x2038); set by the rental's end").indirect("sets: not ported (the adult's race)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_1B)).reads().sets().note("the rental's texts (0x2036 to 0x2038); set by the end of a rental Link rode in"),
         FlagUse::new(inf_table!(INFTABLE_INGO_TALKED_TO_CHILD_LINK_BEFORE_TALON_RETURNED)).reads().sets().note("text 0x203F closed"),
         FlagUse::new(inf_table!(INFTABLE_INGO_TALKED_TO_CHILD_LINK_AFTER_TALON_RETURNED)).reads().sets().note("text 0x2045 closed"),
         FlagUse::new(inf_table!(INFTABLE_INGO_TALKED_TO_ADULT_LINK)).reads().sets().note("0x2030 or 0x2031's choice"),
-        FlagUse::new(inf_table!(INFTABLE_A2)).reads().sets().clears().note("0x2038's choice; cleared as the rental starts").indirect("clears: not ported (the adult's race)"),
-        FlagUse::new(inf_table!(INFTABLE_AB)).reads().sets().note("riding in the rental period").indirect("not ported (the adult's race)"),
+        FlagUse::new(inf_table!(INFTABLE_A2)).reads().sets().clears().note("0x2038's choice; cleared as the rental starts"),
+        FlagUse::new(inf_table!(INFTABLE_AB)).reads().sets().note("riding in the rental period"),
         FlagUse::new(Flag::Other("eventInf[EVENTINF_INDEX_HORSES]'s race state (EVENTINF_INGO_RACE_STATE_MASK)"))
             .reads()
             .sets()
             .clears()
             .note("read by the start and the adult's texts; 0x205B's no sets INGO_RACE_STATE_OFFER_RENTAL; the word cleared by sIsObedient's reset"),
-        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_LOST_ONCE)).reads().sets().clears().note("the adult's texts; cleared by 0x205B's no").indirect("sets: not ported (the adult's race)"),
-        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_SECOND_RACE)).reads().sets().clears().note("the adult's texts; cleared by 0x205B's no").indirect("sets: not ported (the adult's race)"),
-        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_HORSETYPE)).sets().note("the rented horse's type").indirect("not ported (the adult's race)"),
-        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_0F)).sets().clears().note("the race started or a transition out").indirect("not ported (the adult's race)"),
+        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_LOST_ONCE)).reads().sets().clears().note("the adult's texts; set by a loss; cleared by the rematch"),
+        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_SECOND_RACE)).reads().sets().clears().note("the adult's texts; set by the first win; cleared by the rematch"),
+        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_HORSETYPE)).sets().note("the rented horse's type, as the race starts").indirect("written as a bit (WRITE_EVENTINF_INGO_RACE_HORSETYPE)"),
+        FlagUse::new(event_inf!(EVENTINF_INGO_RACE_0F)).sets().clears().note("the race started or a transition out").indirect("written as a bit (WRITE_EVENTINF_INGO_RACE_0F)"),
     ],
     todo: false,
     objects: &[],
@@ -188,6 +207,28 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         TextLine::new(0x2040).when("shape.rot.z", &[1, 2]).cond("Link a child, only at Lon Lon Ranch, once he's been talked to").note("tough to be a working man"),
         TextLine::new(0x2045).when("shape.rot.z", &[3, 4]).cond("Link a child, only in the stable, the first time").note("I do all the work around here"),
         TextLine::new(0x2046).when("shape.rot.z", &[3, 4]).cond("Link a child, only in the stable, once he's been talked to").note("I should be in charge"),
+        TextLine::new(0x2030).when("params", &[2]).cond("an adult before Epona, by day, the first time").note("Talon was weak; Ganondorf gave me the ranch; want to ride?"),
+        TextLine::new(0x2031).when("params", &[2]).cond("an adult before Epona, by day, after").note("pay me 10 Rupees and you can ride"),
+        TextLine::new(0x2032).when("params", &[2]).cond("\"Don't ride\"").note("scram ya little punk"),
+        TextLine::new(0x2033).when("params", &[2]).cond("\"Ride\" with under 10 Rupees").note("you don't have enough"),
+        TextLine::new(0x2034).when("params", &[2]).cond("\"Ride\" with 10 Rupees").note("hear how to ride?"),
+        TextLine::new(0x2035).when("params", &[2]).cond("\"Listen\"").note("how to mount, run, whip, jump and dismount"),
+        TextLine::new(0x205C).when("params", &[2]).cond("the 10 Rupees paid").note("thank you so much"),
+        TextLine::new(0x2036).when("params", &[3]).cond("the rental, Link on foot, or after the race was declined").note("talk from horseback; going home?"),
+        TextLine::new(0x2037).when("params", &[3]).cond("the rental, Link riding, before a ridden rental").note("stop to dismount; have I seen you before?"),
+        TextLine::new(0x201F).when("params", &[3]).cond("\"No, I want to ride\"").note("when your time is up, I'll kick you out"),
+        TextLine::new(0x2038).when("params", &[3]).cond("the rental, Link riding, after a ridden rental").note("a race around the corral for 50 Rupees?"),
+        TextLine::new(0x2039).when("params", &[2, 3]).cond("the race declined, or under 50 Rupees").note("don't you have even 50 Rupees?"),
+        TextLine::new(0x2025).when("params", &[3]).cond("the rental's minute over").note("time's up, young man"),
+        TextLine::new(0x203D).when("params", &[2]).cond("Ingo won, the first time").note("I get your 50 Rupees"),
+        TextLine::new(0x203E).when("params", &[2]).cond("Ingo won again").note("you're just a kid; come back any time"),
+        TextLine::new(0x205B).when("params", &[2]).cond("after a loss").note("another race for 50 Rupees?"),
+        TextLine::new(0x203A).when("params", &[2]).cond("Link won the first race").note("another race: win and you keep the horse"),
+        TextLine::new(0x203B).when("params", &[4]).cond("Link won the second race").note("is that Epona? I bet her and lost"),
+        TextLine::new(0x203C).when("params", &[4]).cond("after 0x203B, and at the gate after").note("I'll never let you leave this ranch"),
+        TextLine::new(0x204E).cond("an adult before Epona, by night (asleep)").note("Z Z Z... s-stop that song"),
+        TextLine::new(0x2057).cond("an adult with Epona, by night (asleep)").note("Z Z Z... not easy to be a working man"),
+        TextLine::new(0x205F).cond("an adult with Epona, by day (obedient)").note("I am Ingo; honored to work here"),
     ],
 };
 
@@ -205,6 +246,16 @@ const ATTENTION_RANGE_6: u8 = 6;
 /// `NpcTrackingMode` (`actor.h`).
 const NPC_TRACKING_PLAYER_AUTO_TURN: i16 = 0;
 const NPC_TRACKING_NONE: i16 = 1;
+const NPC_TRACKING_FULL_BODY: i16 = 4;
+/// `PLAYER_CSACTION_7`, `PLAYER_CSACTION_8` (`player.h`): free again; halted for a transition.
+const PLAYER_CSACTION_7: u8 = 7;
+const PLAYER_CSACTION_8: u8 = 8;
+/// `HUD_VISIBILITY_NOTHING`, `_NOTHING_ALT`, `_ALL` (`save.h`).
+const HUD_VISIBILITY_NOTHING: u16 = 1;
+const HUD_VISIBILITY_NOTHING_ALT: u16 = 2;
+const HUD_VISIBILITY_ALL: u16 = 50;
+/// `CS_INDEX_0` (`save.h`): the race's intro (the ranch's cutscene layer 4).
+const CS_INDEX_0: u16 = 0xFFF0;
 /// `NpcTalkState` (`actor.h`).
 pub const NPC_TALK_STATE_IDLE: i16 = 0;
 pub const NPC_TALK_STATE_TALKING: i16 = 1;
@@ -273,6 +324,10 @@ const SLEEPING_ANIM: &str = "gIngoSleepingAnim";
 
 // `EnInHorseAnimation` (`z_en_in.h`).
 const ENIN_HORSE_ANIM_SITTING_FORWARD: usize = 1;
+const ENIN_HORSE_ANIM_LASHING_FAST: i16 = 3;
+const ENIN_HORSE_ANIM_LASHING_SLOW: i16 = 4;
+const ENIN_HORSE_ANIM_WHOOPING: i16 = 7;
+const ENIN_HORSE_ANIM_MAX: i16 = 8;
 /// `sHorsebackAnimations`, by `EnInHorseAnimation`.
 const HORSEBACK_ANIMATIONS: [&str; 8] = [
     "gIngoHorsebackSlowRideAnim",
@@ -380,7 +435,7 @@ struct Statics {
 pub enum Action {
     WaitForObject,
     Idle,
-    // The adult's race and rental (not ported, Phase 13).
+    // The adult's race and rental.
     Racing,
     StartRentalPeriod,
     RentalPeriod,
@@ -413,6 +468,11 @@ pub struct EnIn {
     pub text_state: i16,
     pub prev_text_state: i16,
     pub unk_1fc: i16,
+    /// `subCamId`, `returnToCamId`; `subCamAtOffset`, `subCamEyeOffset` (`EnIn_ClosingGate`).
+    pub sub_cam_id: i16,
+    pub return_to_cam_id: i16,
+    pub sub_cam_at_offset: Vec3,
+    pub sub_cam_eye_offset: Vec3,
     pub interact_info: NpcTrack,
     /// `fidgetVec[i].y`, `.z`.
     pub fidget_y: [i16; INGO_LIMB_MAX],
@@ -496,6 +556,10 @@ impl EnIn {
             text_state: 0,
             prev_text_state: 0,
             unk_1fc: 0,
+            sub_cam_id: 0,
+            return_to_cam_id: 0,
+            sub_cam_at_offset: Vec3::ZERO,
+            sub_cam_eye_offset: Vec3::ZERO,
             interact_info: NpcTrack::default(),
             fidget_y: [0; INGO_LIMB_MAX],
             fidget_z: [0; INGO_LIMB_MAX],
@@ -520,29 +584,7 @@ impl EnIn {
             play.save.event_inf[EVENTINF_INDEX_HORSES] = 0;
         }
         this.action = Action::WaitForObject;
-
-        // EnIn_WaitForObject's choice, made here: where it would start the adult's race or start
-        // modes, a placeholder.
-        if let Some(what) = this.adult_part(play) {
-            log::info!("En_In: the adult's race and rental (Phase 13) aren't ported: a placeholder ({what})");
-            return oot_game::spawn::Placeholder::init(this.actor, play);
-        }
         Box::new(this)
-    }
-
-    /// The adult's part `EnIn_WaitForObject` would start on the first update: the race
-    /// (`EnIn_StartingRace`), `ENIN_START_MODE_RUNNING_RANCH` when he stays, `_SLEEPING` or
-    /// `_OBEDIENT`.
-    fn adult_part(&self, play: &PlayState) -> Option<&'static str> {
-        if self.starting_race_check(play) {
-            return Some("EnIn_StartingRace: the race's rider");
-        }
-        match Self::get_start_mode(&self.actor, play) {
-            ENIN_START_MODE_RUNNING_RANCH if Self::stays_spawned(race_state(play), TYPE.get(self.actor.params)) => Some("ENIN_START_MODE_RUNNING_RANCH"),
-            ENIN_START_MODE_SLEEPING => Some("ENIN_START_MODE_SLEEPING"),
-            ENIN_START_MODE_OBEDIENT => Some("ENIN_START_MODE_OBEDIENT"),
-            _ => None,
-        }
     }
 
     /// `EnIn_GetTextIdChild`.
@@ -559,38 +601,38 @@ impl EnIn {
         // MaskReaction_GetTextId(play, MASK_REACTION_SET_INGO): not ported, 0.
         let s = &play.save;
         if s.get_event_chk_inf(EVENTCHKINF_EPONA_OBTAINED) {
-            return if s.is_day() { 0x205F } else { 0x2057 }; // schema: not ported (the adult's Ingo)
+            return if s.is_day() { 0x205F } else { 0x2057 };
         }
         if !s.is_day() {
-            return 0x204E; // schema: not ported (the adult's Ingo)
+            return 0x204E;
         }
         match race_state(play) {
             INGO_RACE_STATE_HORSE_RENTAL_PERIOD => {
                 if player_state1(play) & PLAYER_STATE1_23 == 0 {
-                    0x2036 // schema: not ported (the adult's Ingo)
+                    0x2036
                 } else if s.get_event_chk_inf(EVENTCHKINF_1B) {
-                    if s.get_inf_table(INFTABLE_A2) { 0x2036 } else { 0x2038 } // schema: not ported (the adult's Ingo)
+                    if s.get_inf_table(INFTABLE_A2) { 0x2036 } else { 0x2038 }
                 } else {
-                    0x2037 // schema: not ported (the adult's Ingo)
+                    0x2037
                 }
             }
             INGO_RACE_STATE_PLAYER_LOSE => {
                 if s.get_event_inf(EVENTINF_INGO_RACE_SECOND_RACE) || s.get_event_inf(EVENTINF_INGO_RACE_LOST_ONCE) {
-                    0x203E // schema: not ported (the adult's Ingo)
+                    0x203E
                 } else {
-                    0x203D // schema: not ported (the adult's Ingo)
+                    0x203D
                 }
             }
-            INGO_RACE_STATE_FIRST_WIN => 0x203A, // schema: not ported (the adult's Ingo)
-            INGO_RACE_STATE_TRAPPED_WIN_UNUSED | INGO_RACE_STATE_TRAPPED_WIN_EPONA => 0x203C, // schema: not ported (the adult's Ingo)
+            INGO_RACE_STATE_FIRST_WIN => 0x203A,
+            INGO_RACE_STATE_TRAPPED_WIN_UNUSED | INGO_RACE_STATE_TRAPPED_WIN_EPONA => 0x203C,
             // Ask to race again after losing the race.
-            INGO_RACE_STATE_REMATCH => 0x205B, // schema: not ported (the adult's Ingo)
+            INGO_RACE_STATE_REMATCH => 0x205B,
             // INGO_RACE_STATE_RACING and the rest: pay to ride, or his first words first.
             _ => {
                 if s.get_inf_table(INFTABLE_INGO_TALKED_TO_ADULT_LINK) {
-                    0x2031 // schema: not ported (the adult's Ingo)
+                    0x2031
                 } else {
-                    0x2030 // schema: not ported (the adult's Ingo)
+                    0x2030
                 }
             }
         }
@@ -607,7 +649,7 @@ impl EnIn {
         let mut talk_state = NPC_TALK_STATE_IDLE;
         match actor.text_id {
             0x2045 => play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_CHILD_LINK_AFTER_TALON_RETURNED),
-            0x203E => talk_state = NPC_TALK_STATE_ACTION, // schema: not ported (the adult's Ingo)
+            0x203E => talk_state = NPC_TALK_STATE_ACTION,
             0x203F => {
                 play.save.set_event_chk_inf(EVENTCHKINF_11);
                 play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_CHILD_LINK_BEFORE_TALON_RETURNED);
@@ -622,48 +664,48 @@ impl EnIn {
         let mut talk_state = NPC_TALK_STATE_TALKING;
         let choice = play.msg_ctx.choice_index;
         match actor.text_id {
-            0x2030 | 0x2031 => { // schema: not ported (the adult's Ingo)
+            0x2030 | 0x2031 => {
                 actor.text_id = if choice == 1 {
-                    0x2032 // schema: not ported (the adult's Ingo)
+                    0x2032
                 } else if play.save.rupees < 10 {
-                    0x2033 // schema: not ported (the adult's Ingo)
+                    0x2033
                 } else {
-                    0x2034 // schema: not ported (the adult's Ingo)
+                    0x2034
                 };
                 play.continue_textbox(actor.text_id);
                 play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_ADULT_LINK);
             }
-            0x2034 => { // schema: not ported (the adult's Ingo)
+            0x2034 => {
                 if choice == 1 {
                     oot_game::item::rupees_change_by(&mut play.save, -10);
-                    actor.text_id = 0x205C; // schema: not ported (the adult's Ingo)
+                    actor.text_id = 0x205C;
                 } else {
-                    actor.text_id = 0x2035; // schema: not ported (the adult's Ingo)
+                    actor.text_id = 0x2035;
                 }
                 play.continue_textbox(actor.text_id);
             }
-            0x2036 | 0x2037 => { // schema: not ported (the adult's Ingo)
+            0x2036 | 0x2037 => {
                 if choice == 1 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x201F; // schema: not ported (the adult's Ingo)
+                    actor.text_id = 0x201F;
                     play.continue_textbox(actor.text_id);
                 }
             }
-            0x2038 => { // schema: not ported (the adult's Ingo)
+            0x2038 => {
                 if choice == 0 && play.save.rupees >= 50 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x2039; // schema: not ported (the adult's Ingo)
+                    actor.text_id = 0x2039;
                     play.continue_textbox(actor.text_id);
                     play.save.set_inf_table(INFTABLE_A2);
                 }
             }
-            0x205B => { // schema: not ported (the adult's Ingo)
+            0x205B => {
                 if choice == 0 && play.save.rupees >= 50 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x2039; // schema: not ported (the adult's Ingo)
+                    actor.text_id = 0x2039;
                     play.continue_textbox(actor.text_id);
                     set_race_state(play, INGO_RACE_STATE_OFFER_RENTAL);
                     play.save.clear_event_inf(EVENTINF_INGO_RACE_LOST_ONCE);
@@ -679,9 +721,9 @@ impl EnIn {
 
     /// `EnIn_UpdateTalkStateOnEvent`.
     fn update_talk_state_on_event(play: &mut PlayState, actor: &mut Actor) -> i16 {
-        if actor.text_id == 0x2035 { // schema: not ported (the adult's Ingo)
+        if actor.text_id == 0x2035 {
             oot_game::item::rupees_change_by(&mut play.save, -10);
-            actor.text_id = 0x205C; // schema: not ported (the adult's Ingo)
+            actor.text_id = 0x205C;
             play.continue_textbox(actor.text_id);
             NPC_TALK_STATE_TALKING
         } else {
@@ -712,13 +754,20 @@ impl EnIn {
         }
     }
 
-    /// `EnIn_UpdateTracking`: Link, from 16 up; not while running, losing or asleep.
+    /// `EnIn_UpdateTracking`: Link, from 16 up; not while running, losing or asleep; his whole body
+    /// in the rental; the camera's eye, from 60 up, as it ends.
     fn update_tracking(&mut self, play: &mut PlayState) {
-        let tracking_mode = if self.skel.is(RUNNING_ANIM) || self.skel.is(LOSING_ANIM) || self.skel.is(SLEEPING_ANIM) { NPC_TRACKING_NONE } else { NPC_TRACKING_PLAYER_AUTO_TURN };
-        // EnIn_RentalPeriod: NPC_TRACKING_FULL_BODY; EnIn_EndRentalPeriod: the view's eye, from 60
-        // up. Neither is ported (the adult's race), so neither is ever his action here.
-        self.interact_info.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
-        self.interact_info.eye_height = 16.0;
+        let mut tracking_mode = if self.skel.is(RUNNING_ANIM) || self.skel.is(LOSING_ANIM) || self.skel.is(SLEEPING_ANIM) { NPC_TRACKING_NONE } else { NPC_TRACKING_PLAYER_AUTO_TURN };
+        if self.action == Action::RentalPeriod {
+            tracking_mode = NPC_TRACKING_FULL_BODY;
+        }
+        if self.action == Action::EndRentalPeriod {
+            self.interact_info.target = play.view.eye;
+            self.interact_info.eye_height = 60.0;
+        } else {
+            self.interact_info.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
+            self.interact_info.eye_height = 16.0;
+        }
         let mut t = self.interact_info;
         track_point(play, &mut self.actor, &mut t, 1, tracking_mode);
         self.interact_info = t;
@@ -920,6 +969,335 @@ impl EnIn {
         }
     }
 
+    /// Link's horse (`player->rideActor`).
+    fn ride_actor(play: &PlayState) -> Option<ActorHandle> {
+        play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).and_then(|p| p.ride_actor())
+    }
+
+    /// `player->rideActor->freezeTimer = 10` (if he rides) and `player->actor.freezeTimer = 10`.
+    fn freeze_player(play: &mut PlayState) {
+        if let Some(r) = Self::ride_actor(play).and_then(|h| play.actors.actor_mut(h)) {
+            r.freeze_timer = 10;
+        }
+        if let Some(p) = play.player.and_then(|h| play.actors.actor_mut(h)) {
+            p.freeze_timer = 10;
+        }
+    }
+
+    /// `play->msgCtx.stateTimer = t; play->msgCtx.msgMode = MSGMODE_TEXT_CLOSING`.
+    fn close_text(play: &mut PlayState, t: u8) {
+        play.msg_ctx.state_timer = t;
+        play.msg_ctx.msg_mode = MSGMODE_TEXT_CLOSING;
+    }
+
+    /// `EnIn_StartTransition`: to the gate (`ENTR_LON_LON_RANCH_8`, 0), the corral (`_6`, 1) or the
+    /// gateway with the race's intro (`_0` and `CS_INDEX_0`, 2).
+    fn start_transition(&mut self, play: &mut PlayState, index: usize, transition_type: u8) {
+        let entrances = [ENTR_LON_LON_RANCH_8, ENTR_LON_LON_RANCH_6, ENTR_LON_LON_RANCH_0];
+        play.transition.next_entrance_index = entrances[index];
+        if index == 2 {
+            play.save.next_cutscene_index = CS_INDEX_0;
+        }
+        play.transition.ty = transition_type;
+        play.transition.trigger = TRANS_TRIGGER_START;
+        let me = play.cur_actor;
+        play.player_set_cs_action_with_halted_actors(me, PLAYER_CSACTION_8);
+        oot_game::interface::change_alpha(&mut play.save, HUD_VISIBILITY_NOTHING);
+        if index == 0 {
+            play.save.r_exited_scene_riding_horse = false;
+        }
+        play.save.timer_state = TIMER_STATE_OFF;
+    }
+
+    /// `EnIn_RentalTimeExpired`: a sub camera on him, 0x2025, Link (and his horse) put 100 before
+    /// him and held.
+    fn rental_time_expired(&mut self, play: &mut PlayState) {
+        self.sub_cam_id = play.create_sub_camera();
+        play.change_camera_status(CAM_ID_MAIN, CAM_STAT_WAIT);
+        play.change_camera_status(self.sub_cam_id, CAM_STAT_ACTIVE);
+        let at = self.actor.world_pos + Vec3::new(0.0, 60.0, 0.0);
+        let eye = Vec3::new(at.x, at.y - 22.0, at.z + 40.0);
+        play.camera_set_at_eye(self.sub_cam_id, at, eye);
+        self.actor.shape_rot.y = oot_game::target::yaw_to(self.actor.world_pos, eye);
+        self.interact_info.head = [0; 3];
+        self.interact_info.torso = [0; 3];
+        play.start_textbox(0x2025, None);
+        self.interact_info.talk_state = NPC_TALK_STATE_TALKING;
+        let yaw = self.actor.shape_rot.y;
+        let pos = self.actor.world_pos + Vec3::new(100.0 * sin_s(yaw), 0.0, 100.0 * cos_s(yaw));
+        if let Some(p) = play.player.and_then(|h| play.actors.actor_mut(h)) {
+            p.world_pos = pos;
+        }
+        if let Some(r) = Self::ride_actor(play).and_then(|h| play.actors.actor_mut(h)) {
+            r.world_pos = pos;
+            r.freeze_timer = 10;
+        }
+        if let Some(p) = play.player.and_then(|h| play.actors.actor_mut(h)) {
+            p.freeze_timer = 10;
+        }
+        self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
+        play.letterbox.set_size_target(32);
+        oot_game::interface::change_alpha(&mut play.save, HUD_VISIBILITY_NOTHING_ALT);
+    }
+
+    /// `EnIn_Racing`: the horse sets his animation (`horsebackAnimationIdx`); his lashes and cries.
+    fn racing(&mut self, play: &mut PlayState) {
+        let me = play.cur_actor;
+        if self.skel.is(HORSEBACK_ANIMATIONS[ENIN_HORSE_ANIM_LASHING_FAST as usize]) || self.skel.is(HORSEBACK_ANIMATIONS[ENIN_HORSE_ANIM_LASHING_SLOW as usize]) {
+            if self.skel.cur_frame == 8.0
+                && let Some(me) = me
+            {
+                // Audio_PlaySfxRandom(&projectedPos, NA_SE_VO_IN_LASH_0, LASH_1 - LASH_0 + 1).
+                play.audio.play_sfx_random(SfxPos::Actor(me), NA_SE_VO_IN_LASH_0, (NA_SE_VO_IN_LASH_1 - NA_SE_VO_IN_LASH_0 + 1) as u8);
+            }
+        }
+        if self.skel.is(HORSEBACK_ANIMATIONS[ENIN_HORSE_ANIM_WHOOPING as usize]) && self.skel.cur_frame == 20.0 {
+            audio_play_actor_sfx2(play, NA_SE_VO_IN_CRY_0);
+        }
+        if self.skel.update() {
+            self.horseback_animation_idx %= ENIN_HORSE_ANIM_MAX;
+            self.unused_animation_idx = self.horseback_animation_idx;
+            if self.horseback_animation_idx == ENIN_HORSE_ANIM_LASHING_FAST || self.horseback_animation_idx == ENIN_HORSE_ANIM_LASHING_SLOW {
+                audio_play_actor_sfx2(play, NA_SE_IT_LASH);
+                if play.rand.zero_one() < 0.3 {
+                    audio_play_actor_sfx2(play, NA_SE_IT_INGO_HORSE_NEIGH);
+                }
+            }
+            let anim = self.horseback[self.horseback_animation_idx as usize].clone();
+            let last = anim.last_frame();
+            self.skel.change(anim, 1.0, 0.0, last, ANIMMODE_ONCE, -10.0);
+        }
+    }
+
+    /// `EnIn_StartRentalPeriod`: the rental paid (the talk's action): to the corral.
+    fn start_rental_period(&mut self, play: &mut PlayState) {
+        if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            self.start_transition(play, 1, trans_type_circle(TCA_NORMAL, TCC_BLACK, TCS_FAST));
+            set_race_state(play, INGO_RACE_STATE_HORSE_RENTAL_PERIOD);
+            write_race_0f(play, 1);
+            play.save.clear_inf_table(INFTABLE_A2);
+            play.environment_force_play_sequence(NA_BGM_HORSE);
+            Self::close_text(play, 0);
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+        }
+    }
+
+    /// `EnIn_RentalPeriod`: the minute's timer; going home, or the race.
+    fn rental_period(&mut self, play: &mut PlayState) {
+        if !play.save.get_event_chk_inf(EVENTCHKINF_1B) && player_state1(play) & PLAYER_STATE1_23 != 0 {
+            play.save.set_inf_table(INFTABLE_AB);
+        }
+        if play.save.timer_state == TIMER_STATE_STOP {
+            play.audio.play_sfx_centered(NA_SE_SY_FOUND);
+            self.rental_time_expired(play);
+            self.action = Action::EndRentalPeriod;
+            play.save.timer_state = TIMER_STATE_OFF;
+        } else if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            let (entrance_index, transition_type);
+            if play.msg_ctx.choice_index == 0 {
+                if play.save.rupees < 50 {
+                    Self::close_text(play, 4);
+                    self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+                    return;
+                }
+                // WRITE_EVENTINF_INGO_RACE_HORSETYPE(((EnHorse*)player->rideActor)->type).
+                let ty = Self::ride_actor(play).and_then(|h| play.actors.downcast::<crate::en_horse::EnHorse>(h)).map(|h| h.ty).unwrap_or(0);
+                // schema: EVENTINF_INGO_RACE_HORSETYPE written as a bit.
+                let w = &mut play.save.event_inf[EVENTINF_INDEX_HORSES];
+                *w = (*w & !(1 << EVENTINF_INGO_RACE_HORSETYPE)) | (((ty as u16) & 1) << EVENTINF_INGO_RACE_HORSETYPE);
+                set_race_state(play, INGO_RACE_STATE_RACING);
+                entrance_index = 2;
+                transition_type = TRANS_TYPE_FADE_BLACK;
+            } else {
+                play.audio.play_sfx_centered(NA_SE_SY_FOUND);
+                if !play.save.get_event_chk_inf(EVENTCHKINF_1B) && play.save.get_inf_table(INFTABLE_AB) {
+                    play.save.set_event_chk_inf(EVENTCHKINF_1B);
+                    play.save.set_inf_table(INFTABLE_AB);
+                }
+                set_race_state(play, INGO_RACE_STATE_OFFER_RENTAL);
+                entrance_index = 0;
+                transition_type = trans_type_circle(TCA_NORMAL, TCC_BLACK, TCS_FAST);
+            }
+            self.start_transition(play, entrance_index, transition_type);
+            play.msg_ctx.state_timer = 0;
+            write_race_0f(play, 1);
+            play.msg_ctx.msg_mode = MSGMODE_TEXT_CLOSING;
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+        }
+    }
+
+    /// `EnIn_PlayerLostRace`: he talks at once (`ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED`); -50 Rupees.
+    fn player_lost_race(&mut self, play: &mut PlayState) {
+        if self.interact_info.talk_state == NPC_TALK_STATE_IDLE {
+            self.actor.flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+        } else if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            oot_game::item::rupees_change_by(&mut play.save, -50);
+            self.actor.flags &= !ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+            self.change_anim(ENIN_ANIM_STANDING_FOOT_FORWARD_MORPH);
+            self.action = Action::OfferingRematch;
+            set_race_state(play, INGO_RACE_STATE_REMATCH);
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+            play.save.set_event_inf(EVENTINF_INGO_RACE_LOST_ONCE);
+            if !play.save.get_event_inf(EVENTINF_INGO_RACE_SECOND_RACE) {
+                Self::close_text(play, 4);
+            }
+        }
+    }
+
+    /// `EnIn_OfferingRematch`: 0x205B's yes with 50 Rupees races again.
+    fn offering_rematch(&mut self, play: &mut PlayState) {
+        if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            let choice = play.msg_ctx.choice_index;
+            if (choice == 0 && play.save.rupees < 50) || choice == 1 {
+                set_race_state(play, INGO_RACE_STATE_OFFER_RENTAL);
+                self.action = Action::StartRentalPeriod;
+            } else {
+                self.start_transition(play, 2, trans_type_circle(TCA_STARBURST, TCC_BLACK, TCS_FAST));
+                set_race_state(play, INGO_RACE_STATE_RACING);
+                write_race_0f(play, 1);
+                Self::close_text(play, 0);
+            }
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+            play.save.clear_event_inf(EVENTINF_INGO_RACE_LOST_ONCE);
+            play.save.clear_event_inf(EVENTINF_INGO_RACE_SECOND_RACE);
+        }
+    }
+
+    /// `EnIn_PlayerWonFirstRace`: 0x203A at once, his scream, then the second race.
+    fn player_won_first_race(&mut self, play: &mut PlayState) {
+        if self.interact_info.talk_state == NPC_TALK_STATE_IDLE {
+            self.actor.flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+            return;
+        }
+        if self.losing_scream_timer != 0 {
+            self.losing_scream_timer -= 1;
+            if self.losing_scream_timer == 0 {
+                audio_play_actor_sfx2(play, NA_SE_VO_IN_LOST);
+            }
+        }
+        if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            self.actor.flags &= !ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+            self.start_transition(play, 2, trans_type_circle(TCA_STARBURST, TCC_BLACK, TCS_FAST));
+            set_race_state(play, INGO_RACE_STATE_RACING);
+            write_race_0f(play, 1);
+            Self::close_text(play, 0);
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+            play.save.set_event_inf(EVENTINF_INGO_RACE_SECOND_RACE);
+        }
+    }
+
+    /// `EnIn_PlayerWonSecondRace`: a sub camera on him, 0x203B.
+    fn player_won_second_race(&mut self, play: &mut PlayState) {
+        self.sub_cam_id = play.create_sub_camera();
+        self.return_to_cam_id = play.active_cam_id;
+        play.change_camera_status(self.return_to_cam_id, CAM_STAT_WAIT);
+        play.change_camera_status(self.sub_cam_id, CAM_STAT_ACTIVE);
+        self.sub_cam_at_offset = Vec3::new(0.0, 50.0, 0.0);
+        self.sub_cam_eye_offset = Vec3::new(0.0, 50.0, 50.0);
+        let at = self.actor.world_pos + self.sub_cam_at_offset;
+        let eye = self.actor.world_pos + self.sub_cam_eye_offset;
+        play.camera_set_at_eye(self.sub_cam_id, at, eye);
+        self.actor.text_id = 0x203B;
+        play.start_textbox(self.actor.text_id, None);
+        self.interact_info.talk_state = NPC_TALK_STATE_TALKING;
+        self.unk_1fc = 0;
+        play.cs_ctx.frames = 0;
+        play.letterbox.set_size_target(32);
+        oot_game::interface::change_alpha(&mut play.save, HUD_VISIBILITY_NOTHING_ALT);
+        self.action = Action::ClosingGate;
+    }
+
+    /// `EnIn_ClosingGate`: 0x203B then 0x203C, then the camera pulls back over 50 frames (the
+    /// gate's sound at 44), Link held.
+    fn closing_gate(&mut self, play: &mut PlayState) {
+        Self::freeze_player(play);
+        if self.actor.text_id == 0x203B && self.losing_scream_timer != 0 {
+            self.losing_scream_timer -= 1;
+            if self.losing_scream_timer == 0 {
+                audio_play_actor_sfx2(play, NA_SE_VO_IN_LOST);
+            }
+        }
+        if self.interact_info.talk_state != NPC_TALK_STATE_IDLE {
+            if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+                if self.actor.text_id == 0x203B {
+                    self.actor.text_id = 0x203C;
+                    play.start_textbox(self.actor.text_id, None);
+                    self.interact_info.talk_state = NPC_TALK_STATE_TALKING;
+                    self.change_anim(ENIN_ANIM_STANDING_FOOT_FORWARD_MORPH);
+                } else {
+                    play.msg_ctx.msg_mode = MSGMODE_TEXT_CLOSING;
+                    self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+                }
+            }
+        } else {
+            // `play->csCtx.curFrame++ >= 50`.
+            let f = play.cs_ctx.frames;
+            play.cs_ctx.frames = f.wrapping_add(1);
+            if f >= 50 {
+                self.action = Action::FinishClosingGate;
+                return;
+            }
+            if play.cs_ctx.frames == 44 {
+                audio_play_actor_sfx2(play, NA_SE_EV_RONRON_DOOR_CLOSE);
+            }
+            eng_math::smooth_step_to_f(&mut self.sub_cam_at_offset.x, 0.0, 0.06, 10000.0, 0.0);
+            eng_math::smooth_step_to_f(&mut self.sub_cam_at_offset.y, 50.0, 0.06, 10000.0, 0.0);
+            eng_math::smooth_step_to_f(&mut self.sub_cam_at_offset.z, 0.0, 0.06, 10000.0, 0.0);
+            eng_math::smooth_step_to_f(&mut self.sub_cam_eye_offset.x, 0.0, 0.06, 10000.0, 0.0);
+            eng_math::smooth_step_to_f(&mut self.sub_cam_eye_offset.y, 150.0, 0.06, 10000.0, 0.0);
+            eng_math::smooth_step_to_f(&mut self.sub_cam_eye_offset.z, 300.0, 0.06, 10000.0, 0.0);
+            let at = self.actor.world_pos + self.sub_cam_at_offset;
+            let eye = self.actor.world_pos + self.sub_cam_eye_offset;
+            play.camera_set_at_eye(self.sub_cam_id, at, eye);
+        }
+    }
+
+    /// `EnIn_FinishClosingGate`.
+    fn finish_closing_gate(&mut self, play: &mut PlayState) {
+        play.change_camera_status(self.return_to_cam_id, CAM_STAT_ACTIVE);
+        play.clear_camera(self.sub_cam_id);
+        let me = play.cur_actor;
+        play.player_set_cs_action_with_halted_actors(me, PLAYER_CSACTION_7);
+        oot_game::interface::change_alpha(&mut play.save, HUD_VISIBILITY_ALL);
+        self.action = Action::GuardingGate;
+    }
+
+    /// `EnIn_GuardingGate`: Link behind him (more than 90 degrees off his front, 90 ahead of him):
+    /// out to the field (`ENTR_HYRULE_FIELD_15`).
+    fn guarding_gate(&mut self, play: &mut PlayState) {
+        let yaw_s = self.actor.shape_rot.y;
+        let pos = self.actor.world_pos + Vec3::new(90.0 * sin_s(yaw_s), 0.0, 90.0 * cos_s(yaw_s));
+        let player_pos = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(pos);
+        // `s32 yaw = Math_Vec3f_Yaw(..)`; `ABS(yaw) > 0x4000`.
+        let yaw = oot_game::target::yaw_to(pos, player_pos) as i32;
+        if yaw.abs() > 0x4000 {
+            play.transition.next_entrance_index = ENTR_HYRULE_FIELD_15;
+            play.transition.trigger = TRANS_TRIGGER_START;
+            play.transition.ty = TRANS_TYPE_FADE_WHITE_FAST;
+            self.action = Action::PlayerEscapesRanch;
+        } else if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
+            Self::close_text(play, 4);
+            self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+        }
+    }
+
+    /// `EnIn_EndRentalPeriod`: Link held until 0x2025 is done, then back to the gate.
+    fn end_rental_period(&mut self, play: &mut PlayState) {
+        Self::freeze_player(play);
+        if self.interact_info.talk_state != NPC_TALK_STATE_ACTION {
+            return;
+        }
+        if !play.save.get_event_chk_inf(EVENTCHKINF_1B) && play.save.get_inf_table(INFTABLE_AB) {
+            play.save.set_event_chk_inf(EVENTCHKINF_1B);
+            play.save.set_inf_table(INFTABLE_AB);
+        }
+        self.start_transition(play, 0, trans_type_circle(TCA_STARBURST, TCC_BLACK, TCS_FAST));
+        set_race_state(play, INGO_RACE_STATE_OFFER_RENTAL);
+        write_race_0f(play, 1);
+        Self::close_text(play, 4);
+        self.interact_info.talk_state = NPC_TALK_STATE_IDLE;
+    }
+
     /// The limb matrices `EnIn_Draw` draws with: `EnIn_OverrideLimbDraw`'s head and chest turns
     /// and the fidget's sway of the chest and shoulders (`sway`: limb, y angle, z angle).
     fn pose(skeleton: &Skeleton, joints: &[[i16; 3]], head: [i16; 2], torso: [i16; 2], sway: &[(usize, i16, i16)]) -> Vec<Mat4> {
@@ -988,9 +1366,19 @@ impl ActorImpl for EnIn {
         }
         self.update_eyes(play);
         match self.action {
-            Action::Idle => {}
-            Action::WaitForObject => {}
-            a => log::debug!("En_In: EnIn_{a:?} (the adult's race and rental, Phase 13) isn't ported"),
+            Action::WaitForObject => self.wait_for_object(play),
+            Action::Idle | Action::PlayerEscapesRanch => {}
+            Action::Racing => self.racing(play),
+            Action::StartRentalPeriod => self.start_rental_period(play),
+            Action::RentalPeriod => self.rental_period(play),
+            Action::OfferingRematch => self.offering_rematch(play),
+            Action::ClosingGate => self.closing_gate(play),
+            Action::GuardingGate => self.guarding_gate(play),
+            Action::EndRentalPeriod => self.end_rental_period(play),
+            Action::FinishClosingGate => self.finish_closing_gate(play),
+            Action::PlayerLostRace => self.player_lost_race(play),
+            Action::PlayerWonFirstRace => self.player_won_first_race(play),
+            Action::PlayerWonSecondRace => self.player_won_second_race(play),
         }
         if self.action != Action::Racing {
             self.fidget(play);

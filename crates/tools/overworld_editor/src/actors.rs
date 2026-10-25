@@ -170,6 +170,8 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Door_Toki", "Door of Time collision", Group::SetPiece),
     ("Bg_Spot00_Break", "Broken drawbridge (adult field)", Group::SetPiece),
     ("Bg_Umajump", "Jumpable horse fence", Group::SetPiece),
+    ("Bg_Ingate", "Lon Lon Ranch gate", Group::SetPiece),
+    ("En_Horse_Game_Check", "Horse game referee", Group::Trigger),
     ("Bg_Mjin", "Warp pad", Group::Door),
     ("En_Heishi3", "Castle sentry", Group::Character),
     ("En_Heishi2", "Gate guard", Group::Character),

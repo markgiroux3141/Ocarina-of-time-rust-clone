@@ -58,6 +58,11 @@ pub const NA_BGM_KOKIRI: u16 = 0x3C;
 pub const NA_BGM_GREAT_FAIRY: u16 = 0x28;
 pub const NA_BGM_SARIA_THEME: u16 = 0x3E;
 pub const NA_BGM_WINDMILL: u16 = 0x4C;
+/// `NA_BGM_HORSE`, `NA_BGM_HORSE_GOAL`, `NA_BGM_INGO` (`sequence_table.h`'s `Sequence_64` to `_66`):
+/// the rental and the race, its finish, Ingo's after a win.
+pub const NA_BGM_HORSE: u16 = 0x40;
+pub const NA_BGM_HORSE_GOAL: u16 = 0x41;
+pub const NA_BGM_INGO: u16 = 0x42;
 /// `NA_BGM_FIRE_BOSS` (`sequence_table.h`'s `Sequence_107`): King Dodongo's and Volvagia's fight.
 pub const NA_BGM_FIRE_BOSS: u16 = 0x6B;
 pub const NA_BGM_ESCAPE: u16 = 0x62;

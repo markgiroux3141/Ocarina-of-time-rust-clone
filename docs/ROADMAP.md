@@ -874,7 +874,13 @@ with rupees, `En_Po_Field` in, a debug `epona` preset for the field).
 **Milestone 1, riding Epona, is done** (2026-10-25, ADR 0091; hand-tested, committed and pushed): `En_Horse` whole but Phase 18's parts, `Bg_Umajump`, `z_horse.c`, Player's riding
 whole, the horse camera (`Camera_Normal3`), the carrots; the runs `ride-epona` (the corral: her
 song, on her, a fence jumped, off her) and `field-ride` (the debug `epona`: up the ramp and into the
-ranch on her). BACKLOG #51 closed. Next: milestone 2, Ingo, the rental and the races.
+ranch on her). BACKLOG #51 closed.
+
+**Milestone 2, Ingo, the rental and the races, is done** (2026-10-25, ADR 0092; hand-tested,
+committed and pushed): `En_In`'s adult whole, `Bg_Ingate` and `En_Horse_Game_Check`
+whole; the runs `ingo-rental` (the rental to Epona mounted), `ingo-race` (the race taken from
+horseback, to its start), `ingo-lost`, `ingo-won`, and the presets `ingo-rental`, `ingo-race-lost`,
+`ingo-first-win`. Next: milestone 3, Epona won and out (the exit).
 
 ## Cross-cutting debts
 
