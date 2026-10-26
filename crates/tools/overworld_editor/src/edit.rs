@@ -3,7 +3,7 @@
 //!
 //! Loops are numbered as the builder numbers them: 0 is the outline, i + 1 is region i.
 
-use overworld::doc::{node_sharp, Beyond, Doc, Line, Outline, Path, Profile, Region};
+use overworld::doc::{node_sharp, Beyond, Ceiling, Doc, Line, Outline, Path, Profile, Region, Storey};
 use overworld::geom::{dist, dist_to_seg, lerp, point_in_poly, signed_area, P2};
 use overworld::map::sample_loops;
 use overworld::paths::centre_line;
@@ -650,6 +650,41 @@ pub fn new_line(doc: &Doc, kind: &str, nodes: Vec<P2>) -> Line {
     Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge" || kind == "rock", height: None, noise: None, ..Default::default() }
 }
 
+/// How far outside a hole's edge its railing stands (`railing_round`): on the floor round it.
+pub const RAILING_OUT: f64 = 20.0;
+
+/// A closed fence line of `kind` round a loop (a hole's edge as sampled, `Shapes::loops`),
+/// `RAILING_OUT` outside it, its straight runs one piece each.
+pub fn railing_round(doc: &Doc, kind: &str, edge: &[P2]) -> Line {
+    let mut pts: Vec<P2> = edge.to_vec();
+    if pts.len() > 1 && dist(pts[0], pts[pts.len() - 1]) < 1e-6 {
+        pts.pop();
+    }
+    let ccw = signed_area(&pts) > 0.0;
+    let n = pts.len();
+    let normal = |a: P2, b: P2| {
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let l = (dx * dx + dy * dy).sqrt().max(1e-9);
+        if ccw { [dy / l, -dx / l] } else { [-dy / l, dx / l] }
+    };
+    let grown: Vec<P2> = (0..n)
+        .map(|i| {
+            let (a, b, c) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
+            let (n0, n1) = (normal(a, b), normal(b, c));
+            let m = [n0[0] + n1[0], n0[1] + n1[1]];
+            let k = (m[0] * n0[0] + m[1] * n0[1]).max(0.3);
+            [b[0] + m[0] / k * RAILING_OUT, b[1] + m[1] / k * RAILING_OUT]
+        })
+        .collect();
+    let mut closed = grown.clone();
+    closed.push(grown[0]);
+    let mut nodes = overworld::geom::douglas_peucker(&closed, 2.0);
+    nodes.pop();
+    let mut l = new_line(doc, kind, nodes);
+    l.closed = true;
+    l
+}
+
 /// A rock's footprint as the builder samples it (`overworld::rocks::footprint`), closed (its first
 /// point again at the end), each point with the node its piece starts from.
 pub fn rock_footprint(doc: &Doc, l: &Line) -> Vec<(P2, usize)> {
@@ -734,6 +769,103 @@ pub fn blank_doc() -> Doc {
     .unwrap()
 }
 
+// ---- storeys (docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md, slice 1) ----------------------------------
+
+/// How far above (or below) a storey a new one goes: room for a ceiling 340 up and the next slab.
+pub const STOREY_HEIGHT: f64 = 400.0;
+
+/// A pause map storey name's number: 1F is 1, 3F 3, B1 -1, B2 -2.
+fn floor_number(name: &str) -> Option<i32> {
+    match name.strip_prefix('B') {
+        Some(n) => n.parse::<i32>().ok().filter(|&n| n > 0).map(|n| -n),
+        None => name.strip_suffix('F')?.parse::<i32>().ok().filter(|&n| n > 0),
+    }
+}
+
+fn floor_name(n: i32) -> String {
+    if n > 0 { format!("{n}F") } else { format!("B{}", -n) }
+}
+
+/// Adds an empty storey over the top one or under the bottom one, named as the pause map names
+/// them (2F over 1F, B1 under it), and returns where it's kept (`storeys[i]`). The document's own
+/// storey is named 1F when it gets its first neighbour, if it has no name. A storey added on top
+/// takes the old top's ceiling (an enclosed level stays enclosed), and goes over that ceiling if
+/// it has one.
+pub fn add_storey(doc: &mut Doc, above: bool) -> usize {
+    if doc.storeys.is_empty() && doc.storey.is_empty() {
+        doc.storey = "1F".into();
+    }
+    let stack = doc.stack();
+    let end = if above { *stack.last().unwrap() } else { stack[0] };
+    let name = floor_number(&doc.storey_name(end.at)).map(|n| floor_name(if above { if n == -1 { 1 } else { n + 1 } } else if n == 1 { -1 } else { n - 1 })).unwrap_or_default();
+    let own = match end.at {
+        None => doc.outline.ceiling.clone(),
+        Some(i) => doc.storeys[i].ceiling.clone(),
+    };
+    let (z, ceiling) = if above {
+        let gap = match &own {
+            Some(Ceiling::Closed(c)) => c.height + overworld::doc::SLAB,
+            _ => STOREY_HEIGHT,
+        };
+        (end.z + gap, own)
+    } else {
+        (end.z - STOREY_HEIGHT, None)
+    };
+    doc.storeys.push(Storey { name, z, ceiling, ..Default::default() });
+    doc.storeys.len() - 1
+}
+
+/// Moves the storey in the document's own fields up or down, with everything on it.
+pub fn move_storey(doc: &mut Doc, dz: f64) {
+    let roof = |c: &mut Option<Ceiling>| {
+        if let Some(Ceiling::Closed(c)) = c {
+            if let Some(r) = &mut c.roof {
+                *r += dz;
+            }
+        }
+    };
+    doc.outline.z += dz;
+    roof(&mut doc.outline.ceiling);
+    for r in &mut doc.regions {
+        r.z += dz;
+        if let Some(s) = &mut r.surface {
+            *s += dz;
+        }
+        roof(&mut r.ceiling);
+    }
+    for p in &mut doc.paths {
+        for n in &mut p.nodes {
+            if let Some(Some(z)) = n.get_mut(2) {
+                *z += dz;
+            }
+        }
+    }
+    // bridges' anchors and tunnels' floors have heights (a rock's third value is a sharp corner)
+    for l in doc.lines.iter_mut().filter(|l| l.kind == "bridge" || l.kind == "tunnel") {
+        for n in l.nodes.iter_mut().filter(|n| n.len() > 2) {
+            n[2] += dz;
+        }
+    }
+    for z in doc.props.iter_mut().filter_map(|p| p.z.as_mut()).chain(doc.actors.iter_mut().filter_map(|a| a.z.as_mut())) {
+        *z += dz;
+    }
+}
+
+/// Deletes the storey in the document's own fields, putting the one under it there (over it, for
+/// the bottom one). False if it's the only one.
+pub fn delete_storey(doc: &mut Doc) -> bool {
+    let stack = doc.stack();
+    let Some(k) = stack.iter().position(|s| s.at.is_none()).filter(|_| stack.len() > 1) else { return false };
+    let i = stack[if k > 0 { k - 1 } else { 1 }].at.unwrap();
+    doc.swap_storey(i);
+    doc.storeys.remove(i);
+    if doc.storeys.is_empty() {
+        doc.storey.clear();
+        doc.slab = None;
+    }
+    true
+}
+
 /// JSON with each node (an array of numbers) on one line.
 pub fn to_json(doc: &Doc) -> String {
     fn scalar(v: &serde_json::Value) -> bool {
@@ -790,6 +922,50 @@ mod tests {
             "paths": [ { "name": "ramp", "nodes": [[600, 500], [300, 500]] } ]
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn a_railing_stands_just_outside_a_hole() {
+        let d = doc();
+        let edge = [[0.0, 0.0], [400.0, 0.0], [400.0, 400.0], [0.0, 400.0], [0.0, 0.0]];
+        let l = railing_round(&d, "fence", &edge);
+        assert!(l.closed && l.kind == "fence");
+        let o = RAILING_OUT;
+        let want = [[-o, -o], [400.0 + o, -o], [400.0 + o, 400.0 + o], [-o, 400.0 + o]];
+        assert_eq!(l.nodes.len(), 4, "{:?}", l.nodes);
+        for (n, w) in l.nodes.iter().zip(want) {
+            assert!((n[0] - w[0]).abs() < 1e-6 && (n[1] - w[1]).abs() < 1e-6, "{:?}", l.nodes);
+        }
+        // the other way round, the same
+        let rev: Vec<P2> = edge.iter().rev().copied().collect();
+        assert!(railing_round(&d, "fence", &rev).nodes.iter().all(|n| n[0] < 0.0 || n[0] > 400.0));
+    }
+
+    #[test]
+    fn storeys_are_added_named_moved_and_deleted() {
+        let mut d = doc();
+        let up = add_storey(&mut d, true);
+        assert_eq!((d.storey.as_str(), d.storeys[up].name.as_str(), d.storeys[up].z), ("1F", "2F", STOREY_HEIGHT));
+        let down = add_storey(&mut d, false);
+        assert_eq!((d.storeys[down].name.as_str(), d.storeys[down].z), ("B1", -STOREY_HEIGHT));
+        let (top, bottom) = (add_storey(&mut d, true), add_storey(&mut d, false));
+        assert_eq!((d.storeys[top].name.as_str(), d.storeys[bottom].name.as_str()), ("3F", "B2"));
+        // on an enclosed level, a storey on top is enclosed too, over the old top's ceiling
+        let mut e = doc();
+        e.outline.ceiling = Some(Ceiling::Closed(overworld::doc::Cover { height: 500.0, ..Default::default() }));
+        let i = add_storey(&mut e, true);
+        assert_eq!(e.storeys[i].z, 500.0 + overworld::doc::SLAB);
+        assert!(e.storeys[i].ceiling.is_some());
+        // moving the storey in front moves what's on it
+        d.paths[0].nodes[0].push(Some(30.0));
+        move_storey(&mut d, 100.0);
+        assert_eq!((d.outline.z, d.regions[0].z, d.paths[0].nodes[0][2]), (100.0, 220.0, Some(130.0)));
+        // deleting it puts the one under it in front
+        let before = d.storeys.len();
+        assert!(delete_storey(&mut d));
+        assert_eq!((d.storeys.len(), d.storey.as_str()), (before - 1, "B1"));
+        while delete_storey(&mut d) {}
+        assert!(d.storeys.is_empty() && d.storey.is_empty());
     }
 
     #[test]

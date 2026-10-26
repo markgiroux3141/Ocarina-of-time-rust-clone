@@ -564,6 +564,7 @@ impl App {
                 }
             });
         });
+        self.storey_bar(ui, rect);
         overlay(ui, "plan zoom", Align2::RIGHT_BOTTOM, rect.right_bottom() - Vec2::new(10.0, 10.0), |ui| {
             glass().show(ui, |ui| {
                 let c = self.view.rect.center();
@@ -578,6 +579,83 @@ impl App {
                 }
             });
         });
+    }
+
+    /// The storeys, top to bottom down the plan's left side (2F, 1F, B1, as the pause map has
+    /// them): click one to edit it, right-click the one you're on for its name, height and slab, +
+    /// to add one on top or underneath. A level without storeys has only the + button.
+    fn storey_bar(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        let tip_add = |above: bool| if above { "Add a storey on top of the top one, and edit it" } else { "Add a storey under the bottom one, and edit it" };
+        egui::Area::new(Id::new(("overlay", "storeys"))).pivot(Align2::LEFT_TOP).fixed_pos(rect.left_top() + Vec2::new(10.0, 48.0)).order(egui::Order::Middle).show(ui.ctx(), |ui| {
+            glass().show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                if self.doc.storeys.is_empty() {
+                    let r = glass_button(ui, "+ Storey", false, true).on_hover_text("Storeys: floors over or under this one, each a plan of its own inside the same outline (a house's upstairs, a dungeon's basement). Click to add one on top, right-click to add one underneath");
+                    if r.clicked() {
+                        self.add_storey(true);
+                    }
+                    r.context_menu(|ui| {
+                        if ui.button("Add a storey on top").clicked() {
+                            self.add_storey(true);
+                        }
+                        if ui.button("Add a storey underneath").clicked() {
+                            self.add_storey(false);
+                        }
+                    });
+                    return;
+                }
+                let stack = self.doc.stack();
+                if glass_button(ui, "+", false, true).on_hover_text(tip_add(true)).clicked() {
+                    self.add_storey(true);
+                }
+                for s in stack.iter().rev() {
+                    let name = self.doc.storey_name(s.at);
+                    let r = glass_button(ui, &name, s.at.is_none(), true);
+                    match s.at {
+                        Some(i) => {
+                            if r.on_hover_text(format!("Edit {name} (Ctrl+PageUp/PageDown: the storey over or under)")).clicked() {
+                                self.to_storey(i);
+                            }
+                        }
+                        None => {
+                            r.on_hover_text(format!("Editing {name}, its floor at {:.0}. Right-click: its name, height and slab", s.z)).context_menu(|ui| self.storey_menu(ui));
+                        }
+                    }
+                }
+                if glass_button(ui, "+", false, true).on_hover_text(tip_add(false)).clicked() {
+                    self.add_storey(false);
+                }
+            });
+        });
+    }
+
+    /// The storey being edited's settings (the storey bar's right-click).
+    fn storey_menu(&mut self, ui: &mut egui::Ui) {
+        ui.set_min_width(220.0);
+        field(ui, "Name", Some("As the pause map names it: 1F, 2F, B1..."), |ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.doc.storey).desired_width(90.0));
+        });
+        let mut z = self.doc.outline.z;
+        field(ui, "Floor", Some("Its floor's height: moving it moves everything on it"), |ui| {
+            ui.add(egui::DragValue::new(&mut z).speed(5.0));
+        });
+        if z != self.doc.outline.z {
+            let dz = z - self.doc.outline.z;
+            crate::edit::move_storey(&mut self.doc, dz);
+        }
+        let mut slab = self.doc.slab.unwrap_or(overworld::doc::SLAB);
+        field(ui, "Slab", Some("How thick its floor is: the storey under it has its ceiling this far below its floor"), |ui| {
+            ui.add(egui::DragValue::new(&mut slab).speed(1.0).range(10.0..=2000.0));
+        });
+        if slab != self.doc.slab.unwrap_or(overworld::doc::SLAB) {
+            self.doc.slab = Some(slab);
+        }
+        ui.separator();
+        if widgets::button(ui, None, "Delete this storey", None, true).on_hover_text("With everything on it (Ctrl+Z brings it back)").clicked() {
+            crate::edit::delete_storey(&mut self.doc);
+            self.sel = Sel::None;
+            ui.close();
+        }
     }
 
     /// While the document doesn't build: why, across the bottom of the views, so it's plain that
@@ -620,6 +698,13 @@ impl App {
                         if r.clicked() {
                             v.game_fog = !v.game_fog;
                         }
+                    }
+                }
+                if let (true, Some(v)) = (!self.doc.storeys.is_empty() && self.layout != Layout::Plan, self.v3.as_mut()) {
+                    ui.add_space(6.0);
+                    let r = glass_button(ui, "Storeys above", v.show_above, true).on_hover_text("Show the storeys over the one you're editing in 3D. Off: they're cut away, so you look into this one from above");
+                    if r.clicked() {
+                        v.show_above = !v.show_above;
                     }
                 }
                 if let (true, true, Some(v)) = (covered, self.layout != Layout::Plan, self.v3.as_mut()) {
@@ -778,6 +863,9 @@ impl App {
 
     /// What a build problem is about, if it names something in the document.
     pub(super) fn problem_target(&self, p: &str) -> Option<Sel> {
+        // with storeys, a problem names its storey first: only the one being edited's are here
+        let own = format!("{}: ", self.doc.storey_name(None));
+        let p = if self.doc.storeys.is_empty() { p } else { p.strip_prefix(own.as_str())? };
         let index = |rest: &str| rest.split(|c: char| !c.is_ascii_digit()).next().and_then(|n| n.parse::<usize>().ok());
         if let Some(rest) = p.strip_prefix("prop ") {
             return index(rest).filter(|&i| i < self.doc.props.len()).map(Sel::Prop);

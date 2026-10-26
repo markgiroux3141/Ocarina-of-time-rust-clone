@@ -989,6 +989,19 @@ and is put back after the fade to black.
   `a_cover_on_open_ground_is_a_canopy_and_a_cover_inside_a_cover_a_hut` (each watertight), `ceilings::intervals_subtract`.
   In the game, Link runs in through the cave's mouth in `sketch_caves` and down the ramp in `sketch_cavern`.
 
+## Storeys (`storeys` in the document, `doc::Storey`, `build::build_with`)
+
+Floors over floors (docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md, slice 1): `storeys` lists a level's other storeys, each
+with its own `z` (its floor), `regions`, `paths`, `lines`, `props`, `actors`, `terrain`, `noise` and `ceiling`, as the
+document's own fields are one storey (named by `storey`). They share the outline. Each storey with one above it is
+enclosed, its ceiling the underside of the next storey's slab (`slab`, 60 thick by default), its roof the next one's
+floor; the top storey's ceiling is its own. Each storey is built as a level of its own and the meshes joined, so a level
+without `storeys` builds as before. `Level::storeys` says where each one is (its band of heights), and
+`props::Ground::new_in` gives one storey's ground: each storey's props and actors stand on its own floor. A region of kind `"open"` is a hole down to the storey under it (at its storey's floor, with no floor of its own):
+that storey takes it as a region of its own open to the sky, as high as the floor it lies in, so its ceiling opens
+and the slab's edge is walled; it has to lie inside one floor there. On the bottom storey it's a pit. Example
+`sketch_storeys.json`.
+
 ## Themes (`themes/*.json`, `settings.theme`)
 
 **Fog** (2026-10-11, `fog` in a theme): its scene's fog as the game sets it for child Link at 10:00 (`{ "scene": "spot07",

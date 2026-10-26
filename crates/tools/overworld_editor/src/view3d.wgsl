@@ -6,6 +6,7 @@
 
 struct Globals {
     view_proj: mat4x4<f32>,
+    // w: nothing over this height is drawn (the storey being edited's ceiling)
     eye: vec4<f32>,
     fog: vec4<f32>,
     sky: vec4<f32>,
@@ -39,6 +40,7 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) dist: f32,
+    @location(3) z: f32,
 };
 
 @vertex
@@ -48,6 +50,7 @@ fn vs_main(v: VsIn) -> VsOut {
     o.uv = v.uv;
     o.color = v.color;
     o.dist = distance(v.pos, g.eye.xyz);
+    o.z = v.pos.z;
     return o;
 }
 
@@ -67,12 +70,18 @@ fn fogged(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
 
 @fragment
 fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.z > g.eye.w) {
+        discard;
+    }
     let t = texel(in.uv, in.color.a);
     return vec4<f32>(fogged(t.rgb * in.color.rgb, in.dist), 1.0);
 }
 
 @fragment
 fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.z > g.eye.w) {
+        discard;
+    }
     let t = texel(in.uv, 0.0);
     if (t.a * in.color.a < 0.5) {
         discard;
@@ -82,6 +91,9 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.z > g.eye.w) {
+        discard;
+    }
     let t = texel(in.uv, 0.0);
     let a = t.a * in.color.a;
     if (a < 0.02) {

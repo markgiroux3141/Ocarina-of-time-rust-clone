@@ -45,6 +45,18 @@ pub struct Doc {
     /// The game's actors placed in it: pots, bushes, enemies, characters, switches...
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actors: Vec<Actor>,
+    /// The storey the document's own regions, paths, lines, props, actors and terrain (and the
+    /// outline's height, bumps and ceiling) are, when it has others (`storeys`): its name...
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub storey: String,
+    /// ...and the slab under its floor (`SLAB` if none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slab: Option<f64>,
+    /// The level's other storeys (docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md, slice 1), each a plan of
+    /// its own at its own height inside the same outline. Stacked by height, not by where they're
+    /// kept: any of them can be swapped into the document's own fields (`swap_storey`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub storeys: Vec<Storey>,
     /// Its own texts: what the game's text ids say while the level is played (the actors' lines
     /// edited in the editor's Dialogue section), and new ids of its own. By id, one each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -65,7 +77,99 @@ pub struct Text {
     pub text: String,
 }
 
+/// One of a level's storeys (`Doc::storeys`): what the document's own fields hold for the storey
+/// that's in them. A storey with one above it is enclosed, its ceiling the underside of the slab
+/// under the next storey; the top storey's ceiling is its own (`ceiling`: none, open to the sky).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Storey {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The slab under its floor (`SLAB` if none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slab: Option<f64>,
+    /// Its floor's height: the outline's `z` while it's in the document's own fields.
+    #[serde(default)]
+    pub z: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise: Option<Noise>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<Ceiling>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<Region>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<Path>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<Line>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub props: Vec<Prop>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actors: Vec<Actor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<crate::terrain::Terrain>,
+}
+
+/// How thick a storey's floor is (the slab between it and the ceiling of the storey below), unless
+/// it says.
+pub const SLAB: f64 = 60.0;
+
+/// One storey of a level's stack (`Doc::stack`): where it's kept (None: the document's own fields,
+/// else `storeys[i]`), its floor's height and its slab.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stacked {
+    pub at: Option<usize>,
+    pub z: f64,
+    pub slab: f64,
+}
+
 impl Doc {
+    /// Swaps storey `i` (`storeys[i]`) with the one in the document's own fields: the editor edits
+    /// a storey this way, with every tool as it is. Swapping again swaps it back.
+    pub fn swap_storey(&mut self, i: usize) {
+        let s = &mut self.storeys[i];
+        std::mem::swap(&mut self.storey, &mut s.name);
+        std::mem::swap(&mut self.slab, &mut s.slab);
+        std::mem::swap(&mut self.outline.z, &mut s.z);
+        std::mem::swap(&mut self.outline.noise, &mut s.noise);
+        std::mem::swap(&mut self.outline.ceiling, &mut s.ceiling);
+        std::mem::swap(&mut self.regions, &mut s.regions);
+        std::mem::swap(&mut self.paths, &mut s.paths);
+        std::mem::swap(&mut self.lines, &mut s.lines);
+        std::mem::swap(&mut self.props, &mut s.props);
+        std::mem::swap(&mut self.actors, &mut s.actors);
+        std::mem::swap(&mut self.terrain, &mut s.terrain);
+    }
+
+    /// The storeys bottom to top (one, the document's own, if it has no others).
+    pub fn stack(&self) -> Vec<Stacked> {
+        let mut out = vec![Stacked { at: None, z: self.outline.z, slab: self.slab.unwrap_or(SLAB) }];
+        out.extend(self.storeys.iter().enumerate().map(|(i, s)| Stacked { at: Some(i), z: s.z, slab: s.slab.unwrap_or(SLAB) }));
+        out.sort_by(|a, b| a.z.total_cmp(&b.z));
+        out
+    }
+
+    /// A storey's name: its own, else its place in the stack ("storey 2", from the bottom).
+    pub fn storey_name(&self, at: Option<usize>) -> String {
+        let own = match at {
+            None => &self.storey,
+            Some(i) => &self.storeys[i].name,
+        };
+        if !own.is_empty() {
+            return own.clone();
+        }
+        let k = self.stack().iter().position(|s| s.at == at).unwrap_or(0);
+        format!("storey {}", k + 1)
+    }
+
+    /// The level as if storey `at` were all there is: in the document's own fields, no others.
+    pub fn storey_doc(&self, at: Option<usize>) -> Doc {
+        let mut d = self.clone();
+        if let Some(i) = at {
+            d.swap_storey(i);
+        }
+        d.storeys.clear();
+        d
+    }
+
     /// The level's text for `id`, if it has one.
     pub fn text(&self, id: u16) -> Option<&Text> {
         self.texts.iter().find(|t| t.id == id)

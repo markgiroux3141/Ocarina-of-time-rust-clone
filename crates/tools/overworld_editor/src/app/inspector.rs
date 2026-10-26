@@ -160,12 +160,18 @@ impl App {
             if let Sel::Edge(..) = self.sel {
                 self.beyond_section(ui);
             }
+            // with a storey over this one, its slab is the ceiling here (`build::build_with`)
+            let stack = self.doc.stack();
+            let over = stack.iter().position(|s| s.at.is_none()).and_then(|k| stack.get(k + 1)).map(|n| (self.doc.storey_name(n.at), n.z - n.slab - self.doc.outline.z));
             let o = &mut self.doc.outline;
             section(ui, "ins ground", "Ground", None, true, |ui| {
                 field(ui, "Height", Some("The ground outside every region"), |ui| ui.add(egui::DragValue::new(&mut o.z).speed(1.0)));
                 noise_ui(ui, &mut o.noise);
             });
-            section(ui, "ins ceiling", "Ceiling", o.ceiling.is_some().then(|| "enclosed".to_string()), false, |ui| {
+            section(ui, "ins ceiling", "Ceiling", (o.ceiling.is_some() || over.is_some()).then(|| "enclosed".to_string()), false, |ui| {
+                if let Some((name, gap)) = &over {
+                    widgets::hint(ui, format!("Under {name}'s slab: the ceiling is {gap:.0} over this floor (move {name} or change its slab to change it). This storey's own ceiling, below, counts only when it's the top one."));
+                }
                 ceiling_ui(ui, &mut o.ceiling, false, &styles);
             });
             let n = o.nodes.len();
@@ -192,13 +198,20 @@ impl App {
         if let Sel::Edge(..) = self.sel {
             self.edge_section(ui, l);
         }
+        let mut railing = false;
         let r = &mut self.doc.regions[l - 1];
         section(ui, "ins ground", "Ground", None, true, |ui| {
-            field(ui, "Kind", Some("Floor, a pond (its height is the bed), or a pit: a drop into the void, its height how deep its walls go"), |ui| {
-                if widgets::segmented(ui, &mut r.kind, &[("floor".to_string(), "Floor"), ("water".to_string(), "Water"), ("pit".to_string(), "Pit")]) && r.kind == "water" && r.surface.is_none() {
+            field(ui, "Kind", Some("Floor, a pond (its height is the bed), a pit: a drop into the void, its height how deep its walls go, or a hole: down to the storey under this one, at this storey's floor"), |ui| {
+                if widgets::segmented(ui, &mut r.kind, &[("floor".to_string(), "Floor"), ("water".to_string(), "Water"), ("pit".to_string(), "Pit"), ("open".to_string(), "Hole")]) && r.kind == "water" && r.surface.is_none() {
                     r.surface = Some(r.z + 60.0);
                 }
             });
+            if r.kind == "open" {
+                widgets::hint(ui, "A hole down to the storey under this one: it's at this storey's floor (its height is unused), and that storey's ceiling opens under it. It has to lie inside one floor of the storey under it (shown dashed). On the bottom storey, it's a pit.");
+                if widgets::button(ui, None, "Add a railing round it", None, false).on_hover_text("A fence line just outside its edge, of the kind the Fence tool draws").clicked() {
+                    railing = true;
+                }
+            }
             let mut dz = 0.0;
             field(ui, if water { "Bed" } else { "Height" }, Some("PgUp / PgDn raise and sink it 20 (Shift: 100), or drag it up and down in 3D"), |ui| {
                 ui.add(egui::DragValue::new(&mut r.z).speed(1.0));
@@ -219,6 +232,14 @@ impl App {
                 });
             }
         });
+        if railing {
+            let edge: Vec<overworld::geom::P2> = self.shapes.loops[l].iter().map(|q| q.0).collect();
+            let line = crate::edit::railing_round(&self.doc, &self.new.fence, &edge);
+            self.status = format!("{} added round {}", line.name, self.doc.regions[l - 1].name);
+            self.doc.lines.push(line);
+            return;
+        }
+        let r = &mut self.doc.regions[l - 1];
         section(ui, "ins look", "Look", None, true, |ui| {
             field(ui, "Edge", Some("The wall style of this region's own walls (where it's the higher side)"), |ui| style_combo(ui, "edge", &mut r.edge, &styles, "theme rules"));
             noise_ui(ui, &mut r.noise);
@@ -750,7 +771,7 @@ impl App {
         }
         let built_z = self.prop_z(i);
         let fitted = self.on_wall(i);
-        let placed = self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.index == i).cloned());
+        let placed = self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.storey.is_none() && pl.index == i).cloned());
         let piece = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).cloned();
         // a wall piece's flat face where it is (asked at its narrowest, which fits wherever any does)
         let room = piece.as_ref().filter(|p| p.kind == "wall").and_then(|p| {

@@ -101,7 +101,7 @@ impl App {
         let water = self.lib_texture(ui.ctx(), &self.theme.texture_name(&self.theme.water.material.clone()));
         let styles = self.theme.style_names();
         section(ui, "pal rkind", "Kind", None, true, |ui| {
-            let w = (ui.available_width() - 16.0) / 3.0;
+            let w = (ui.available_width() - 24.0) / 4.0;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let n = &mut self.new;
@@ -114,12 +114,18 @@ impl App {
                 if widgets::card(ui, w, n.region_kind == "pit", "Pit", "A drop into the void", |p, r| widgets::texture_swatch(p, r, ground, 1.6, Color32::from_gray(40), Color32::from_gray(20))).clicked() {
                     n.region_kind = "pit".into();
                 }
+                let r = widgets::card(ui, w, n.region_kind == "open", "Hole", "A hole down to the storey under", |p, r| widgets::texture_swatch(p, r, ground, 1.6, Color32::from_gray(90), Color32::from_gray(60)));
+                if r.on_hover_text("A hole through this storey's floor into the storey under it (a drop hole, an atrium): that storey's ceiling opens under it, and the slab's edge is a wall. Draw it inside one floor of the storey under it. On the bottom storey, it's a pit").clicked() {
+                    n.region_kind = "open".into();
+                }
             });
         });
         section(ui, "pal rnew", "New regions", None, true, |ui| {
             let n = &mut self.new;
             if n.region_kind == "water" {
                 field(ui, "Depth", Some("From its surface, 20 below the ground round it, down to its bed"), |ui| ui.add(egui::DragValue::new(&mut n.depth).speed(1.0).range(10.0..=2000.0)));
+            } else if n.region_kind == "open" {
+                widgets::hint(ui, "A hole is at its storey's floor: it has no height of its own. Draw it inside one floor of the storey under it (shown dashed); a fence line round it is a railing.");
             } else if n.region_kind == "pit" {
                 field(ui, "Depth", Some("How far its walls go down below the ground round it: Link voids out falling in"), |ui| ui.add(egui::DragValue::new(&mut n.pit_depth).speed(5.0).range(220.0..=5000.0)));
             } else {

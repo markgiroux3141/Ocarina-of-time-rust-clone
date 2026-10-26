@@ -156,3 +156,138 @@ A different top level, not a different way of modelling, so this is where an **a
 3. Storeys, `open` regions, stairs between storeys
 4. Dungeon mode: rooms, portals, the mod pack export, the generated pause map
 5. Flags, the completability check, dungeon kits
+
+## Building it in slices (2026-10-25)
+
+Steps 2 to 5 above (ROADMAP stage E5), cut into slices that each end in the editor with something
+to try by hand: a hand-test list per slice, and the next slice planned around what that test turns
+up. Storeys come first because they're what's new; seeing inside grows with them (each slice's 3D
+cut, then the section cut once there are stairs to check). By the end of slice 4 you can build the
+Deku Tree's central room (three floors, a hole through each, stairs and ladders between them) and
+walk it in the game; slices 5 to 10 are the dungeon around it.
+
+| # | Slice | What you can do at the end | Hand test |
+|---|---|---|---|
+| 1 | **Storeys, stacked and switched** | Add a storey above or below; a storey bar (2F, 1F, B1) picks the one you edit with the usual tools; the storey below shows faded in the plan; in 3D everything above the storey you're on is cut away; each storey is under the next one's slab; Play from here lands on the storey you're on; props and actors stand on their own storey's floor | Draw a two-storey room, put a prop and an actor upstairs, look at both floors in 3D, play from here on each |
+| 2 | **Holes between storeys** (`open` regions) | Draw a hole in a storey's floor: the storey below has a matching hole in its ceiling, the slab's edge is a wall, a fence line round it is a railing | Cut a drop hole in 2F, fall through it in the game, land on 1F |
+| 3 | **Stairs between storeys** | A path whose far end is on the storey above (the end's storey is picked in the inspector) climbs to it and cuts its own stairwell through the slab | Walk up from 1F to 2F and back down |
+| 4 | **Ladders and vines between storeys** | A climbable face from one storey's floor up through a hole to the next (a ladder or vines on the hole's edge, carried down the wall below it) | Climb from 1F to 2F; build the Deku Tree's central room |
+| 5 | **The section cut** | A line drawn across the plan shows the level side on: every storey's floors, ceilings and slabs, with a Link-height gauge; the builder warns where a stair or a floor leaves Link no headroom | Check a stairwell clears Link's head; make one that doesn't and see the warning |
+| 6 | **Storeys over part of a level** | A storey with an outline of its own: a loft in a house, the shop under Zora's Domain's ledge, the passage behind the falls; the roof over a storey below is walkable outside it | A loft over half a room, walked onto by stairs |
+| 7 | **Dungeon mode: rooms and doors** (editor only) | A mode where a storey is cut into rooms (regions with walls round them), and doors placed on a wall two rooms share: doorway, wooden door, shutter, locked, boss door, crawlspace | Lay out a three-room storey with a locked door, walk it in the game (still one room to the game) |
+| 8 | **Rooms in the game** | The level exported as a scene of several rooms with transition actors: rooms load and unload as the game does them | Walk through the doors; the room behind loads |
+| 9 | **The pause map, drawn** | The dungeon map page made from the storeys and rooms (ADR 0048's per-room images) | Open the pause map in the custom dungeon |
+| 10 | **Flags and the completability check** | A links view handing out switch and chest flags (switch opens shutter, room cleared opens the doors); a check that every locked door has its key and everything is reachable from the entrance | Wire a switch to a shutter; remove a key and see the check fail |
+
+### Slice 1's design
+
+- **A storey is the level's content at one height.** The document's own `regions`, `paths`,
+  `lines`, `props`, `actors`, `terrain` and the outline's `z`, `noise` and `ceiling` are one storey
+  (named by `storey`, its slab `slab`); `storeys` holds the others, each with the same fields. Any
+  storey can be the one in the document's own fields: storeys are ordered by height, not by where
+  they're kept. So a level without storeys is unchanged, and the editor edits a storey by swapping
+  it into the document's own fields (`Doc::swap_storey`), which keeps every tool, the inspector and
+  undo working as they are. Switching storeys isn't an edit (no undo step, nothing to save); the
+  file keeps whichever storey you were on in the document's own fields, which is the same level.
+- **Every storey shares the outline** (slice 6 lets a storey have its own). A storey with one above
+  it is enclosed: its ceiling is the underside of the slab under the next storey (`slab` thick, 60
+  by default), and its roof (where a skylight's shaft ends) is the next storey's floor. The top
+  storey's ceiling is its outline's own: none for a roof terrace open to the sky.
+- **The builder builds each storey as a level of its own** and puts their meshes together
+  (`Mesh::append`); problems say which storey. A level with no `storeys` builds byte for byte as
+  before. The built level says where each storey is (`Level::storeys`: its floor, and the band of
+  heights it fills), so the editor's plan, its 3D cut, the ground props and actors stand on, and
+  the export each look at one storey's band.
+- **Names:** the editor names storeys as it adds them, as the pause map does (the first storey 1F,
+  then 2F, 3F up and B1, B2 down), and you can rename them; a storey without a name is called by
+  its place in the stack.
+
+### Slice 1: built (2026-10-25)
+
+- `doc::Storey`, `Doc::storey`, `slab`, `storeys`, `swap_storey`, `stack`, `storey_doc`,
+  `storey_name`, `SLAB`; `build::build_with` builds each storey with `build_one` and joins them
+  (`Mesh::append`), `Level::storeys` (`StoreyBand`) and `Level::band`; `props::Ground::new_in` (one
+  storey's ground); `Placed::storey`; the export puts each storey's actors on its own floor.
+- Editor: the storey bar down the plan's left side (+ on top and underneath, a storey per button,
+  right-click the one you're on for its name, floor height, slab and Delete), Ctrl+PageUp and
+  Ctrl+PageDown to go up and down a storey; the storey underneath dashed in the plan; "under 2F ·
+  ceiling 340" on the outline; the plan, its picking, the ghost and Play from here look at the
+  storey you're on (`Scene::new`'s band); 3D cuts away what's over it ("Storeys above" shows it);
+  the outline's Ceiling section says when a slab is its ceiling; a problem is clicked through only
+  on its own storey.
+- Example: `examples/sketch/sketch_storeys.json` (B1 with a pool, 1F with a dais, a stump and a pot,
+  2F open to the sky with a loft, a stone and a pot).
+- Tests: `storeys_stack_each_under_the_next_ones_slab` (the builder: heights, ceilings, closed
+  edges, bands, each storey's ground, the same level whichever storey is in front, a too-thick
+  slab), `storeys_are_added_named_moved_and_deleted` (the editor's helpers).
+- **Not yet:** ▶ Play without a point starts Link on the highest floor in the middle (the top
+  storey): use Play from here (right-click in the plan) on the others, until slice 3 gives the
+  level a start. Only the storey you're on is pickable in 3D. A slab's edge isn't walled outside the
+  outline (you see the gap from outside, with "Storeys above" on).
+
+#### By hand
+
+Done 2026-10-25: the floors show and switch as they should.
+
+Open `crates/tools/overworld/examples/sketch/sketch_storeys.json` in the editor (Plan + 3D).
+
+1. The storey bar reads +, 2F, 1F, B1, + down the plan's left; 1F is lit. The plan shows the dais,
+   the stump and the pot; B1's pool is dashed, labelled B1; the outline says "under 2F · ceiling 340".
+2. In 3D, 1F is open from above (2F cut away): the dais, the stump, the pot, the walls up to the
+   ceiling. "Storeys above" puts 2F back on top.
+3. Click 2F: the loft, the stone and the pot; 1F's dais dashed under it; in 3D the whole house,
+   2F open to the sky with the forest round it. Ctrl+PageDown twice: B1 and its pool, nothing dashed
+   under it.
+4. Ctrl+Z after switching storeys undoes your last edit (taking you back to the storey it was on), not the switch; switching alone doesn't
+   mark the level changed (no * in the title).
+5. On 1F, draw a region and a prop: they're on 1F. Right-click 1F in the bar: rename it, raise its
+   floor (the dais and what's on it go with it), thicken its slab (B1's ceiling comes down).
+6. + on top: a 3F over 2F, empty, being edited. Delete it from its right-click menu: back on 2F.
+   Ctrl+Z brings it back.
+7. Right-click in the plan on each storey, Play from here: Link starts on that storey's floor
+   (B1 beside the pool, 1F on the floor, 2F on the roof terrace). The pots are on their own floors.
+8. A level without storeys: "+ Storey" only; click it and the level's storey becomes 1F with an
+   empty 2F over it. Ctrl+Z: as it was.
+
+### Slice 2: holes between storeys, built (2026-10-25)
+
+- A region kind **`open`** (the editor's **Hole**): a hole in a storey's floor down to the storey
+  under it. Its height is unused: `build_with` puts it at its storey's floor (`holes_down`), and
+  `build_one` leaves it without a floor (`Info::open`, `Builder::hole`), walls standing where a
+  higher floor (a dais) meets it.
+- The storey under it opens there (`holes_under`): the hole is a region of that storey's too,
+  open to the sky (`Ceiling::Sky`), as high as the floor it lies in, so nothing there changes
+  height. Its ceiling has the hole, and the skylight's shaft (the column model's own wall) is the
+  slab's edge, from that storey's ceiling up to the floor over it. A hole the same shape as a
+  region under it opens that region instead (a pool under a well).
+- A hole has to lie inside one floor of the storey under it: regions never cross, so one across a
+  region's edge there is reported ("the hole ... crosses the edge of a region here") and the
+  ceiling stays closed under it. On the bottom storey a hole is a pit, reported.
+- Editor: the Hole card in the region palette, Hole in the inspector's Kind (with "Add a railing
+  round it": a closed fence line `edit::RAILING_OUT` outside its edge, `edit::railing_round`), holes
+  drawn in cyan in the plan, and the storey over this one's holes dotted ("2F's hole": where the
+  ceiling opens); " · hole" in the outliner.
+- Example: `sketch_storeys.json` now has a well through 2F (with a railing) over 1F's floor, and a
+  drop through 1F into B1.
+- Tests: `a_hole_in_a_storey_opens_the_one_under_it` (no floor, no ceiling under it, the slab's
+  edge, closed edges; a hole the dais's shape; one across its edge; one on the bottom storey),
+  `a_railing_stands_just_outside_a_hole`.
+- **Not yet:** the floor under a hole is lit as if under the sky (it's not darkened as the rest of
+  its storey is); a bridge across a hole (a floating path) isn't tried; a hole over a slope, or
+  over a floor with bumps, takes the floor's flat height (and its bumps flatten at the hole's edge).
+
+#### By hand
+
+Open `sketch_storeys.json` again (Plan + 3D).
+
+1. On 2F: the well in cyan with its railing round it, the loft; in 3D the well opens onto 1F's
+   floor, its sides the slab's edge, and the railing stands on 2F round it.
+2. On 1F: "2F's hole" dotted where the well is; the drop in cyan; in 3D (2F cut away) the ceiling
+   has the well's hole in it, and through the drop you see B1's floor.
+3. On B1: "1F's hole" dotted over the floor beside the pool.
+4. Draw a hole of your own on 2F (palette: Region, Hole) over the dais: 1F's dais opens under it
+   if it's the dais's shape, else it's open over the dais's floor. Draw one across the dais's edge:
+   the problems list says it crosses, and 1F's ceiling stays closed there.
+5. Select a hole: Kind says Hole; "Add a railing round it" puts a fence round it.
+6. Play from here on 2F beside the well, walk in: Link falls to 1F. Walk into the drop: down to B1.
+7. A hole on B1 (the bottom storey) is a pit: Link voids out, and the problems say so.

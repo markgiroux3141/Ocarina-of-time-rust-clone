@@ -205,6 +205,10 @@ pub struct View3d {
     pub cam: Camera,
     /// Don't draw ceilings or the roofs over them: a cutaway, to see into caves from above.
     pub hide_covers: bool,
+    /// With storeys, the ceiling of the one being edited: nothing over it is drawn, so you see into
+    /// it from above, unless `show_above`.
+    pub cut: Option<f32>,
+    pub show_above: bool,
     /// The theme's scene's fog (`Theme::fog`), drawn as the game draws it while `game_fog` is on.
     pub fog: Option<overworld::theme::FogLook>,
     pub game_fog: bool,
@@ -305,6 +309,8 @@ impl View3d {
             target: None,
             cam: Camera { target: Vec3::ZERO, yaw: -90f32.to_radians(), pitch: 0.7, dist: 4000.0 },
             hide_covers: false,
+            cut: None,
+            show_above: false,
             fog: None,
             game_fog: true,
             framed: false,
@@ -586,7 +592,8 @@ impl View3d {
         };
         let g = Globals {
             view_proj: self.cam.view_proj(w as f32 / h as f32).to_cols_array_2d(),
-            eye: [eye.x, eye.y, eye.z, 1.0],
+            // w: the height over which nothing is drawn (`cut`)
+            eye: [eye.x, eye.y, eye.z, self.cut.filter(|_| !self.show_above).map_or(1e30, |c| c + 1.0)],
             fog: [self.cam.dist * 1.6 + 2000.0, self.cam.dist * 5.0 + 9000.0, 0.0, 0.0],
             sky: [sky[0] as f32, sky[1] as f32, sky[2] as f32, 1.0],
             game,

@@ -1,0 +1,24 @@
+{
+  "name": "sketch_storeys",
+  "outline": { "nodes": [[-1400, -1000, 1], [1400, -1000, 1], [1400, 1000, 1], [-1400, 1000, 1]], "z": 0 },
+  "regions": [
+    { "name": "dais", "nodes": [[-300, -250, 1], [300, -250, 1], [300, 250, 1], [-300, 250, 1]], "z": 60 },
+    { "name": "drop", "nodes": [[400, -700, 1], [800, -700, 1], [800, -300, 1], [400, -300, 1]], "kind": "open" }
+  ],
+  "props": [ { "piece": "stump_post", "at": [-900, -600], "yaw": 0 } ],
+  "actors": [ { "actor": "Obj_Tsubo", "at": [900, -600] } ],
+  "storey": "1F",
+  "storeys": [
+    { "name": "2F", "z": 400,
+      "regions": [
+        { "name": "loft", "nodes": [[500, 300, 1], [1200, 300, 1], [1200, 850, 1], [500, 850, 1]], "z": 520 },
+        { "name": "well", "nodes": [[-1100, -300, 1], [-700, -300, 1], [-700, 100, 1], [-1100, 100, 1]], "kind": "open" }
+      ],
+      "lines": [ { "name": "railing", "kind": "fence", "nodes": [[-1120, -320], [-680, -320], [-680, 120], [-1120, 120]], "closed": true } ],
+      "props": [ { "piece": "stone_medium", "at": [-900, 600], "yaw": 30 } ],
+      "actors": [ { "actor": "Obj_Tsubo", "at": [850, 575] } ] },
+    { "name": "B1", "z": -400,
+      "regions": [ { "name": "cellar pool", "nodes": [[-800, -500, 1], [0, -500, 1], [0, 300, 1], [-800, 300, 1]], "z": -520, "kind": "water", "surface": -440 } ] }
+  ],
+  "settings": { "detail": "low", "edges": "hard", "wall_texture": "stretched" }
+}

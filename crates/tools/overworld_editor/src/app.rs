@@ -151,6 +151,11 @@ pub struct App {
     redo: Vec<Doc>,
     shapes: Shapes,
     shapes_doc: Doc,
+    /// The storey under the one being edited (`Doc::storeys`): its name and its loops, drawn faded
+    /// in the plan.
+    below: Option<(String, Vec<Vec<P2>>)>,
+    /// The storey over this one's holes: where its ceiling opens.
+    above_holes: Option<(String, Vec<Vec<P2>>)>,
     sel: Sel,
     tool: Tool,
     drawing: Vec<P2>,
@@ -452,6 +457,8 @@ impl App {
         App {
             shapes: Shapes::new(&doc),
             shapes_doc: doc.clone(),
+            below: None,
+            above_holes: None,
             saved: doc.clone(),
             committed: doc.clone(),
             doc,
@@ -535,7 +542,57 @@ impl App {
         if self.shapes_doc != self.doc {
             self.shapes = Shapes::new(&self.doc);
             self.shapes_doc = self.doc.clone();
+            let stack = self.doc.stack();
+            let k = stack.iter().position(|s| s.at.is_none()).unwrap_or(0);
+            self.below = (k > 0).then(|| {
+                let at = stack[k - 1].at;
+                let s = Shapes::new(&self.doc.storey_doc(at));
+                (self.doc.storey_name(at), s.loops.iter().skip(1).map(|l| l.iter().map(|q| q.0).collect()).collect())
+            });
+            self.above_holes = stack.get(k + 1).map(|n| {
+                let d = self.doc.storey_doc(n.at);
+                let s = Shapes::new(&d);
+                let holes = d.regions.iter().zip(s.loops.iter().skip(1)).filter(|(r, _)| r.kind == "open").map(|(_, l)| l.iter().map(|q| q.0).collect()).collect();
+                (self.doc.storey_name(n.at), holes)
+            });
         }
+    }
+
+    // ---- storeys (docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md, slice 1) ---------------------------
+
+    /// Edits storey `i` (`storeys[i]`): swaps it into the document's own fields, where every tool
+    /// works on it. Not an edit: the level is the same, so it's no undo step and changes nothing
+    /// to save.
+    fn to_storey(&mut self, i: usize) {
+        self.commit();
+        self.doc.swap_storey(i);
+        self.committed.swap_storey(i);
+        if i < self.saved.storeys.len() {
+            self.saved.swap_storey(i);
+        }
+        self.sel = Sel::None;
+        self.multi.clear();
+        self.edge_multi.clear();
+        self.drawing.clear();
+        self.status = format!("editing {}", self.doc.storey_name(None));
+    }
+
+    /// Edits the storey over (or under) the one being edited, if there is one.
+    fn step_storey(&mut self, up: bool) {
+        let stack = self.doc.stack();
+        let k = stack.iter().position(|s| s.at.is_none()).unwrap_or(0);
+        let next = if up { stack.get(k + 1) } else { k.checked_sub(1).and_then(|j| stack.get(j)) };
+        if let Some(i) = next.and_then(|s| s.at) {
+            self.to_storey(i);
+        }
+    }
+
+    /// Adds an empty storey over the top one or under the bottom one, and edits it.
+    fn add_storey(&mut self, above: bool) {
+        self.commit();
+        let i = edit::add_storey(&mut self.doc, above);
+        self.commit();
+        self.to_storey(i);
     }
 
     fn fix_sel(&mut self) {
@@ -717,11 +774,15 @@ impl App {
             match d.level {
                 Ok(l) => {
                     let t = std::time::Instant::now();
-                    let scene = Scene::new(&l, &self.theme, self.lib.as_deref());
+                    // with storeys, the plan shows the one being edited, and the 3D view cuts away
+                    // what's over it
+                    let band = l.band(None);
+                    let scene = Scene::new(&l, &self.theme, self.lib.as_deref(), band);
                     let t_scene = t.elapsed().as_secs_f64() * 1000.0;
                     if let Some(v) = &mut self.v3 {
                         v.set_level(&l, &scene.mats, self.lib.as_deref());
                         v.fog = self.theme.fog.clone();
+                        v.cut = band.map(|b| b.1 as f32).filter(|h| h.is_finite());
                         if !v.framed {
                             v.cam.frame(scene.bounds, self.doc.outline.z, v.aspect);
                             v.framed = true;
@@ -731,7 +792,7 @@ impl App {
                         eprintln!("build {:.1} ms, plan scene {t_scene:.1} ms, 3D upload {:.1} ms", d.ms, t.elapsed().as_secs_f64() * 1000.0 - t_scene);
                     }
                     self.scene = Some(Arc::new(scene));
-                    self.ground = Some(Arc::new(Ground::new(&l.mesh)));
+                    self.ground = Some(Arc::new(Ground::new_in(&l.mesh, band)));
                     self.level = Some(l);
                     self.build_error = None;
                 }
@@ -865,7 +926,7 @@ impl App {
             Some(piece) if self.on_wall(i) => self
                 .level
                 .as_ref()
-                .and_then(|l| l.props.iter().find(|pl| pl.index == i && pl.piece == prop.piece))
+                .and_then(|l| l.props.iter().find(|pl| pl.storey.is_none() && pl.index == i && pl.piece == prop.piece))
                 .map(|pl| pl.footprint.clone())
                 .unwrap_or_else(|| overworld::props::footprint(piece, prop)),
             Some(piece) => overworld::props::footprint(piece, prop),
@@ -911,7 +972,7 @@ impl App {
         l.props
             .iter()
             .rev()
-            .filter(|pl| self.doc.props.get(pl.index).is_some_and(|p| p.piece == pl.piece) && self.on_wall(pl.index))
+            .filter(|pl| pl.storey.is_none() && self.doc.props.get(pl.index).is_some_and(|p| p.piece == pl.piece) && self.on_wall(pl.index))
             .find(|pl| {
                 let Some(piece) = kit.get(&pl.piece) else { return false };
                 // into the piece's own frame: unturned, unscaled
@@ -928,7 +989,7 @@ impl App {
 
     /// Where a prop's origin stands in the last build (its height), if it's been built.
     fn prop_z(&self, i: usize) -> Option<f64> {
-        self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.index == i)).map(|pl| pl.origin[2])
+        self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.storey.is_none() && pl.index == i)).map(|pl| pl.origin[2])
     }
 
     /// The handles of a prop in the plan: (turn handle, scale handle, the scale handle's distance
@@ -1284,6 +1345,7 @@ impl App {
                 let ground = edit::base_z(&self.doc, &self.shapes, c);
                 let water = self.new.region_kind == "water";
                 let pit = self.new.region_kind == "pit";
+                let hole = self.new.region_kind == "open";
                 // drawn outside everything, a new area: at the ground's height, with its own edge of the world
                 let area = self.shapes.outside_everything(&pts);
                 // a pond's surface 20 below the ground round it, its bed `depth` below that
@@ -1291,6 +1353,8 @@ impl App {
                     ground - 20.0 - self.new.depth
                 } else if pit {
                     ground - self.new.pit_depth
+                } else if hole {
+                    self.doc.outline.z
                 } else if area || self.new.level {
                     ground
                 } else {
@@ -1305,7 +1369,12 @@ impl App {
                 if pit {
                     r.kind = "pit".into();
                 }
-                self.status = if area {
+                if hole {
+                    r.kind = "open".into();
+                }
+                self.status = if hole {
+                    format!("{} added: a hole down to the storey under this one", r.name)
+                } else if area {
                     format!("{} added: a new area at the ground's height ({z:.0}), with an edge of the world of its own. Join it to the rest with a tunnel (U)", r.name)
                 } else if self.new.level && !water && !pit {
                     format!("{} added level with the floor it's in ({z:.0}): PageUp/PageDown raise and sink it", r.name)
@@ -1412,6 +1481,12 @@ impl App {
         }
         if sc(Modifiers::COMMAND, Key::N) {
             self.new_doc();
+        }
+        // the storey over or under the one being edited
+        for (k, up) in [(Key::PageUp, true), (Key::PageDown, false)] {
+            if sc(Modifiers::COMMAND, k) {
+                self.step_storey(up);
+            }
         }
         if sc(Modifiers::COMMAND, Key::D) {
             self.duplicate_prop();
@@ -2418,6 +2493,30 @@ impl App {
             painter.text(p, Align2::CENTER_CENTER, text, font.clone(), col);
         };
 
+        // the storey under this one, faded: its regions dashed, each with the storey's name
+        if let Some((name, loops)) = &self.below {
+            let col = Color32::from_white_alpha(70);
+            for c in loops.iter().filter(|c| c.len() >= 3) {
+                let pts: Vec<Pos2> = c.iter().chain(c.first()).map(|&q| v.to_screen(q)).collect();
+                painter.extend(Shape::dashed_line(&pts, Stroke::new(1.2, col), 5.0, 5.0));
+                let top = pts.iter().fold(pts[0], |a, p| if p.y < a.y { *p } else { a });
+                painter.text(top + Vec2::new(0.0, -2.0), Align2::CENTER_BOTTOM, name, FontId::proportional(10.5), col);
+            }
+        }
+        // the storey over this one's holes: the ceiling opens there
+        if let Some((name, holes)) = &self.above_holes {
+            let col = HOLE_COLOUR.gamma_multiply(0.6);
+            for c in holes.iter().filter(|c| c.len() >= 3) {
+                let pts: Vec<Pos2> = c.iter().chain(c.first()).map(|&q| v.to_screen(q)).collect();
+                painter.extend(Shape::dashed_line(&pts, Stroke::new(1.2, col), 2.0, 4.0));
+                let top = pts.iter().fold(pts[0], |a, p| if p.y < a.y { *p } else { a });
+                painter.text(top + Vec2::new(0.0, -2.0), Align2::CENTER_BOTTOM, format!("{name}'s hole"), FontId::proportional(10.5), col);
+            }
+        }
+        // the storey over this one: its slab is this one's ceiling
+        let stack = self.doc.stack();
+        let over = stack.iter().position(|s| s.at.is_none()).and_then(|k| stack.get(k + 1)).map(|n| (self.doc.storey_name(n.at), n.z - n.slab - self.doc.outline.z));
+
         // loops
         let sel_loops = self.selected_loops();
         let sel_loop = |l: usize| sel_loops.contains(&l);
@@ -2427,8 +2526,11 @@ impl App {
             }
             let water = l > 0 && self.doc.regions[l - 1].kind == "water";
             let pit = l > 0 && self.doc.regions[l - 1].kind == "pit";
+            let hole = l > 0 && self.doc.regions[l - 1].kind == "open";
             let col = if l == 0 {
                 Color32::from_rgb(235, 235, 235)
+            } else if hole {
+                HOLE_COLOUR
             } else if water {
                 Color32::from_rgb(110, 180, 255)
             } else if pit {
@@ -2445,7 +2547,13 @@ impl App {
             // covered (`ceilings.rs`): a dashed ring just inside (a region's ceiling is said under its name);
             // an enclosed level's ceiling at its top
             let ceiling = if l == 0 { self.doc.outline.ceiling.as_ref() } else { self.doc.regions[l - 1].ceiling.as_ref() };
-            if let Some(overworld::doc::Ceiling::Closed(cv)) = ceiling {
+            if let (0, Some((name, gap))) = (l, &over) {
+                let mid = pts.iter().fold(Vec2::ZERO, |a, p| a + p.to_vec2()) / pts.len() as f32;
+                let inner: Vec<Pos2> = pts.iter().map(|p| *p + (mid - p.to_vec2()).normalized() * 5.0).collect();
+                painter.extend(Shape::dashed_line(&[inner.clone(), vec![inner[0]]].concat(), Stroke::new(1.2, CEILING_COLOUR), 6.0, 4.0));
+                let top = pts.iter().fold(pts[0], |a, p| if p.y < a.y { *p } else { a });
+                label(top + Vec2::new(0.0, 16.0), &format!("under {name} · ceiling {gap:.0}"), CEILING_COLOUR);
+            } else if let Some(overworld::doc::Ceiling::Closed(cv)) = ceiling {
                 let mid = pts.iter().fold(Vec2::ZERO, |a, p| a + p.to_vec2()) / pts.len() as f32;
                 let inner: Vec<Pos2> = pts.iter().map(|p| *p + (mid - p.to_vec2()).normalized() * 5.0).collect();
                 painter.extend(Shape::dashed_line(&[inner.clone(), vec![inner[0]]].concat(), Stroke::new(1.2, CEILING_COLOUR), 6.0, 4.0));
@@ -2742,6 +2850,8 @@ impl App {
 const PROP_COLOUR: Color32 = Color32::from_rgb(90, 235, 170);
 /// Ceilings in the plan: a covered region's inner ring and its label.
 const CEILING_COLOUR: Color32 = Color32::from_rgb(150, 200, 235);
+/// Holes down to the storey under (`"open"` regions), and in the plan the storey over's holes.
+const HOLE_COLOUR: Color32 = Color32::from_rgb(120, 230, 230);
 
 fn line_colour(kind: &str) -> Color32 {
     match kind {

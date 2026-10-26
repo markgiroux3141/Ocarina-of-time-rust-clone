@@ -103,7 +103,7 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
         j["problems"] = problems.clone().into();
     }
     // the actors, each at its height as built (oot_import::level reads them into the room)
-    if !doc.actors.is_empty() {
+    if !doc.actors.is_empty() || doc.storeys.iter().any(|s| !s.actors.is_empty()) {
         j["actors"] = actors(doc, lvl, &mut problems).into();
         j["problems"] = problems.clone().into();
     }
@@ -129,15 +129,20 @@ pub fn actor_z(actor: &crate::doc::Actor, ground: &crate::props::Ground, lvl: &L
 }
 
 /// The actors as `level.json` has them: the overlay's name, the position (x east, y north, z up),
-/// the game's rotation and params, and the layers it's in.
+/// the game's rotation and params, and the layers it's in. With storeys, every storey's, each
+/// standing on its own storey's floor.
 fn actors(doc: &Doc, lvl: &Level, problems: &mut Vec<String>) -> Vec<serde_json::Value> {
-    let ground = crate::props::Ground::new(&lvl.mesh);
-    doc.actors
-        .iter()
-        .enumerate()
-        .map(|(i, a)| {
+    let stack: Vec<Option<usize>> = if doc.storeys.is_empty() { vec![None] } else { doc.stack().iter().map(|s| s.at).collect() };
+    let mut out = vec![];
+    for at in stack {
+        let ground = crate::props::Ground::new_in(&lvl.mesh, lvl.band(at));
+        let (actors, of) = match at {
+            None => (&doc.actors, if doc.storeys.is_empty() { String::new() } else { format!("{}: ", doc.storey_name(None)) }),
+            Some(i) => (&doc.storeys[i].actors, format!("{}: ", doc.storey_name(at))),
+        };
+        for (i, a) in actors.iter().enumerate() {
             let z = actor_z(a, &ground, lvl).unwrap_or_else(|| {
-                problems.push(format!("actor {i} ({}) stands outside the level near ({:.0}, {:.0})", a.actor, a.at[0], a.at[1]));
+                problems.push(format!("{of}actor {i} ({}) stands outside the level near ({:.0}, {:.0})", a.actor, a.at[0], a.at[1]));
                 0.0
             });
             let mut j = serde_json::json!({
@@ -149,9 +154,10 @@ fn actors(doc: &Doc, lvl: &Level, problems: &mut Vec<String>) -> Vec<serde_json:
             if let Some(ls) = a.layers {
                 j["layers"] = ls.to_vec().into();
             }
-            j
-        })
-        .collect()
+            out.push(j);
+        }
+    }
+    out
 }
 
 fn put(path: &Path, text: String) -> Result<(), String> {

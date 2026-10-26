@@ -187,6 +187,57 @@ impl Mesh {
     /// The collision vertices the game will make of this (`oot_import::level`): corners of
     /// collision triangles other than water, merged at whole units as `CollisionBuilder` does.
     /// At most 8192 fit.
+    /// Adds `other`'s objects to this mesh's of the same name (a storey's, `build::build_with`):
+    /// materials, surfaces and cameras are merged, a surface's camera (`role#k`) renumbered. Its
+    /// vertices aren't welded to this mesh's.
+    pub fn append(&mut self, other: Mesh) {
+        let mats: Vec<usize> = other.materials.iter().map(|m| id(&mut self.materials, m)).collect();
+        let cams = self.cameras.len();
+        let surfs: Vec<i64> = other
+            .surfaces
+            .iter()
+            .map(|s| {
+                let name = match s.split_once('#').and_then(|(r, k)| Some((r, k.parse::<usize>().ok()?))) {
+                    Some((role, k)) => format!("{role}#{}", k + cams),
+                    None => s.clone(),
+                };
+                id(&mut self.surfaces, &name) as i64
+            })
+            .collect();
+        self.cameras.extend(other.cameras);
+        for o in other.objects {
+            let oi = self.object(&o.name, o.collision_only);
+            let to = &mut self.objects[oi];
+            let base = to.verts.len();
+            // per-vertex lists are either empty or one per vertex: keep them so when one side has none
+            fn pad<T: Clone>(v: &mut Vec<T>, had: usize, add: &[T], fill: T, total: usize) {
+                if v.is_empty() && add.is_empty() {
+                    return;
+                }
+                if v.len() < had {
+                    v.resize(had, fill.clone());
+                }
+                if add.is_empty() {
+                    v.resize(total, fill);
+                } else {
+                    v.extend_from_slice(add);
+                }
+            }
+            let total = base + o.verts.len();
+            pad(&mut to.colors, base, &o.colors, [255; 3], total);
+            pad(&mut to.normals, base, &o.normals, [0.0, 0.0, 1.0], total);
+            pad(&mut to.tints, base, &o.tints, [1.0; 3], total);
+            pad(&mut to.fixed, base, &o.fixed, None, total);
+            pad(&mut to.blend, base, &o.blend, 0.0, total);
+            to.verts.extend(o.verts);
+            to.tris.extend(o.tris.iter().map(|t| t.map(|v| v + base)));
+            to.uvs.extend(o.uvs);
+            // (collision-only triangles have no material: usize::MAX)
+            to.mat.extend(o.mat.iter().map(|&m| mats.get(m).copied().unwrap_or(m)));
+            to.surf.extend(o.surf.iter().map(|&s| if s < 0 { s } else { surfs[s as usize] }));
+        }
+    }
+
     pub fn collision_vertices(&self) -> usize {
         let water = self.surfaces.iter().position(|s| s == "water").map(|i| i as i64);
         let mut seen = std::collections::HashSet::new();
@@ -430,5 +481,34 @@ impl Mesh {
             mtl.push('\n');
         }
         (obj, mtl)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appended_meshes_keep_their_materials_surfaces_and_cameras() {
+        let tri = |z: f64| [[0.0, 0.0, z], [100.0, 0.0, z], [0.0, 100.0, z]];
+        let mut a = Mesh::default();
+        a.tri("ground", tri(0.0), [[0.0; 2]; 3], "grass", "floor");
+        a.cameras.push(Camera { setting: "crawlspace".into(), points: vec![] });
+        a.col_tri("props_collision", tri(5.0), "crawl_floor#1");
+        let mut b = Mesh::default();
+        b.tri("walls", tri(400.0), [[0.0; 2]; 3], "rock", "wall");
+        b.tri("ground", tri(400.0), [[0.0; 2]; 3], "dirt", "floor");
+        b.cameras.push(Camera { setting: "crawlspace".into(), points: vec![] });
+        b.col_tri("props_collision", tri(405.0), "crawl_floor#1");
+        a.append(b);
+        let g = a.objects.iter().find(|o| o.name == "ground").unwrap();
+        assert_eq!(g.tris.len(), 2);
+        assert_eq!(g.mat.iter().map(|&m| a.materials[m].as_str()).collect::<Vec<_>>(), ["grass", "dirt"]);
+        assert_eq!(g.verts[g.tris[1][0]][2], 400.0);
+        // collision only: no material; the second mesh's crawlspace is the second camera
+        let c = a.objects.iter().find(|o| o.name == "props_collision").unwrap();
+        assert!(c.collision_only && c.mat.iter().all(|&m| m == usize::MAX));
+        assert_eq!(c.surf.iter().map(|&s| a.surfaces[s as usize].as_str()).collect::<Vec<_>>(), ["crawl_floor#1", "crawl_floor#2"]);
+        assert_eq!(a.cameras.len(), 2);
     }
 }

@@ -47,8 +47,31 @@ pub struct Level {
     pub props: Vec<Placed>,
     /// What the game's collision will hold (`Mesh::collision_vertices`): at most 8192.
     pub collision_vertices: usize,
-    /// The tunnels built: (line index, the floor along its middle).
+    /// The tunnels built: (line index, the floor along its middle). With storeys, those of the
+    /// storey in the document's own fields.
     pub tunnels: Vec<(usize, Vec<P3>)>,
+    /// With storeys (`Doc::storeys`), where each one is, bottom to top; empty without.
+    pub storeys: Vec<StoreyBand>,
+}
+
+/// Where a storey of a level is (`Level::storeys`): its floor, and the band of heights it fills,
+/// from the underside of its slab (the ceiling of the storey below) to its ceiling (the underside
+/// of the next storey's slab): what lies in it is the storey's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoreyBand {
+    /// Where it's kept (`Stacked::at`).
+    pub at: Option<usize>,
+    pub name: String,
+    pub z: f64,
+    pub lo: f64,
+    pub hi: f64,
+}
+
+impl Level {
+    /// The band of heights storey `at` fills, or None without storeys (the whole level).
+    pub fn band(&self, at: Option<usize>) -> Option<(f64, f64)> {
+        self.storeys.iter().find(|s| s.at == at).map(|s| (s.lo, s.hi))
+    }
 }
 
 struct Info {
@@ -56,6 +79,9 @@ struct Info {
     water: Option<f64>,
     /// A pit: no ground, a void floor at z.
     pit: bool,
+    /// A hole down to the storey under this one (`"open"`): no ground (`build_with` sets its z to
+    /// the storey's floor and opens the storey under it there).
+    open: bool,
     edge: Option<String>,
     noise: Option<Noise>,
 }
@@ -144,8 +170,150 @@ pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
     build_with(doc, theme, None)
 }
 
-/// Builds a level, placing its props from `kit` (`pieces.rs`).
+/// Builds a level, placing its props from `kit` (`pieces.rs`). With storeys, each is built as a
+/// level of its own, enclosed under the next one's slab, and their meshes put together.
 pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, String> {
+    if doc.storeys.is_empty() {
+        if !doc.regions.iter().any(|r| r.kind == "open") {
+            return build_one(doc, theme, kit);
+        }
+        // holes with nothing under them are pits
+        let mut d = doc.clone();
+        let mut notes = vec![];
+        holes_down(&mut d, None, &mut notes);
+        let mut lvl = build_one(&d, theme, kit)?;
+        lvl.problems.splice(0..0, notes);
+        return Ok(lvl);
+    }
+    let stack = doc.stack();
+    let mut out: Option<Level> = None;
+    let mut bands = vec![];
+    for (k, s) in stack.iter().enumerate() {
+        let name = doc.storey_name(s.at);
+        let mut d = doc.storey_doc(s.at);
+        let next = stack.get(k + 1);
+        // its holes go down to its floor (into the storey under it), and the storey over it's
+        // holes open it there
+        let mut notes = vec![];
+        holes_down(&mut d, (k > 0).then_some(s.z), &mut notes);
+        if let Some(n) = next {
+            holes_under(&mut d, &doc.storey_doc(n.at), &doc.storey_name(n.at), &mut notes);
+        }
+        if let Some(n) = next {
+            // under the next storey's slab: enclosed, its ceiling the slab's underside, its roof
+            // (where a skylight's shaft ends) the next storey's floor
+            let style = match &d.outline.ceiling {
+                Some(Ceiling::Closed(c)) => c.style.clone(),
+                _ => None,
+            };
+            d.outline.ceiling = Some(Ceiling::Closed(crate::doc::Cover { height: n.z - n.slab - s.z, roof: Some(n.z), style, ..Default::default() }));
+            d.outline.beyond.clear();
+        }
+        let lvl = build_one(&d, theme, kit).map_err(|e| format!("{name}: {e}"))?;
+        bands.push(StoreyBand { at: s.at, name: name.clone(), z: s.z, lo: if k == 0 { f64::NEG_INFINITY } else { s.z - s.slab }, hi: next.map_or(f64::INFINITY, |n| n.z - n.slab) });
+        let mut props = lvl.props;
+        for p in &mut props {
+            p.storey = s.at;
+        }
+        let problems = notes.into_iter().chain(lvl.problems).map(|p| format!("{name}: {p}"));
+        match &mut out {
+            None => {
+                let mut first = Level { mesh: lvl.mesh, problems: problems.collect(), rim: lvl.rim, faces: lvl.faces, props, collision_vertices: 0, tunnels: vec![], storeys: vec![] };
+                if s.at.is_none() {
+                    first.tunnels = lvl.tunnels;
+                }
+                out = Some(first);
+            }
+            Some(o) => {
+                o.mesh.append(lvl.mesh);
+                o.problems.extend(problems);
+                o.rim = (o.rim.0.min(lvl.rim.0), o.rim.1.max(lvl.rim.1));
+                o.faces += lvl.faces;
+                o.props.extend(props);
+                if s.at.is_none() {
+                    o.tunnels = lvl.tunnels;
+                }
+            }
+        }
+    }
+    let mut lvl = out.expect("a stack has a storey");
+    lvl.collision_vertices = lvl.mesh.collision_vertices();
+    lvl.storeys = bands;
+    Ok(lvl)
+}
+
+/// How far a hole with no storey under it drops, as a pit.
+const HOLE_PIT: f64 = 600.0;
+
+/// A storey's holes (`"open"` regions): down to its floor `z` (`build_one` leaves them without
+/// one, and the storey under it opens there), or with no storey under it (`None`) pits.
+fn holes_down(d: &mut Doc, z: Option<f64>, notes: &mut Vec<String>) {
+    let floor = d.outline.z;
+    for (i, r) in d.regions.iter_mut().enumerate().filter(|(_, r)| r.kind == "open") {
+        match z {
+            Some(z) => r.z = z,
+            None => {
+                notes.push(format!("region {i} ({}): a hole with no storey under it, so it's a pit", r.name));
+                r.kind = "pit".into();
+                r.z = floor - HOLE_PIT;
+            }
+        }
+    }
+}
+
+/// Opens storey `d` under the holes of the storey over it (`above`, named `name`): each hole is a
+/// region of this storey's too, open to the sky (so its ceiling has the hole, and the hole's
+/// shaft through the slab is walled up to the floor over it), as high as the floor it lies in, so
+/// the floors here stay as they are. A hole the same shape as a region here opens that region
+/// instead. A hole crossing a region's edge here can't be a region of this storey: it's reported,
+/// and the ceiling stays closed under it.
+fn holes_under(d: &mut Doc, above: &Doc, name: &str, notes: &mut Vec<String>) {
+    if !above.regions.iter().any(|r| r.kind == "open") {
+        return;
+    }
+    let (Ok(up), Ok(low)) = (crate::map::sample_loops(above), crate::map::sample_loops(d)) else { return };
+    let areas: Vec<f64> = low.polys.iter().map(|p| signed_area(p).abs()).collect();
+    let mut added = vec![];
+    for (i, r) in above.regions.iter().enumerate().filter(|(_, r)| r.kind == "open") {
+        let poly = &up.polys[i + 1];
+        let area = signed_area(poly).abs();
+        // a point inside it: its largest triangle's middle
+        let Some(t) = triangulate(poly, &[], f64::INFINITY).into_iter().max_by(|a, b| tri_area(a).total_cmp(&tri_area(b))) else { continue };
+        let p = [(t[0][0] + t[1][0] + t[2][0]) / 3.0, (t[0][1] + t[1][1] + t[2][1]) / 3.0];
+        let round = (0..low.polys.len()).filter(|&l| point_in_poly(p, &low.polys[l]) && areas[l] > area * (1.0 - 1e-6));
+        let Some(host) = round.min_by(|&a, &b| areas[a].total_cmp(&areas[b])) else {
+            notes.push(format!("the hole {:?} in {name} isn't over this storey", r.name));
+            continue;
+        };
+        if host > 0 && (areas[host] - area).abs() <= area * 1e-6 {
+            d.regions[host - 1].ceiling = Some(Ceiling::Sky);
+            continue;
+        }
+        let (z, kind, surface, noise) = match host {
+            0 => (d.outline.z, "floor".to_string(), None, d.outline.noise.clone()),
+            h => {
+                let g = &d.regions[h - 1];
+                (g.z, g.kind.clone(), g.surface, g.noise.clone())
+            }
+        };
+        let hole = crate::doc::Region { name: format!("{name}'s hole {:?}", r.name), nodes: r.nodes.clone(), z, kind, surface, edge: None, noise, profile: None, profiles: vec![], ceiling: Some(Ceiling::Sky) };
+        added.push((hole, r.name.clone()));
+    }
+    for (hole, hname) in added {
+        d.regions.push(hole);
+        if Map::build(d).is_err() {
+            d.regions.pop();
+            notes.push(format!("the hole {hname:?} in {name} crosses the edge of a region here: a hole has to lie inside one floor of the storey under it, so the ceiling here stays closed under it"));
+        }
+    }
+}
+
+fn tri_area(t: &[P2; 3]) -> f64 {
+    ((t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[2][0] - t[0][0]) * (t[1][1] - t[0][1])).abs() * 0.5
+}
+
+/// Builds one storey (the whole level, without storeys).
+fn build_one(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, String> {
     // OW_TIMING=1 prints how long each phase takes
     let timing = std::env::var_os("OW_TIMING").is_some();
     let mut clock = std::time::Instant::now();
@@ -170,12 +338,12 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     // what lies beyond the outline's edges: bands, regions outside it (`beyond.rs`)
     let (expanded, bands) = crate::beyond::expand(doc)?;
     let doc: &Doc = &expanded;
-    let mut regions = vec![Info { z: doc.outline.z, water: None, pit: false, edge: None, noise: doc.outline.noise.clone() }];
+    let mut regions = vec![Info { z: doc.outline.z, water: None, pit: false, open: false, edge: None, noise: doc.outline.noise.clone() }];
     for (i, r) in doc.regions.iter().enumerate() {
         let water = match r.kind.as_str() {
-            "floor" | "pit" => None,
+            "floor" | "pit" | "open" => None,
             "water" => Some(r.surface.unwrap_or(r.z + 60.0)),
-            k => return Err(format!("region {i} ({}): unknown kind {k:?} (floor, water or pit)", r.name)),
+            k => return Err(format!("region {i} ({}): unknown kind {k:?} (floor, water, pit or open)", r.name)),
         };
         // a style the theme doesn't have (a level switched to another theme) falls back to the
         // theme's own walls
@@ -191,7 +359,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
                 return Err(format!("region {i} ({}): noise scale must be positive", r.name));
             }
         }
-        regions.push(Info { z: r.z, water, pit: r.kind == "pit", edge, noise: r.noise.clone() });
+        regions.push(Info { z: r.z, water, pit: r.kind == "pit", open: r.kind == "open", edge, noise: r.noise.clone() });
     }
     // paths lay themselves out on the regions' ground (their profiles included), then their
     // footprints join the map
@@ -500,7 +668,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     }
     lap("lighting");
     let collision_vertices = b.mesh.collision_vertices();
-    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels })
+    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels, storeys: vec![] })
 }
 
 /// Railings stand this far in from a path's side.
@@ -703,6 +871,12 @@ impl<'a> Builder<'a> {
     fn pit(&self, f: usize) -> bool {
         let face = &self.map.faces[f];
         face.paths.is_empty() && self.regions[face.region].pit
+    }
+
+    /// A hole down to the storey under this one (no path over it): no floor.
+    fn hole(&self, f: usize) -> bool {
+        let face = &self.map.faces[f];
+        face.paths.is_empty() && self.regions[face.region].open
     }
 
     /// The vertex where segment h's wall changes sides, `t` along h (shared by both half-edges).
@@ -997,6 +1171,9 @@ impl<'a> Builder<'a> {
                 let holes: Vec<Vec<P2>> = face.holes.iter().map(|&c| self.map.cycle_pts(c)).collect();
                 let bare: Vec<[P3; 3]> = triangulate_full(&outer, &holes, steiner, &extra, &segs).into_iter().map(|t| t.map(|q| [q[0], q[1], self.height(f, q)])).collect();
                 self.cover_surfaces(fregion, &bare);
+            }
+            if self.hole(f) {
+                continue;
             }
             for p in tris {
                 // stairs: the step texture along the path's surface, one step every `step`
@@ -3118,6 +3295,9 @@ mod tests {
             game: Default::default(),
             actors: vec![],
             texts: vec![],
+            storey: String::new(),
+            slab: None,
+            storeys: vec![],
         }
     }
 
@@ -3160,8 +3340,8 @@ mod tests {
         let anchors = vec![None; map.faces.len()];
         let ceil = Ceilings::new(&doc, &map, &zs, &mut vec![]);
         let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], ceil, bands: Default::default(), ribbons: vec![], blends: Default::default() };
-        b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, edge: None, noise: None })
-            .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, edge: None, noise: None }))
+        b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, open: false, edge: None, noise: None })
+            .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, open: false, edge: None, noise: None }))
             .collect();
         for (hs, top) in b.rim_profiles() {
             for i in 0..hs.len() {
@@ -3257,6 +3437,9 @@ mod tests {
             game: Default::default(),
             actors: vec![],
             texts: vec![],
+            storey: String::new(),
+            slab: None,
+            storeys: vec![],
         }
     }
 
@@ -4472,6 +4655,9 @@ mod tests {
                 game: Default::default(),
                 actors: vec![],
                 texts: vec![],
+                storey: String::new(),
+                slab: None,
+                storeys: vec![],
             };
             let th = Theme::for_doc(&doc, None).unwrap();
             let lvl = build(&doc, &th).unwrap();
@@ -4957,6 +5143,99 @@ mod tests {
         assert_eq!(heights_at(&lvl, &["ceilings"], [-1150.0, 1275.0]).len(), 2);
         let bad = open_edges(&lvl, &solid);
         assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+    }
+
+    /// A house of three storeys: B1 (its slab given, unused under the bottom storey), 1F with a dais
+    /// (the document's own fields) and 2F with a loft, open to the sky.
+    fn storeys_doc() -> Doc {
+        serde_json::from_value(serde_json::json!({
+            "name": "house",
+            "outline": { "nodes": [[-1500, -1500, 1], [1500, -1500, 1], [1500, 1500, 1], [-1500, 1500, 1]] },
+            "storey": "1F",
+            "regions": [ { "name": "dais", "nodes": [[-200, -200, 1], [200, -200, 1], [200, 200, 1], [-200, 200, 1]], "z": 100 } ],
+            "storeys": [
+                { "name": "2F", "z": 400, "regions": [ { "name": "loft", "nodes": [[600, 600, 1], [1200, 600, 1], [1200, 1200, 1], [600, 1200, 1]], "z": 520 } ] },
+                { "name": "B1", "z": -500, "slab": 80 }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn storeys_stack_each_under_the_next_ones_slab() {
+        let doc = storeys_doc();
+        assert_eq!(doc.stack().iter().map(|s| doc.storey_name(s.at)).collect::<Vec<_>>(), ["B1", "1F", "2F"]);
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        // the floors stacked, each storey but the top one under the next's slab
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], [0.0, 0.0]), vec![-500.0, 100.0, 400.0]);
+        assert_eq!(heights_at(&lvl, &["ceilings"], [0.0, 0.0]), vec![-60.0, 340.0]);
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], [900.0, 900.0]), vec![-500.0, 0.0, 520.0]);
+        // closed: the lower storeys walled up to their ceilings, the top one at the edge of the world
+        let bad = open_edges(&lvl, &["ground", "roofs", "walls", "cliffs", "bank", "trees", "ceilings"]);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+        // where each storey is, and its ground alone
+        let bands: Vec<_> = lvl.storeys.iter().map(|s| (s.name.as_str(), s.lo, s.hi)).collect();
+        assert_eq!(bands, [("B1", f64::NEG_INFINITY, -60.0), ("1F", -60.0, 340.0), ("2F", 340.0, f64::INFINITY)]);
+        for (at, want) in [(Some(1), -500.0), (None, 100.0), (Some(0), 400.0)] {
+            let g = props::Ground::new_in(&lvl.mesh, lvl.band(at));
+            assert_eq!(g.at(&lvl.mesh, [0.0, 0.0]).0, Some(want), "{at:?}");
+        }
+        // any storey can be in the document's own fields: the same level
+        let mut swapped = doc.clone();
+        swapped.swap_storey(0);
+        assert_eq!(swapped.outline.z, 400.0);
+        assert_eq!(swapped.regions[0].name, "loft");
+        let again = build(&swapped, &Theme::kokiri()).unwrap();
+        assert_eq!(again.mesh.triangles(), lvl.mesh.triangles());
+        assert_eq!(heights_at(&again, &["ground", "roofs"], [0.0, 0.0]), vec![-500.0, 100.0, 400.0]);
+        assert_eq!(again.band(None), Some((340.0, f64::INFINITY)));
+        swapped.swap_storey(0);
+        assert_eq!(swapped, doc);
+        // a slab too thick for the storey under it
+        let mut thick = doc.clone();
+        thick.storeys[0].slab = Some(380.0);
+        let lvl = build(&thick, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.iter().any(|p| p.starts_with("1F: ")), "{:?}", lvl.problems);
+    }
+
+    #[test]
+    fn a_hole_in_a_storey_opens_the_one_under_it() {
+        let open = |name: &str, x0: f64, y0: f64, x1: f64, y1: f64| -> Region {
+            serde_json::from_value(serde_json::json!({ "name": name, "nodes": [[x0, y0, 1], [x1, y0, 1], [x1, y1, 1], [x0, y1, 1]], "kind": "open" })).unwrap()
+        };
+        let mut doc = storeys_doc();
+        doc.storeys[0].regions.push(open("well", -700.0, -700.0, -300.0, -300.0));
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        // through 2F to 1F's floor: no floor, no ceiling over 1F there, B1 as it was
+        let p = [-500.0, -500.0];
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], p), vec![-500.0, 0.0]);
+        assert_eq!(heights_at(&lvl, &["ceilings"], p), vec![-60.0]);
+        // the slab's edge round it, from 1F's ceiling up to 2F's floor
+        let edge = walls_across(&lvl, [-500.0, -700.0]);
+        assert!(edge.iter().any(|&(lo, hi)| (lo - 340.0).abs() < 1e-6 && (hi - 400.0).abs() < 1e-6), "{edge:?}");
+        let bad = open_edges(&lvl, &["ground", "roofs", "walls", "cliffs", "bank", "trees", "ceilings"]);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+        // a hole the dais's shape opens the dais itself; one across its edge can't open 1F
+        let mut doc = storeys_doc();
+        doc.storeys[0].regions.push(open("over the dais", -200.0, -200.0, 200.0, 200.0));
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        assert_eq!(heights_at(&lvl, &["ceilings"], [0.0, 0.0]), vec![-60.0]);
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], [0.0, 0.0]), vec![-500.0, 100.0]);
+        let mut doc = storeys_doc();
+        doc.storeys[0].regions.push(open("half", 150.0, -100.0, 400.0, 100.0));
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert_eq!(lvl.problems.len(), 1, "{:?}", lvl.problems);
+        assert!(lvl.problems[0].starts_with("1F: the hole \"half\" in 2F crosses"), "{:?}", lvl.problems);
+        assert_eq!(heights_at(&lvl, &["ceilings"], [300.0, 0.0]), vec![-60.0, 340.0]);
+        // the bottom storey's holes have nothing under them: pits
+        let mut doc = storeys_doc();
+        doc.storeys[1].regions.push(open("drop", -700.0, -700.0, -300.0, -300.0));
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.iter().any(|p| p.starts_with("B1: region 0 (drop): a hole with no storey under it")), "{:?}", lvl.problems);
+        assert!(lvl.mesh.objects.iter().any(|o| o.name == "pits" && !o.tris.is_empty()));
     }
 
     #[test]

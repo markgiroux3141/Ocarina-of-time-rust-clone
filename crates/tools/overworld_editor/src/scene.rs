@@ -97,7 +97,8 @@ pub struct Scene {
 const CELL: f64 = 256.0;
 
 impl Scene {
-    pub fn new(lvl: &Level, theme: &Theme, lib: Option<&Library>) -> Scene {
+    /// With `band`, only what lies in it: one storey of several (`Level::storeys`).
+    pub fn new(lvl: &Level, theme: &Theme, lib: Option<&Library>, band: Option<(f64, f64)>) -> Scene {
         let mats: Vec<Mat> = lvl
             .mesh
             .materials
@@ -126,6 +127,12 @@ impl Scene {
         for o in lvl.mesh.objects.iter().filter(|o| o.name != "ceilings" && o.name != "roofs") {
             for (t, tri) in o.tris.iter().enumerate() {
                 let p = tri.map(|v| o.verts[v]);
+                if let Some((lo, hi)) = band {
+                    let z = (p[0][2] + p[1][2] + p[2][2]) / 3.0;
+                    if z <= lo + 0.5 || z >= hi + 0.5 {
+                        continue;
+                    }
+                }
                 let a = [p[1][0] - p[0][0], p[1][1] - p[0][1]];
                 let b = [p[2][0] - p[0][0], p[2][1] - p[0][1]];
                 let up = a[0] * b[1] - a[1] * b[0];
@@ -364,7 +371,7 @@ mod tests {
         let doc: overworld::Doc = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
         let theme = Theme::kokiri();
         let lvl = overworld::build(&doc, &theme).unwrap();
-        let s = Scene::new(&lvl, &theme, None);
+        let s = Scene::new(&lvl, &theme, None, None);
         let pts: Vec<P2> = doc.outline.nodes.iter().map(|n| [n[0], n[1]]).collect();
         let c = [pts.iter().map(|q| q[0]).sum::<f64>() / pts.len() as f64, pts.iter().map(|q| q[1]).sum::<f64>() / pts.len() as f64];
         for a in 0..8 {

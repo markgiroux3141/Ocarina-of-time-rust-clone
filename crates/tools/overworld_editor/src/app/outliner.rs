@@ -286,7 +286,11 @@ fn profile_tag(r: &overworld::doc::Region) -> String {
             }
         }
     }
-    let pit = if r.kind == "pit" { " · pit" } else { "" };
+    let pit = match r.kind.as_str() {
+        "pit" => " · pit",
+        "open" => " · hole",
+        _ => "",
+    };
     if names.is_empty() {
         return pit.into();
     }

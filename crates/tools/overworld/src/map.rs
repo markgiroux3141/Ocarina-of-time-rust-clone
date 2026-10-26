@@ -507,6 +507,9 @@ mod tests {
             game: Default::default(),
             actors: vec![],
             texts: vec![],
+            storey: String::new(),
+            slab: None,
+            storeys: vec![],
         }
     }
 

@@ -31,6 +31,9 @@ pub struct Placed {
     pub footprint: Vec<P2>,
     pub top: f64,
     pub collision_vertices: usize,
+    /// The storey it's on, when the level has several (`Doc::stack`'s `at`: None, the document's
+    /// own fields).
+    pub storey: Option<usize>,
 }
 
 /// The game indexes collision vertices in 13 bits (`oot_import::level`).
@@ -58,6 +61,13 @@ pub struct Ground {
 
 impl Ground {
     pub fn new(mesh: &Mesh) -> Ground {
+        Ground::new_in(mesh, None)
+    }
+
+    /// The ground of one storey (`Level::storeys`): only what lies in its `band` of heights
+    /// (above its slab's underside, up to its ceiling), so what stands on it isn't put on the
+    /// storey above.
+    pub fn new_in(mesh: &Mesh, band: Option<(f64, f64)>) -> Ground {
         let water = mesh.surfaces.iter().position(|s| s == "water").map(|i| i as i64);
         let mut items: Vec<(usize, usize, u8, [f64; 4])> = vec![];
         for (oi, o) in mesh.objects.iter().enumerate() {
@@ -72,6 +82,12 @@ impl Ground {
                     continue;
                 }
                 let [a, b, c] = tri.map(|v| o.verts[v]);
+                if let Some((lo, hi)) = band {
+                    let z = (a[2] + b[2] + c[2]) / 3.0;
+                    if z <= lo + 0.5 || z >= hi + 0.5 {
+                        continue;
+                    }
+                }
                 let n = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
                 let kind = match (lid, is_water) {
                     (true, _) if n < -1e-6 => LID,
@@ -400,6 +416,7 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
             footprint,
             top: origin[2] + piece.bounds[1][2] * scale[2],
             collision_vertices: piece.collision_vertices(),
+            storey: None,
         });
     }
     out
