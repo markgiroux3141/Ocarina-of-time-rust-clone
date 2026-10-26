@@ -194,6 +194,9 @@ echo   180  sandbox-epona        The two riding runs' traces and screenshots, in
 echo   181  game-ingo            Ingo's rental and the races (asks: or race, lost, won)
 echo   182  test-ingo            The Ingo runs, En_In, Bg_Ingate and the race's referee (cargo test)
 echo   183  sandbox-ingo         The four Ingo runs' traces and screenshots, into out\run
+echo   184  game-epona-won       Epona won: Ingo's gate, the leap out (asks: or south, east, west, gate, field)
+echo   185  test-epona-won       The Epona-won run and the four leaps (cargo test)
+echo   186  sandbox-epona-won    The Epona-won run's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -387,6 +390,9 @@ if "%pick%"=="180" set "script=sandbox-epona"
 if "%pick%"=="181" goto ingo
 if "%pick%"=="182" set "script=test-ingo"
 if "%pick%"=="183" set "script=sandbox-ingo"
+if "%pick%"=="184" goto eponawon
+if "%pick%"=="185" set "script=test-epona-won"
+if "%pick%"=="186" set "script=sandbox-epona-won"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -440,6 +446,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:eponawon
+set "which="
+set /p "which=Which (empty: the second race just won; south, east, west, gate or field): "
+call "%~dp0game-epona-won.bat" %which%
+echo game-epona-won finished (exit code %errorlevel%).
 pause
 goto menu
 

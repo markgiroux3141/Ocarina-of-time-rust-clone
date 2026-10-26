@@ -419,6 +419,12 @@ CASES = [
     ("ingo_race_intro", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "ingo-rental", "--script", "ingo-race", "--frames", "1000", "--screenshot", "{shot}"]),
     ("ingo_lost", S, ["--entrance", "ENTR_LON_LON_RANCH_8", "--child", "--preset", "ingo-race-lost", "--script", "ingo-lost", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ingo_won", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-first-win", "--script", "ingo-won", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    # GAME-12 milestone 3: Epona won and out.
+    ("epona_won", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("epona_won_gate_shut", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--frames", "383", "--screenshot", "{shot}"]),
+    ("epona_won_over_the_gate", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--frames", "683", "--screenshot", "{shot}"]),
+    ("epona_won_leap", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--frames", "720", "--screenshot", "{shot}"]),
+    ("fence_jump_south", S, ["--entrance", "ENTR_HYRULE_FIELD_11", "--child", "--preset", "ingo-second-win", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

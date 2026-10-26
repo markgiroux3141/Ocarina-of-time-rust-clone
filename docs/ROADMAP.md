@@ -880,7 +880,13 @@ ranch on her). BACKLOG #51 closed.
 committed and pushed): `En_In`'s adult whole, `Bg_Ingate` and `En_Horse_Game_Check`
 whole; the runs `ingo-rental` (the rental to Epona mounted), `ingo-race` (the race taken from
 horseback, to its start), `ingo-lost`, `ingo-won`, and the presets `ingo-rental`, `ingo-race-lost`,
-`ingo-first-win`. Next: milestone 3, Epona won and out (the exit).
+`ingo-first-win`.
+
+**Milestone 3, Epona won and out, is done** (2026-10-26, ADR 0093; hand-tested, committed and
+pushed): **Phase 13's exit is met.** The run `epona-won` (the second race won: Ingo's
+gate scene, a spurred gallop over the shut gate, the field's leap; Epona Link's) ends as the
+preset `epona-won`, **Phase 14's start**. Left in the phase: milestone 4, the ranch after Epona
+and the field's Poes.
 
 ## Cross-cutting debts
 

@@ -41,6 +41,8 @@ pub const ENTR_HYRULE_FIELD_11: u16 = 0x28A;
 pub const ENTR_HYRULE_FIELD_12: u16 = 0x28E;
 pub const ENTR_HYRULE_FIELD_13: u16 = 0x292;
 pub const ENTR_HYRULE_FIELD_15: u16 = 0x476;
+/// `ENTR_HYRULE_FIELD_6` (0x1F9): the field outside the ranch's gate.
+pub const ENTR_HYRULE_FIELD_6: u16 = 0x1F9;
 pub const ENTR_LON_LON_RANCH_0: u16 = 0x157;
 pub const ENTR_LON_LON_RANCH_7: u16 = 0x4CE;
 /// `ENTR_LON_LON_RANCH_6` (0x4CA: the rental's start in the corral), `_8` (0x558: Ingo's win).
@@ -272,7 +274,7 @@ const HORSE_CS_SPAWNS: [(u16, u16, [i16; 3], i16, i16); 8] = [
 ];
 
 /// Whether the entrance is one of the field's after a jump over a ranch fence.
-fn is_fence_jump_entrance(entrance: u16) -> bool {
+pub fn is_fence_jump_entrance(entrance: u16) -> bool {
     matches!(entrance, ENTR_HYRULE_FIELD_11 | ENTR_HYRULE_FIELD_12 | ENTR_HYRULE_FIELD_13 | ENTR_HYRULE_FIELD_15)
 }
 

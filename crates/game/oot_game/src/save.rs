@@ -1032,6 +1032,16 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: ingo_first_win,
     },
     SavePreset {
+        name: "ingo-second-win",
+        about: "ingo-first-win with the second race won too (race state INGO_RACE_STATE_TRAPPED_WIN_EPONA, 6, EVENTINF_INGO_RACE_SECOND_RACE and _0F, as EnHorseGameCheck_FinishIngoRace leaves them): entered at ENTR_LON_LON_RANCH_7, on Epona (Horse_SetupInGameplay), Ingo gives her and shuts the gate (0x203B, 0x203C)",
+        apply: ingo_second_win,
+    },
+    SavePreset {
+        name: "epona-won",
+        about: "ingo-second-win with Epona had (EVENTCHKINF_EPONA_OBTAINED, 0x18: the field's fence-jump cutscene sets it), GAME-12 milestone 3's end and Phase 14's start: Link adult, Epona his (her song calls her anywhere she can come)",
+        apply: epona_won,
+    },
+    SavePreset {
         name: "prelude",
         about: "adult-awake with the Forest Medallion's blue warp's EVENTCHKINF_48 and the Forest Medallion (Item_Give, as Door_Warp1's warp out of the Forest Temple's boss room gives it): GAME-11 milestone 3's debug start (the Forest Temple is Phase 14's), at the Temple's entrance: room 0's En_Xc 9 gives the Prelude of Light",
         apply: prelude,
@@ -1577,6 +1587,19 @@ fn ingo_race_lost(s: &mut SaveContext) {
 /// `ingo-first-win`'s save.
 fn ingo_first_win(s: &mut SaveContext) {
     ingo_race_over(s, 4);
+}
+
+/// `ingo-second-win`'s save.
+fn ingo_second_win(s: &mut SaveContext) {
+    ingo_race_over(s, 6);
+    // EVENTINF_INGO_RACE_SECOND_RACE (bit 6), set as the first win called the second race.
+    s.event_inf[0] |= 1 << 6;
+}
+
+/// `epona-won`'s save.
+fn epona_won(s: &mut SaveContext) {
+    ingo_second_win(s);
+    s.set_event_chk_inf(0x18);
 }
 
 /// `prelude`'s save, a debug start: `adult-awake` with what the Forest Temple's blue warp gives

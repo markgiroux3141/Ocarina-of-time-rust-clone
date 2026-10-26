@@ -8,13 +8,14 @@ obstacle course, Malon at night) and the field's Poes. Exit (ROADMAP's outline):
 **Status:** surveyed, proposed and decided (2026-10-24; the user took every recommendation: the
 calls' section). The phase starts from the `adult-awake` preset (GAME-11's exit review).
 Milestone 1 is done (hand-tested 2026-10-25, committed and pushed). Milestone 2 is done
-(hand-tested 2026-10-25, committed and pushed).
+(hand-tested 2026-10-25, committed and pushed). Milestone 3 is done (hand-tested 2026-10-26, committed and
+pushed): **the phase's exit is met**, `epona-won` is Phase 14's start.
 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Riding Epona | done (2026-10-25) |
 | 2 | Ingo, the rental and the races | done (2026-10-25) |
-| 3 | Epona won and out (the exit) | |
+| 3 | Epona won and out (the exit) | done (2026-10-26) |
 | 4 | The ranch after and the field's Poes | |
 
 ## The survey
@@ -510,3 +511,98 @@ C buttons, I C-Up, Enter Start.
    scoffs (0x2039).
 4. **`won`** (the first race just won): Ingo at once: another race, for the horse. The second
    race's start line follows.
+
+## Milestone 3: Epona won and out (the exit)
+
+**Status:** done: built and hand-tested 2026-10-26 ("everything works"), committed and pushed
+on the user's ask.
+
+**The answer:** the phase's exit is met. After the second race is won, these play in the C's
+order:
+- Ingo gives Epona up and shuts the ranch's way out: 0x203B and 0x203C by a sub camera, then the
+  gates swing shut with their sound.
+- He stands guard. Link gallops at the shut gate with spurs and clears it: an 80-high gate needs
+  her top speed.
+- Past Ingo, Hyrule Field's leap cutscene plays (`gHyruleFieldGateEponaJumpCs`). Its entrance row
+  makes Epona Link's (`EVENTCHKINF_EPONA_OBTAINED`), and Link is left on her in the field.
+
+The other three leaps (over the ranch's fence south, east and west) play their cutscenes the
+same way. The run's end is the preset **`epona-won`, Phase 14's start**.
+
+ADR 0093. Scripts: `scripts\run\game-epona-won.bat` (menu 184: empty, `south`, `east`, `west`,
+`gate`, `field`), `test-epona-won.bat` (185), `sandbox-epona-won.bat` (186).
+
+### What was built
+
+Almost everything this needed came with milestones 1 and 2:
+- `Horse_SetupInGameplay`'s trapped Epona: on her at (894, 0, -2084) with the race's state 6;
+- the four leaps' spawns (`HORSE_PTYPE_7` under Link, mounted);
+- `En_Horse`'s cutscene actions;
+- the entrance cutscene table's four rows;
+- `En_In`'s gate scene and guard;
+- `Bg_Ingate`'s swing.
+
+New here:
+- **`Play_LoadToLastEntrance`'s fence-jump case** (`OOT_VERSION >= PAL_1_1`): a fall after a leap
+  respawns at `ENTR_HYRULE_FIELD_6` instead of replaying the leap. Ganon's collapsing tower's case
+  stays Phase 19's.
+- **The run** (`playthrough.rs`; tests in `epona_won_run.rs`): `Route::EponaWon` and the task
+  `RideUntil` (ridden through points, not stopping, spurring from any gait when lined up, until
+  a condition).
+- **The presets** `ingo-second-win` (the race's state 6, `EVENTINF_INGO_RACE_SECOND_RACE`, `_0F`)
+  and `epona-won` (with `EVENTCHKINF_EPONA_OBTAINED`).
+
+### Results
+
+- The run (`epona-won`): 1,026 frames.
+  - The gate scene over at 410 (0x203B, 0x203C).
+  - A run-up north, then south over the gate: the high jump at about 680. The transition to the
+    field is at 687.
+  - The leap's cutscene, then on Epona in the field with her his at 1,026.
+- Epona's actions: idle under Link (`HORSE_PTYPE_5`), the gaits, a stop and reverse at a wall in
+  the run-up, the high jump; in the field `ENHORSE_ACT_CS_UPDATE`, then mounted idle.
+- The four leaps (a test): from `ENTR_HYRULE_FIELD_11`, `_12`, `_13` and `_15` without Epona,
+  each cutscene starts and ends. Epona is then his, Link on her, horseData's scene the field. A
+  respawn goes to `ENTR_HYRULE_FIELD_6`.
+- Tests: `epona_won_run` (2). 1,839 tests pass, 1 ignored; `cargo test -p layering` passes; no
+  warnings.
+- Goldens: all 384 of `out/golden_base45`'s hashes the same. 5 new cases (6 hashes): 390 hashes,
+  286 cases, the same over two runs (`out/golden_base46`).
+
+### Corrections and findings
+
+- **The gate needs her top speed.** It's 80 high, and `EnHorse_UpdateBgCheckInfo` jumps more than
+  72 only above 13.8. A gallop under that brakes from 150 off. The run takes a run-up and spurs
+  from a walk on, which `EnHorse_CheckBoost` allows.
+- **The ranch side was ported ahead:** the trapped Epona, the cutscene horse and the leaps came
+  whole with milestone 1's `En_Horse` and `z_horse.c`. No helper was needed.
+
+### Known gaps
+
+- Riding in the field from `epona-won` is the hand test's (the `field-ride` run covers riding into
+  the ranch from the field).
+- The phase's last milestone (4: the ranch after Epona and the field's Poes) is open.
+
+### How to check
+
+```
+scripts\run\test-epona-won.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-epona-won.bat
+```
+
+### By hand
+
+`scripts\run\game-epona-won.bat` (menu 184). WASD the stick (Shift walks), Space A, E B, Q Z, J/K/L
+the C buttons, I C-Up, Enter Start.
+
+1. **Empty** (the second race just won, on Epona by the way out):
+   - Ingo: "Is that Epona?", then "I'll never let you leave this ranch!".
+   - The camera pulls back as the gates swing shut with a clang.
+   - Get out: gallop at the gate with spurs (A) and jump it, or jump the ranch's outer fence. The
+     field's leap cutscene plays, and you ride on in the field.
+2. **`south`, `east`, `west`, `gate`:** straight into each leap's cutscene in the field.
+3. **`field`** (`epona-won`): Hyrule Field outside the ranch's gate with Epona yours: her song
+   calls her; ride, and try the field's low walls.

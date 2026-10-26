@@ -356,7 +356,10 @@ impl PlayIo {
     pub fn load_to_last_entrance(&mut self) {
         self.save.respawn_flag = -1;
         self.transition.trigger = TRANS_TRIGGER_START;
-        self.transition.next_entrance_index = self.save.entrance_index;
+        // (Ganon's collapsing tower's case, back to its exterior with the Master Sword given: Phase
+        // 19.) OOT_VERSION >= PAL_1_1: a fall after the jump over the ranch's fence goes back to
+        // the field's spawn 6, not into the jump's entrance again (and its cutscene).
+        self.transition.next_entrance_index = if crate::horse::is_fence_jump_entrance(self.save.entrance_index) { crate::horse::ENTR_HYRULE_FIELD_6 } else { self.save.entrance_index };
         self.transition.ty = TRANS_TYPE_FADE_BLACK;
     }
 

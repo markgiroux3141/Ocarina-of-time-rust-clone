@@ -759,6 +759,14 @@ pub enum Step {
     IngoGloated,
     /// Ingo's loss over (0x203A): the second race's intro (the ranch's layer 4) reached.
     SecondRaceCalled,
+    /// Ingo's gate scene over (0x203B, 0x203C, the gates shut): he guards the way out
+    /// (`EnIn_GuardingGate`), Link free on Epona.
+    GateShut,
+    /// Past Ingo over the gate: the transition to the field (`ENTR_HYRULE_FIELD_15`) started.
+    JumpedOut,
+    /// In the field after the jump's cutscene (`gHyruleFieldGateEponaJumpCs`), Epona his
+    /// (`EVENTCHKINF_EPONA_OBTAINED`), on her.
+    EponaWon,
 }
 
 impl Step {
@@ -1068,6 +1076,9 @@ impl Step {
             Step::RaceStarted => "race_started",
             Step::IngoGloated => "ingo_gloated",
             Step::SecondRaceCalled => "second_race_called",
+            Step::GateShut => "gate_shut",
+            Step::JumpedOut => "jumped_out",
+            Step::EponaWon => "epona_won",
         }
     }
 }
@@ -1468,6 +1479,11 @@ pub enum Route {
     /// The first race won (`ingo-first-win`, at `ENTR_LON_LON_RANCH_7`): Ingo at once (0x203A),
     /// the second race called (the transition to its intro).
     IngoWon,
+    /// Epona won and out (`ingo-second-win`, at `ENTR_LON_LON_RANCH_7` on Epona): Ingo's gate
+    /// scene (0x203B, 0x203C, the gates swinging shut), then a gallop over the shut gate, past
+    /// Ingo (`EnIn_GuardingGate`: `ENTR_HYRULE_FIELD_15`), the field's jump cutscene. Its end is
+    /// `epona-won` (Phase 14's start).
+    EponaWon,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2688,6 +2704,24 @@ fn race_started(w: &PlayState) -> bool {
     w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_horse::EnHorse>(h)).any(|h| h.ty == crate::en_horse::HORSE_HNI && h.action == crate::en_horse::ENHORSE_ACT_INGO_RACE && h.in_race)
 }
 
+/// `Route::EponaWon`'s gallop: north from where `Horse_SetupInGameplay` puts Link on Epona (894,
+/// 0, -2084) for a run-up, then south over the shut gates at z -2420 (`Bg_Ingate` params 1 and 3,
+/// 80 high: `EnHorse_UpdateBgCheckInfo` jumps that only past 13.8, spurred), past Ingo (at (899, 0,
+/// -2536): behind the point 90 before him, `EnIn_GuardingGate`).
+const OVER_THE_GATE: [Vec3; 2] = [Vec3::new(900.0, 0.0, -1700.0), Vec3::new(900.0, 0.0, -3000.0)];
+
+/// `Route::EponaWon`'s tasks.
+fn epona_won_tasks() -> Vec<Task> {
+    vec![
+        Task::Texts(|w| w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_in::EnIn>(h)).any(|i| i.action == crate::en_in::Action::GuardingGate) && w.player().cs_mode == 0, Step::GateShut),
+        Task::RideUntil(OVER_THE_GATE.to_vec(), |w| w.transition.trigger == oot_game::transition::TRANS_TRIGGER_START, Step::JumpedOut),
+        Task::Texts(
+            |w| w.scene_id == SCENE_FIELD && w.save.get_event_chk_inf(0x18) && cs_over(w) && w.transition.trigger == TRANS_TRIGGER_OFF && w.player().state1 & crate::player::STATE1_23 != 0,
+            Step::EponaWon,
+        ),
+    ]
+}
+
 /// `ENTR_LON_LON_RANCH_6` (`entrance_table.h`: 0x4CA): the rental's corral.
 pub const ENTR_LON_LON_RANCH_6: u16 = 0x4CA;
 
@@ -3526,7 +3560,7 @@ impl Route {
             // The ranch's gateway (spawn 0); the debug start moves Link to Ingo by the corral's gate.
             Route::IngoRental | Route::IngoRace => "ENTR_LON_LON_RANCH_0",
             Route::IngoLost => "ENTR_LON_LON_RANCH_8",
-            Route::IngoWon => "ENTR_LON_LON_RANCH_7",
+            Route::IngoWon | Route::EponaWon => "ENTR_LON_LON_RANCH_7",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3600,6 +3634,7 @@ impl Route {
             Route::IngoRace => Some("ingo-rental"),
             Route::IngoLost => Some("ingo-race-lost"),
             Route::IngoWon => Some("ingo-first-win"),
+            Route::EponaWon => Some("ingo-second-win"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3934,6 +3969,7 @@ impl Route {
             Route::IngoRace => "ingo-race",
             Route::IngoLost => "ingo-lost",
             Route::IngoWon => "ingo-won",
+            Route::EponaWon => "epona-won",
         }
     }
 
@@ -4011,7 +4047,7 @@ impl Route {
             Route::Prelude => 6000,
             Route::SwordBack | Route::SwordAgain => 2000,
             Route::PreludeWarp => 3000,
-            Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoLost | Route::IngoWon => 4000,
+            Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoLost | Route::IngoWon | Route::EponaWon => 4000,
             Route::IngoRace => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
@@ -4025,7 +4061,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -4086,6 +4122,9 @@ enum Task {
     RideIn(Step),
     /// On a standing horse ("Down": `PLAYER_STATE2_22`), A until Link is off it and standing.
     Dismount(Step),
+    /// `Ride` through the points, not stopping, spurring whenever lined up and moving with a carrot
+    /// left, toward the last one until the condition holds.
+    RideUntil(Vec<Vec3>, fn(&PlayState) -> bool, Step),
     /// On the horse: ridden to the point, halted, turned to `Who`, A until the talk starts, then
     /// as `Converse` (the choices in order, until the condition once the box is gone).
     RideTalk(Who, Vec3, Vec<u8>, fn(&PlayState) -> bool, Step),
@@ -4890,6 +4929,7 @@ impl Playthrough {
                 Task::Texts(|w| crate::en_in::race_state(w) == crate::en_in::INGO_RACE_STATE_REMATCH && w.transition.trigger == TRANS_TRIGGER_OFF, Step::IngoGloated),
                 Task::Settle(None),
             ],
+            Route::EponaWon => epona_won_tasks(),
             Route::IngoWon => vec![Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.scene_layer == 4, Step::SecondRaceCalled)],
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
@@ -5448,6 +5488,33 @@ impl Playthrough {
                     Some(idle)
                 }
             },
+            Task::RideUntil(points, until, step) => {
+                self.wait += 1;
+                if self.wait > 3000 {
+                    self.failure = Some("the ride's condition never held".into());
+                    return None;
+                }
+                if until(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                let Some(horse) = Self::ridden(w) else {
+                    self.failure = Some(format!("not on a horse (Link {:?})", w.player().action));
+                    return None;
+                };
+                while self.sub + 1 < points.len() && Self::xz_dist(horse.actor.world_pos, points[self.sub]) < RIDE_RADIUS {
+                    self.sub += 1;
+                }
+                let to = points[self.sub.min(points.len() - 1)];
+                let mut pad = Self::ride_stick(horse, to);
+                let lined_up = (Self::ride_angle(horse, to) as i32).abs() < 0x800;
+                // EnHorse_CheckBoost spurs a walk, a trot or a gallop.
+                let gait = matches!(horse.action, crate::en_horse::ENHORSE_ACT_MOUNTED_WALK | crate::en_horse::ENHORSE_ACT_MOUNTED_TROT | crate::en_horse::ENHORSE_ACT_MOUNTED_GALLOP);
+                if lined_up && gait && horse.num_boosts > 0 && horse.state_flags & crate::en_horse::ENHORSE_BOOST == 0 && self.prev.button & BTN_A == 0 {
+                    pad.button |= BTN_A;
+                }
+                Some(pad)
+            }
             Task::RideTalk(who, to, choices, until, step) => {
                 if self.sub >= 3 {
                     return self.converse(w, who, to, &choices, until, step);
