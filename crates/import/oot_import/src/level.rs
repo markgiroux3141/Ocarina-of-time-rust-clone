@@ -497,7 +497,13 @@ pub fn load(dir: &Path) -> Result<Level> {
             None => notes.push(format!("text {i}: no id or text: left out")),
         }
     }
-    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game, actors, texts })
+    // where the editor says Link starts (a level of several storeys starts on the one being edited)
+    let start = floats(&j, "start");
+    let spawn = match start.as_slice() {
+        [x, y, z] => Vec3::new(*x, *z, -*y),
+        _ => Vec3::new(mid.x, y, mid.z),
+    };
+    Ok(Level { name, room, collision, spawn: (spawn, -0x8000), triangles, notes, scene, game, actors, texts })
 }
 
 /// Connected patches of water triangles (sharing corners): their (x, z) bounds and surface height.

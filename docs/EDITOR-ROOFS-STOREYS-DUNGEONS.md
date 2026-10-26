@@ -291,3 +291,54 @@ Open `sketch_storeys.json` again (Plan + 3D).
 5. Select a hole: Kind says Hole; "Add a railing round it" puts a fence round it.
 6. Play from here on 2F beside the well, walk in: Link falls to 1F. Walk into the drop: down to B1.
 7. A hole on B1 (the bottom storey) is a pit: Link voids out, and the problems say so.
+
+### Slice 3: stairs between storeys, built (2026-10-25)
+
+Slices 1 and 2 committed and pushed (dbdf8b5).
+
+- A path can go **up** (`Path::up`, the inspector's Climb section, "Up to 2F"): its last node is on
+  the storey over its own, as high as that storey's floor there unless the node has a height
+  (`build::stairwells`: the innermost loop of that storey round it; onto a hole, a pond or a pit
+  is reported, as is going up from the top storey).
+- It cuts its own **stairwell**: laid out as the builder lays it (`paths::layout`), the stretch
+  where its surface comes within `STAIR_HEADROOM` (90) of the ceiling, up to where it's
+  `STAIR_STEP` (10) under the floor it climbs to, `STAIRWELL_MARGIN` (10) wider each side, is a
+  hole in that storey (`"open"`, named "stairwell (path)"), so slice 2 opens the storey under it
+  and walls the slab's edge round it. The stairs' top runs on under the floor it climbs to (2
+  under, `STAIR_TUCK`), so there's no gap: a step of 10 up at the stairwell's far edge. A
+  stairwell crossing a region's edge on the storey over is reported and left out.
+- `Level::stairwells`: drawn in the plan, the storey's own dashed in cyan ("stairwell"), the storey
+  over's dotted ("2F's stairwell").
+- **A level's start:** with storeys, `level.json` has `"start"` (`export::start`): the middle of
+  the storey in the document's own fields (the one being edited when ▶ Play exports it), on its
+  floor or the nearest one; `oot_import::level` spawns Link there. ▶ Play now starts on the storey
+  you're on.
+- Example: `sketch_storeys.json` has stairs up from 1F's west side to 2F, and from B1's east side
+  up to 1F.
+- Tests: `stairs_up_a_storey_cut_their_stairwell` (its top, the stairwell's span, no ceiling or
+  floor over the stairs in it, the stairs under 2F's floor at its top, closed; up from the top
+  storey); the start in `storeys_stack_each_under_the_next_ones_slab`.
+- **Not yet:** the profile view under a path doesn't show the climb to the storey over (the
+  builder sets the top's height); the stairwell meets the floor over it with T-junctions (no gap,
+  but they can sparkle); stairs drawn as steps only where the theme has them (Kakariko's); stairs
+  down (a path going up from the storey under is the same thing, drawn there).
+
+#### By hand
+
+Rebuild the game (the start is new in `oot_import`): `scripts\run\editor.bat` does it. Open
+`sketch_storeys.json` (Plan + 3D).
+
+1. On 1F: the ramp "stairs up" along the west wall, and "2F's stairwell" dotted over its upper
+   half; in 3D (2F cut away) the ceiling opens over it. Select it: Climb says "Up to 2F: On".
+2. On 2F: "stairwell" dashed at the ramp's top, beside the well; in 3D the ramp comes up through
+   it, its top flush with 2F's floor.
+3. On B1: "cellar stairs" up the east side, "1F's stairwell" dotted over it; on 1F that stairwell
+   dashed in the south-east corner, beside the drop.
+4. ▶ Play on 1F: Link starts on the dais in the middle. Walk up the west ramp to 2F, round the
+   well's railing, and back down. Switch to B1 and ▶ Play: he starts on B1; walk up the cellar
+   stairs to 1F.
+5. Turn "Up to 2F" off: the ramp's top drops to 1F's floor and the stairwell goes. On again, then
+   drag its top node into the well: the problems say it goes up into a hole. Onto the loft: it
+   climbs to the loft's height, but its stairwell would cross the loft's edge, so the problems say
+   there's none (stairs to a raised floor need the stairwell inside it).
+6. On 2F (the top), a path with Up on: the inspector says there's no storey over it.

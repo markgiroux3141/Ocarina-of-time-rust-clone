@@ -999,8 +999,10 @@ floor; the top storey's ceiling is its own. Each storey is built as a level of i
 without `storeys` builds as before. `Level::storeys` says where each one is (its band of heights), and
 `props::Ground::new_in` gives one storey's ground: each storey's props and actors stand on its own floor. A region of kind `"open"` is a hole down to the storey under it (at its storey's floor, with no floor of its own):
 that storey takes it as a region of its own open to the sky, as high as the floor it lies in, so its ceiling opens
-and the slab's edge is walled; it has to lie inside one floor there. On the bottom storey it's a pit. Example
-`sketch_storeys.json`.
+and the slab's edge is walled; it has to lie inside one floor there. On the bottom storey it's a pit. A path with `"up": true` climbs to the storey over its own (its last node on that
+storey's floor) and cuts its own stairwell there, a hole over the stretch where Link's head would meet the ceiling
+(`build::stairwells`). With storeys, `level.json` has a `"start"` on the storey in the document's own fields
+(`export::start`), where the game starts Link. Example `sketch_storeys.json`.
 
 ## Themes (`themes/*.json`, `settings.theme`)
 

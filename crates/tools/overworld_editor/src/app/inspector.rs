@@ -386,6 +386,9 @@ impl App {
         let floating = self.doc.paths[k].mode == "floating";
         let fences: Vec<String> = self.theme.fences.keys().cloned().collect();
         let kakariko = self.doc.settings.theme == "kakariko";
+        // the storey over this one, if there is one: stairs can climb to it
+        let stack = self.doc.stack();
+        let above = stack.iter().position(|s| s.at.is_none()).and_then(|i| stack.get(i + 1)).map(|s| self.doc.storey_name(s.at));
         let p = &mut self.doc.paths[k];
         let what = match p.section.as_ref() {
             Some(s) => format!("Path · {}", section_label(Some(s)).to_lowercase()),
@@ -452,6 +455,20 @@ impl App {
             });
         });
         section(ui, "ins pclimb", "Climb", None, true, |ui| {
+            match &above {
+                Some(name) => {
+                    field(ui, &format!("Up to {name}"), Some("Stairs or a ramp up to the storey over this one: its last node is on that storey's floor (unless the node has a height of its own), and it cuts its own stairwell through the slab where Link's head would hit the ceiling"), |ui| {
+                        widgets::segmented(ui, &mut p.up, &[(false, "Off"), (true, "On")])
+                    });
+                }
+                None if p.up => {
+                    widgets::callout(ui, "It goes up, but there's no storey over this one.", style::WARN);
+                    if widgets::button(ui, None, "Don't go up", None, false).clicked() {
+                        p.up = false;
+                    }
+                }
+                None => {}
+            }
             let mut on = p.switchbacks.is_some();
             field(
                 ui,

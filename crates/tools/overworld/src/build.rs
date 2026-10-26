@@ -52,6 +52,9 @@ pub struct Level {
     pub tunnels: Vec<(usize, Vec<P3>)>,
     /// With storeys (`Doc::storeys`), where each one is, bottom to top; empty without.
     pub storeys: Vec<StoreyBand>,
+    /// The stairwells stairs between storeys cut (`stairwells`): the storey whose floor each is a
+    /// hole in (`Stacked::at`), and its outline.
+    pub stairwells: Vec<(Option<usize>, Vec<P2>)>,
 }
 
 /// Where a storey of a level is (`Level::storeys`): its floor, and the band of heights it fills,
@@ -186,18 +189,43 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         return Ok(lvl);
     }
     let stack = doc.stack();
+    let mut docs: Vec<Doc> = stack.iter().map(|s| doc.storey_doc(s.at)).collect();
+    let mut all_notes: Vec<Vec<String>> = vec![vec![]; stack.len()];
+    // stairs up to the next storey cut their stairwells in it, first: they're holes of its
+    let mut wells = vec![];
+    for k in 0..stack.len() {
+        if !docs[k].paths.iter().any(|p| p.up) {
+            continue;
+        }
+        match stack.get(k + 1) {
+            None => {
+                for p in docs[k].paths.iter().filter(|p| p.up) {
+                    all_notes[k].push(format!("path {}: it goes up, but there's no storey over this one", p.name));
+                }
+            }
+            Some(n) => {
+                let (lo, hi) = docs.split_at_mut(k + 1);
+                let (mut nl, mut nu) = (vec![], vec![]);
+                for w in stairwells(&mut lo[k], &mut hi[0], n.z - n.slab, &doc.storey_name(n.at), &mut nl, &mut nu) {
+                    wells.push((n.at, w));
+                }
+                all_notes[k].extend(nl);
+                all_notes[k + 1].extend(nu);
+            }
+        }
+    }
     let mut out: Option<Level> = None;
     let mut bands = vec![];
     for (k, s) in stack.iter().enumerate() {
         let name = doc.storey_name(s.at);
-        let mut d = doc.storey_doc(s.at);
+        let mut d = docs[k].clone();
         let next = stack.get(k + 1);
         // its holes go down to its floor (into the storey under it), and the storey over it's
         // holes open it there
-        let mut notes = vec![];
+        let mut notes = std::mem::take(&mut all_notes[k]);
         holes_down(&mut d, (k > 0).then_some(s.z), &mut notes);
         if let Some(n) = next {
-            holes_under(&mut d, &doc.storey_doc(n.at), &doc.storey_name(n.at), &mut notes);
+            holes_under(&mut d, &docs[k + 1], &doc.storey_name(n.at), &mut notes);
         }
         if let Some(n) = next {
             // under the next storey's slab: enclosed, its ceiling the slab's underside, its roof
@@ -218,7 +246,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         let problems = notes.into_iter().chain(lvl.problems).map(|p| format!("{name}: {p}"));
         match &mut out {
             None => {
-                let mut first = Level { mesh: lvl.mesh, problems: problems.collect(), rim: lvl.rim, faces: lvl.faces, props, collision_vertices: 0, tunnels: vec![], storeys: vec![] };
+                let mut first = Level { mesh: lvl.mesh, problems: problems.collect(), rim: lvl.rim, faces: lvl.faces, props, collision_vertices: 0, tunnels: vec![], storeys: vec![], stairwells: vec![] };
                 if s.at.is_none() {
                     first.tunnels = lvl.tunnels;
                 }
@@ -239,7 +267,126 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     let mut lvl = out.expect("a stack has a storey");
     lvl.collision_vertices = lvl.mesh.collision_vertices();
     lvl.storeys = bands;
+    lvl.stairwells = wells;
     Ok(lvl)
+}
+
+/// How much room over Link's head stairs need: where their surface comes nearer the ceiling than
+/// this, the storey over them opens (their stairwell).
+pub const STAIR_HEADROOM: f64 = 90.0;
+
+/// Stairs' top runs on under the floor they climb to from this far under it: the step up at the
+/// stairwell's far edge, so there's no gap between the stairs and the floor.
+pub const STAIR_STEP: f64 = 10.0;
+
+/// How far under the floor they climb to stairs end (`STAIR_STEP` is the step at the stairwell's
+/// edge; this keeps their tip, under the floor, from fighting it).
+pub const STAIR_TUCK: f64 = 2.0;
+
+/// A stairwell is this much wider than its stairs each side.
+pub const STAIRWELL_MARGIN: f64 = 10.0;
+
+/// The innermost of `loops` round p, and its floor's height in `d` (the loops' document).
+fn floor_round(loops: &crate::map::Loops, d: &Doc, p: P2) -> Option<(usize, f64)> {
+    let l = (0..loops.polys.len()).filter(|&l| point_in_poly(p, &loops.polys[l])).min_by(|&a, &b| signed_area(&loops.polys[a]).abs().total_cmp(&signed_area(&loops.polys[b]).abs()))?;
+    Some((l, if l == 0 { d.outline.z } else { d.regions[l - 1].z }))
+}
+
+/// Stairs from storey `lower` up to `upper` (named `name`, the underside of its slab at
+/// `ceiling`): each path of `lower`'s that goes `up` ends on `upper`'s floor (its last node's
+/// height, unless it has one), and cuts its stairwell there, a hole in `upper` (`"open"`) over
+/// the stretch where the stairs come within `STAIR_HEADROOM` of the ceiling, up to where they're
+/// `STAIR_STEP` under the floor they climb to (on from there they run on under it).
+/// `holes_under` then opens `lower` under it. Returns the stairwells' outlines.
+fn stairwells(lower: &mut Doc, upper: &mut Doc, ceiling: f64, name: &str, notes: &mut Vec<String>, notes_up: &mut Vec<String>) -> Vec<Vec<P2>> {
+    let (Ok(low), Ok(up), Ok(detail)) = (crate::map::sample_loops(lower), crate::map::sample_loops(upper), lower.settings.detail()) else { return vec![] };
+    let lower_z = lower.outline.z;
+    let lower_regions: Vec<f64> = lower.regions.iter().map(|r| r.z).collect();
+    let mut out = vec![];
+    for path in lower.paths.iter_mut().filter(|p| p.up) {
+        let pname = if path.name.is_empty() { "path".to_string() } else { path.name.clone() };
+        let Some([x, y]) = path.nodes.last().and_then(|n| Some([(*n.first()?)?, (*n.get(1)?)?])) else { continue };
+        if path.nodes.len() < 2 {
+            continue;
+        }
+        // its top: on the floor of the storey over it there
+        let top = match floor_round(&up, upper, [x, y]) {
+            None => {
+                notes.push(format!("path {pname}: its last node isn't over {name}"));
+                continue;
+            }
+            Some((l, _)) if l > 0 && upper.regions[l - 1].kind != "floor" => {
+                let r = &upper.regions[l - 1];
+                notes.push(format!("path {pname}: it goes up into {name}'s {} {:?}, not onto a floor", if r.kind == "open" { "hole" } else { r.kind.as_str() }, r.name));
+                continue;
+            }
+            Some((_, z)) => path.nodes.last().and_then(|n| n.get(2).copied().flatten()).unwrap_or(z),
+        };
+        // (a hair under the floor at its very end, so its tip doesn't fight the floor over it)
+        let last = path.nodes.last_mut().unwrap();
+        last.resize(last.len().max(3), None);
+        last[2] = Some(top - STAIR_TUCK);
+        let base = |p: P2| {
+            let l = (0..low.polys.len()).filter(|&l| point_in_poly(p, &low.polys[l])).min_by(|&a, &b| signed_area(&low.polys[a]).abs().total_cmp(&signed_area(&low.polys[b]).abs()));
+            match l {
+                Some(l) if l > 0 => lower_regions[l - 1],
+                _ => lower_z,
+            }
+        };
+        let Ok(g) = crate::paths::layout(path, &base, detail.paths) else { continue };
+        // where it comes within the headroom of the ceiling, and where it's a step under the floor
+        let st = &g.st;
+        let at = |want: f64| -> Option<f64> {
+            let j = st.iter().position(|q| q.z >= want)?;
+            if j == 0 {
+                return Some(st[0].s);
+            }
+            let (a, b) = (&st[j - 1], &st[j]);
+            Some(a.s + (b.s - a.s) * ((want - a.z) / (b.z - a.z).max(1e-9)).clamp(0.0, 1.0))
+        };
+        let (Some(s0), Some(s1)) = (at(ceiling - STAIR_HEADROOM), at(top - STAIR_STEP)) else { continue };
+        if s1 <= s0 + 1.0 {
+            continue;
+        }
+        // across it at s: its sides, `STAIRWELL_MARGIN` further out
+        let across = |s: f64| -> (P2, P2) {
+            let j = st.iter().position(|q| q.s >= s).unwrap_or(st.len() - 1).max(1);
+            let (a, b) = (&st[j - 1], &st[j]);
+            let t = ((s - a.s) / (b.s - a.s).max(1e-9)).clamp(0.0, 1.0);
+            let p = [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t];
+            let d = [b.p[0] - a.p[0], b.p[1] - a.p[1]];
+            let len = (d[0] * d[0] + d[1] * d[1]).sqrt().max(1e-9);
+            let h = 0.5 * (a.w + (b.w - a.w) * t) + STAIRWELL_MARGIN;
+            let n = [-d[1] / len * h, d[0] / len * h];
+            ([p[0] + n[0], p[1] + n[1]], [p[0] - n[0], p[1] - n[1]])
+        };
+        let mut ss = vec![s0];
+        ss.extend(st.iter().map(|q| q.s).filter(|&s| s > s0 + 1.0 && s < s1 - 1.0));
+        ss.push(s1);
+        let (left, right): (Vec<P2>, Vec<P2>) = ss.iter().map(|&s| across(s)).unzip();
+        let mut poly = douglas_peucker(&right, 1.0);
+        poly.extend(douglas_peucker(&left, 1.0).into_iter().rev());
+        let hole = crate::doc::Region {
+            name: format!("stairwell ({pname})"),
+            nodes: poly.iter().map(|q| vec![q[0], q[1], 1.0]).collect(),
+            z: upper.outline.z,
+            kind: "open".into(),
+            surface: None,
+            edge: None,
+            noise: None,
+            profile: None,
+            profiles: vec![],
+            ceiling: None,
+        };
+        upper.regions.push(hole);
+        if Map::build(upper).is_err() {
+            upper.regions.pop();
+            notes_up.push(format!("the stairwell for path {pname} crosses the edge of a region here, so there's none: the stairs go up through the slab"));
+            continue;
+        }
+        out.push(poly);
+    }
+    out
 }
 
 /// How far a hole with no storey under it drops, as a pit.
@@ -668,7 +815,7 @@ fn build_one(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, Strin
     }
     lap("lighting");
     let collision_vertices = b.mesh.collision_vertices();
-    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels, storeys: vec![] })
+    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels, storeys: vec![], stairwells: vec![] })
 }
 
 /// Railings stand this far in from a path's side.
@@ -5190,6 +5337,10 @@ mod tests {
         assert_eq!(again.mesh.triangles(), lvl.mesh.triangles());
         assert_eq!(heights_at(&again, &["ground", "roofs"], [0.0, 0.0]), vec![-500.0, 100.0, 400.0]);
         assert_eq!(again.band(None), Some((340.0, f64::INFINITY)));
+        // Link starts in the middle of the storey in the document's own fields
+        assert_eq!(crate::export::start(&doc, &lvl), Some([0.0, 0.0, 100.0]));
+        assert_eq!(crate::export::start(&swapped, &again), Some([0.0, 0.0, 400.0]));
+        assert_eq!(crate::export::start(&sample_doc(), &build(&sample_doc(), &Theme::kokiri()).unwrap()), None);
         swapped.swap_storey(0);
         assert_eq!(swapped, doc);
         // a slab too thick for the storey under it
@@ -5236,6 +5387,47 @@ mod tests {
         let lvl = build(&doc, &Theme::kokiri()).unwrap();
         assert!(lvl.problems.iter().any(|p| p.starts_with("B1: region 0 (drop): a hole with no storey under it")), "{:?}", lvl.problems);
         assert!(lvl.mesh.objects.iter().any(|o| o.name == "pits" && !o.tris.is_empty()));
+    }
+
+    #[test]
+    fn stairs_up_a_storey_cut_their_stairwell() {
+        let mut doc = storeys_doc();
+        // from 1F's floor up 400 to 2F's over 700: in the stairwell from 250 (90 under 1F's ceiling)
+        // to 390 (10 under 2F's floor)
+        doc.paths.push(serde_json::from_value(serde_json::json!({ "name": "stairs", "nodes": [[-1000, 600], [-1000, 1300]], "width": 160, "up": true })).unwrap());
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        assert_eq!(lvl.stairwells.len(), 1);
+        assert_eq!(lvl.stairwells[0].0, Some(0), "a hole in 2F");
+        let ys: Vec<f64> = lvl.stairwells[0].1.iter().map(|p| p[1]).collect();
+        let (y0, y1) = (ys.iter().copied().fold(f64::INFINITY, f64::min), ys.iter().copied().fold(f64::NEG_INFINITY, f64::max));
+        assert!((y0 - 1037.5).abs() < 5.0 && (y1 - 1282.5).abs() < 5.0, "{y0} {y1}");
+        // under the ceiling at its foot
+        assert_eq!(heights_at(&lvl, &["ceilings"], [-1000.0, 700.0]), vec![-60.0, 340.0]);
+        // in the stairwell: the stairs, no ceiling, no floor over them
+        let h = heights_at(&lvl, &["ground", "roofs"], [-1000.0, 1150.0]);
+        assert!(h.len() == 2 && (h[1] - 314.3).abs() < 3.0, "{h:?}");
+        assert_eq!(heights_at(&lvl, &["ceilings"], [-1000.0, 1150.0]), vec![-60.0]);
+        // at its top, the stairs run on just under 2F's floor
+        let h = heights_at(&lvl, &["ground", "roofs"], [-1000.0, 1295.0]);
+        assert!(h.len() == 3 && h[1] > 390.0 && h[2] == 400.0, "{h:?}");
+        // closed but where the stairs run on inside the slab, under 2F's floor (hidden: the floor
+        // over them, the step at the stairwell's edge and 1F's ceiling round them), and round the
+        // stairwell at 2F's floor, where the two storeys meet with T-junctions (1F's walls have
+        // points where the stairs cross its edge, 2F's floor not)
+        let well = &lvl.stairwells[0].1;
+        let on_well = |q: &(i64, i64, i64)| q.2 == 40_000 && dist_to_loop([q.0 as f64 / 100.0, q.1 as f64 / 100.0], well) < 0.05;
+        let bad: Vec<_> = open_edges(&lvl, &["ground", "roofs", "walls", "cliffs", "bank", "trees", "ceilings"])
+            .into_iter()
+            .filter(|e| ![e.0, e.1].iter().all(|q| q.1 >= 128_000 && q.1 <= 130_000 && q.2 >= 34_000 && q.2 <= 40_000))
+            .filter(|e| !(on_well(&e.0) && on_well(&e.1)))
+            .collect();
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+        // stairs up from the top storey go nowhere
+        let mut top = storeys_doc();
+        top.storeys[0].paths.push(serde_json::from_value(serde_json::json!({ "name": "nowhere", "nodes": [[-1000, 600], [-1000, 1300]], "up": true })).unwrap());
+        let lvl = build(&top, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.iter().any(|p| p == "2F: path nowhere: it goes up, but there's no storey over this one"), "{:?}", lvl.problems);
     }
 
     #[test]

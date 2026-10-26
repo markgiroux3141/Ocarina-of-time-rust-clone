@@ -2513,8 +2513,25 @@ impl App {
                 painter.text(top + Vec2::new(0.0, -2.0), Align2::CENTER_BOTTOM, format!("{name}'s hole"), FontId::proportional(10.5), col);
             }
         }
-        // the storey over this one: its slab is this one's ceiling
+        // stairwells (`Level::stairwells`): this storey's, as its holes are drawn, and the storey
+        // over's, dotted, where stairs from here go up through the ceiling
         let stack = self.doc.stack();
+        if let Some(lvl) = &self.level {
+            let up = stack.iter().position(|s| s.at.is_none()).and_then(|k| stack.get(k + 1)).map(|s| s.at);
+            for (at, w) in lvl.stairwells.iter().filter(|w| w.1.len() >= 3) {
+                let pts: Vec<Pos2> = w.iter().chain(w.first()).map(|&q| v.to_screen(q)).collect();
+                let top = pts.iter().fold(pts[0], |a, p| if p.y < a.y { *p } else { a });
+                if at.is_none() {
+                    painter.extend(Shape::dashed_line(&pts, Stroke::new(1.4, HOLE_COLOUR), 6.0, 4.0));
+                    painter.text(top + Vec2::new(0.0, -2.0), Align2::CENTER_BOTTOM, "stairwell", FontId::proportional(10.5), HOLE_COLOUR);
+                } else if up == Some(*at) {
+                    let col = HOLE_COLOUR.gamma_multiply(0.6);
+                    painter.extend(Shape::dashed_line(&pts, Stroke::new(1.2, col), 2.0, 4.0));
+                    painter.text(top + Vec2::new(0.0, -2.0), Align2::CENTER_BOTTOM, format!("{}'s stairwell", self.doc.storey_name(*at)), FontId::proportional(10.5), col);
+                }
+            }
+        }
+        // the storey over this one: its slab is this one's ceiling
         let over = stack.iter().position(|s| s.at.is_none()).and_then(|k| stack.get(k + 1)).map(|n| (self.doc.storey_name(n.at), n.z - n.slab - self.doc.outline.z));
 
         // loops

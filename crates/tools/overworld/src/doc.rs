@@ -882,6 +882,11 @@ pub struct Path {
     /// (`paths::meander`): its two nodes are the ends, and the builder lays the zig-zag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub switchbacks: Option<Switchbacks>,
+    /// Climbs to the storey over its own (docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md, slice 3): its last
+    /// node is on that storey, as high as its floor there unless the node says, and it cuts its own
+    /// stairwell through the slab (`build::stairwells`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub up: bool,
 }
 
 /// "Make it walkable": a path between two nodes that zig-zags across a corridor so it climbs no
@@ -937,6 +942,7 @@ impl Default for Path {
             sections: vec![],
             railings: None,
             switchbacks: None,
+            up: false,
         }
     }
 }

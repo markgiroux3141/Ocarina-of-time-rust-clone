@@ -5,6 +5,7 @@
     { "name": "dais", "nodes": [[-300, -250, 1], [300, -250, 1], [300, 250, 1], [-300, 250, 1]], "z": 60 },
     { "name": "drop", "nodes": [[400, -700, 1], [800, -700, 1], [800, -300, 1], [400, -300, 1]], "kind": "open" }
   ],
+  "paths": [ { "name": "stairs up", "nodes": [[-1250, -800], [-1250, 0]], "width": 160, "up": true } ],
   "props": [ { "piece": "stump_post", "at": [-900, -600], "yaw": 0 } ],
   "actors": [ { "actor": "Obj_Tsubo", "at": [900, -600] } ],
   "storey": "1F",
@@ -18,6 +19,7 @@
       "props": [ { "piece": "stone_medium", "at": [-900, 600], "yaw": 30 } ],
       "actors": [ { "actor": "Obj_Tsubo", "at": [850, 575] } ] },
     { "name": "B1", "z": -400,
+      "paths": [ { "name": "cellar stairs", "nodes": [[1200, -800], [1200, 0]], "width": 160, "up": true } ],
       "regions": [ { "name": "cellar pool", "nodes": [[-800, -500, 1], [0, -500, 1], [0, 300, 1], [-800, 300, 1]], "z": -520, "kind": "water", "surface": -440 } ] }
   ],
   "settings": { "detail": "low", "edges": "hard", "wall_texture": "stretched" }

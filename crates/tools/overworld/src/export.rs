@@ -102,6 +102,10 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
         j["game"] = jg;
         j["problems"] = problems.clone().into();
     }
+    // with storeys, Link starts on the one in the document's own fields (the one being edited)
+    if let Some(p) = start(doc, lvl) {
+        j["start"] = p.to_vec().into();
+    }
     // the actors, each at its height as built (oot_import::level reads them into the room)
     if !doc.actors.is_empty() || doc.storeys.iter().any(|s| !s.actors.is_empty()) {
         j["actors"] = actors(doc, lvl, &mut problems).into();
@@ -117,6 +121,34 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
     put(&out.join("level.mtl"), mtl)?;
     put(&out.join("level.obj"), obj)?;
     Ok(problems)
+}
+
+/// Where Link starts in a level of several storeys: in the middle of the storey in the document's
+/// own fields, on its floor, or on the floor nearest the middle (it may be a hole). None without
+/// storeys: the game starts him on the highest floor in the middle.
+pub fn start(doc: &Doc, lvl: &Level) -> Option<[f64; 3]> {
+    if doc.storeys.is_empty() {
+        return None;
+    }
+    let ground = crate::props::Ground::new_in(&lvl.mesh, lvl.band(None));
+    let xs = doc.outline.nodes.iter().map(|n| n[0]);
+    let ys = doc.outline.nodes.iter().map(|n| n[1]);
+    let (x0, x1) = xs.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), x| (a.min(x), b.max(x)));
+    let (y0, y1) = ys.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), y| (a.min(y), b.max(y)));
+    let mid = [0.5 * (x0 + x1), 0.5 * (y0 + y1)];
+    let reach = (x1 - x0).max(y1 - y0);
+    let mut r = 0.0;
+    while r < reach {
+        for k in 0..if r == 0.0 { 1 } else { 32 } {
+            let a = k as f64 / 32.0 * std::f64::consts::TAU;
+            let p = [mid[0] + r * a.cos(), mid[1] + r * a.sin()];
+            if let Some(z) = ground.at(&lvl.mesh, p).0 {
+                return Some([p[0], p[1], z]);
+            }
+        }
+        r += 50.0;
+    }
+    None
 }
 
 /// Where an actor stands: its own height, else the highest floor under it as built (the water's
