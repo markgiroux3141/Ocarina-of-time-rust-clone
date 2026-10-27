@@ -9,14 +9,15 @@ obstacle course, Malon at night) and the field's Poes. Exit (ROADMAP's outline):
 calls' section). The phase starts from the `adult-awake` preset (GAME-11's exit review).
 Milestone 1 is done (hand-tested 2026-10-25, committed and pushed). Milestone 2 is done
 (hand-tested 2026-10-25, committed and pushed). Milestone 3 is done (hand-tested 2026-10-26, committed and
-pushed): **the phase's exit is met**, `epona-won` is Phase 14's start.
+pushed): **the phase's exit is met**, `epona-won` is Phase 14's start. Milestone 4, the phase's
+last, is done (hand-tested 2026-10-26, committed and pushed): every milestone of the phase is.
 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Riding Epona | done (2026-10-25) |
 | 2 | Ingo, the rental and the races | done (2026-10-25) |
 | 3 | Epona won and out (the exit) | done (2026-10-26) |
-| 4 | The ranch after and the field's Poes | |
+| 4 | The ranch after and the field's Poes | done (2026-10-26) |
 
 ## The survey
 
@@ -606,3 +607,203 @@ the C buttons, I C-Up, Enter Start.
 2. **`south`, `east`, `west`, `gate`:** straight into each leap's cutscene in the field.
 3. **`field`** (`epona-won`): Hyrule Field outside the ranch's gate with Epona yours: her song
    calls her; ride, and try the field's low walls.
+
+## Milestone 4: The ranch after and the field's Poes
+
+**Status:** done: surveyed and built 2026-10-26 (the user took every recommendation of the
+survey), hand-tested 2026-10-26 ("this works"), committed and pushed on the user's ask.
+
+**The answer:** the ranch after Epona and the field's Poes, as the C has them:
+- **Malon by day with Epona Link's** (`En_Ma3`, by the corral's gate) thanks him (0x2000). With
+  Epona near she offers her obstacle course (0x2002 into 0x2003): "Let's go" starts it on Epona
+  (the ranch's layer 4, its referee made type 4). Back from it she gives the time: the record
+  under 50 seconds the first time (0x208F, the cow delivered to Link's house), a new best (0x2012),
+  a slow one (0x2004) or a fail (0x208E). The best is kept (`HIGH_SCORE(HS_HORSE_RACE)`).
+- **Malon by night before Epona** (`En_Ma2` rot.z 6) sings by the corral. Epona's Song played to
+  her: the chime, then "Do you know my mother's song?" (0x2051 into 0x2052). After Epona she
+  sings there still (rot.z 8: 0x2056). By day before Epona she's in the stable with her basket
+  (0x204C).
+- **Hyrule Field's Poes:** riding Epona near one of the ten places, a Big Poe appears ahead and
+  flees. Beaten, its soul is caught by touching it (0x5005): in an empty bottle, a Big Poe
+  (0x508F), and that place has no more. On foot a small Poe, or a Big Poe on a 40% roll.
+- **The message box** prints the timers and high scores (0x2004's time, 0x2090's best).
+
+ADR 0095 (0094 is the level editor's). Scripts: `scripts\run\game-ranch-after.bat` (menu 187:
+empty, `record`, `night`, `stable`, `field`), `test-ranch-after.bat` (188),
+`sandbox-ranch-after.bat` (189).
+
+### The survey
+
+Checked against the decomp (52a510f) and the pack (`out/data27`): `ootx scene-info` on `spot20`
+layers 2 to 4, `malon_stable` 0, 2 and 3, and `spot00` 0 to 3; the texts printed from the pack.
+
+**Where they are.**
+
+| Scene | Layer | Placed | Lives when |
+|---|---|---|---|
+| `spot20` | 2 (adult, day) | `En_Ma3` -1 at (-158, 0, -1596), on Ingo 2's spot by the corral's gate | Epona had (`func_80AA2EC8`); killed before |
+| | 3 (adult, night) | `En_Ma2` -1 at (66, 0, -402), rot.z 6 and 8 | 6 before Epona (singing, waits for Epona's Song), 8 after |
+| | 4 (`CS_INDEX_0`) | `En_Horse_Game_Check` **1**, the eight `Bg_Umajump` 1 | the referee's init makes it 4 on the ranch with Epona had: the course |
+| `malon_stable` | 0, 2, 3 | `En_Ma2` -1 at (120, 0, 0), rot.z 5 | an adult by day before Epona (0x204C, her basket) |
+| `spot00` | 2, 3 | 10 `En_Po_Field`, params 0x16 to 0x1F (the switch flags) | adults only (layers 0 and 1 have none) |
+
+No placement uses `En_Ma2` rot.z 7 (the ranch by day after Epona is `En_Ma3`'s).
+
+**Malon's course** (`EnMa3_GetTextId`, `EnMa3_UpdateTalkState`):
+- The first talk is 0x2000 (her thanks: sets `INFTABLE_B8`). After it, on foot with no horse within
+  1,200, 0x2001 ("play Epona's Song"); with Epona near or ridden, 0x2002 (the first time: sets
+  `INFTABLE_B9`) running on into 0x2003, or 0x2003: the course offered ("Let's go").
+- Yes: 0x2092 (no high score yet: "the record is 50 seconds"), 0x2090 (her record and Link's
+  best), or 0x2091 (the cow already won). Its event ends the talk: `ENTR_LON_LON_RANCH_0` with
+  `CS_INDEX_0` (layer 4), `EVENTINF_HORSES_0A` set, the timer `TIMER_STATE_UP_FREEZE`.
+- Layer 4's start puts Link on his horse at (-250, 1, -1580) (`Horse_SetupInCutscene`,
+  `HORSE_PTYPE_6`: Epona unless the race word's horse type says the rental horse; Ingo's init at
+  spawn 0 clears that word, so Epona). The referee (type 4, ported whole in milestone 2) runs the
+  laps, then sends Link to `_7` (Epona spawned beside him at (-25, 0, -1600), `z_horse.c:100`).
+- At `_7` Malon is beside spawn 7 and talks at once (`ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED`):
+  over 210 seconds (a foul or time up: the referee sets 240) 0x208E; under 50 the first time
+  0x208F (the record: **`EVENTCHKINF_HORSE_RACE_COW_UNLOCK`**, the cow in Link's house, `En_Cow`
+  ported); better than the best 0x2012; else 0x2004. Each closing keeps the best in
+  `HIGH_SCORE(HS_HORSE_RACE)` (save `highScores[3]`, seconds; 180 when unset).
+
+**Malon at night before Epona** (`En_Ma2` rot.z 6): she sings (`Audio_ToggleMalonSinging`,
+ported for the child). Within 48 of her Link takes out the ocarina (`PLAYER_STATE2_23`, `_24`,
+the pattern of `En_Fu` and `En_Kakasi`); `OCARINA_ACTION_CHECK_EPONA` (0x23, not yet in the port's
+`message.rs`); the song right: the chime, `INFTABLE_PLAYED_SONG_FOR_ADULT_MALON`, 30 frames, then
+she talks: 0x2051 ("Do you know my mother's song?": sets `_TALKED_TO_ADULT_MALON_AFTER_SONG`),
+then 0x2052 after. Before the song 0x2050; after Epona, 0x2056.
+
+**The field's Poes** (`EnPoField_Init`, `EnPoField_WaitForSpawn`):
+- One instance records its place and keeps living (the last placed: see the corrections below);
+  the other nine record theirs and are killed (`sNumSpawned`, overlay statics: reset when the overlay unloads with the scene).
+- **No time of day:** the C never checks it. Big Poes appear by day as by night (both adult
+  layers place them). A correction to the brief's "at night".
+- 200 frames after its init, then each frame: Link within 150 on x and z of a place. Riding
+  (`PLAYER_STATE1_23`) with the place's switch flag clear: a **Big Poe** 480 ahead of Link,
+  fleeing (speed by the horse's). Riding with it set: nothing. On foot: a small Poe 300 ahead, or
+  a Big Poe on a 40% `Rand_ZeroOne` roll (flag clear).
+- **No `Rand` while it waits away from the places** (the roll is on foot and near one; the soul's
+  colour roll only once it's out): the field's golden cases shouldn't move. The nearest run is
+  `field_ride`: it starts 433 on x from place 0x17 and rides away from it.
+- **The soul is a talk, not a bottle swing:** touching it offers 0x5005 (auto-accepted, a
+  choice); yes with an empty bottle gives `ITEM_BOTTLE_POE` (0x5008) or `ITEM_BOTTLE_BIG_POE`
+  (0x508F, the switch flag set: that place's Big Poe is done). No bottle: 0x5006; no: 0x5007.
+  As `En_Poh` (ported in Phase 10), so Player's `CatchInBottle` isn't needed. `Item_Give` already
+  handles both bottles.
+- The fight: health 4; `adult-awake` has no bow, so the sword from horseback (ported in
+  milestone 1) or on foot. The hand test's.
+
+**What the port lacks besides the actors:**
+- **The message box's numbers:** `MESSAGE_RACE_TIME` prints 00"00" and `MESSAGE_HIGHSCORE` prints
+  0 (`message.rs`, "the save keeps no high scores"; it does now). Malon's 0x2004, 0x2012, 0x208F,
+  0x2090 and 0x2091 show them. `Message_Decode`'s two branches, for the main session.
+- `OCARINA_ACTION_CHECK_EPONA`, `NAVI_ENEMY_BIG_POE`, `NAVI_ENEMY_POE_WASTELAND`.
+- The characters: adult Malon (`object_ma2`, `gMalonAdultSkel`) and the field Poe
+  (`object_po_field`, `gPoeFieldSkel`). BACKLOG #80 (point lights) and #81 (the lantern's pieces)
+  apply to the field Poe as to `En_Poh`.
+
+### What was built
+
+- **`En_Ma3`** (the helper's) whole: her texts and their closings (the course's event, the results,
+  the high score, the cow's flag), tracking, eyes, singing (`OOT_VERSION >= PAL_1_0`), the draw
+  with her basket. The PAL N64 talk check (`EnMa3_UpdateTalking`) isn't this ROM's.
+- **`En_Ma2`'s adult** (the helper's) whole: the four spawn indexes, her texts (with the mask
+  reactions' Malon row), the ocarina and Epona's Song (`EnMa2_WaitForOcarina` to
+  `EnMa2_ForceTalkAfterSong`), singing, tracking, eyes, the draw. Adult Malon's one model is baked
+  once (`En_Ma2/eye*_mouth*`, `En_Ma2/basket`) and drawn by both.
+- **`En_Po_Field`** (the helper's) whole: the wait by the places, the appearing, circling, fleeing,
+  damage and death, the soul and its bottle, the flame, the draws; its overlay statics (ADR 0059).
+  Bakes for the Poe and the Big Poe (opaque and translucent), the lantern, the two souls, the flame.
+- **`Message_Decode`'s numbers:** `MESSAGE_RACE_TIME`, `MESSAGE_MARATHON_TIME` (`timerSeconds`,
+  `subTimerSeconds`) and `MESSAGE_HIGHSCORE` (every `HS_*`, the fish's length from its packed
+  score); `OCARINA_ACTION_CHECK_EPONA`.
+- **Pack format 36** (`out/data28`).
+- **The runs** (`playthrough.rs`; tests in `ranch_after_runs.rs`): `Route::MalonCourse`,
+  `MalonRecord`, `MalonSong`, `BigPoe`; `Who::AdultMalon`; the debug preset **`malon-record`**
+  (`epona-won` with the course just ridden in 45 seconds, entered at `ENTR_LON_LON_RANCH_7`).
+- **Names and characters:** the editor's "Malon, adult (obstacle course)" and "Poe (Hyrule
+  Field)"; `ootx`'s "Malon (adult)", "Poe (field)" and "Big Poe".
+
+### Results
+
+- The four runs (frames):
+  - the course (`malon-course`): 1,869. Her thanks over 730, Epona's Song heard 775, Epona come
+    1,241, the course taken 1,787, the start (the referee lets Link go) 1,869 on layer 4, Link on
+    Epona at the start line;
+  - the record (`malon-record`): 284 (0x208F, the cow's flag, the best 45);
+  - Malon by night (`malon-song`): 597. The song heard 81, her talk over 597;
+  - the Big Poe (`big-poe`): 514. Epona's Song heard 77, on her 428, the Big Poe out 484 (Link
+    within 150 of place 0x17, the Poe 480 ahead), fleeing 514.
+- The texts are the C's. The course: 0x2000; Epona's Song's three; 0x2002 into 0x2003, "Let's go",
+  0x2092. The record: 0x208F. By night: Epona's Song's three, then 0x2051 into 0x2052.
+- Tests: `ranch_after_runs` (4); `en_ma3` (4), `en_ma2` (4, two new), `en_po_field` (5), the
+  helpers'; the message box's numbers (1). 1,863 tests pass, 3 ignored (the two new ignored tests
+  are the level editor session's); `cargo test -p layering` passes; no warnings.
+- Goldens: 9 of `out/golden_base46`'s 390 hashes changed, all traces and only in their actor counts
+  (no position, step or text moved): the adult field's (`ruins`, `prelude_warp`, `field_ride`,
+  `epona_won`) by 9, the nine `En_Po_Field` instances `EnPoField_Init` kills, which were
+  placeholders; the ranch's by day before Epona (`ride_epona`, `ingo_rental`, `ingo_race`,
+  `ingo_lost`, `ingo_won`, `epona_won`) by 1, `En_Ma3` killed before Epona. Proven in
+  `target/game26proof` with `En_Ma3` and `En_Po_Field` unregistered: all nine are
+  `out/golden_base46`'s. 6 new cases (10 hashes): 400 hashes, 292 cases, the same over two runs
+  (`out/golden_base47`). The `big_poe` end shot doesn't show the Poe: it flees about 500 ahead at
+  the height it appeared at (100) while the ground there rises; at frame 492 it's drawn, small, by a
+  tree.
+
+### Corrections and findings
+
+- **The Big Poe needs no night:** `En_Po_Field` never reads the time (the brief's "at night").
+- **The Poe that lives is the last placed** (0x1F's), not the first: the ten inits run as
+  `object_po_field` loads, and each new actor goes to its category's head, so `sSpawn*` holds the
+  places backwards (0x17 is index 8). The same behaviour either way. (The helper's.)
+- **The soul is a talk, not a bottle swing:** as `En_Poh`'s, so Player's `CatchInBottle` wasn't
+  needed.
+- **0x2051 runs on into 0x2052**, and 0x2002 into 0x2003 (the pack's texts).
+- **Malon's course needs Epona within 1,200** (`Actor_FindNearby`): at the gateway she's at the
+  ranch's song point, 1,283 from Malon. The run calls her and waits for her to stand.
+- **The `malon-record` preset has `INFTABLE_B8` and `_B9`**, as the talk that offered the course
+  left them: without `B8` Malon's first words are her thanks, not the result.
+- **Three `@bug (game)`s in `En_Po_Field`** (the helper's): `EnPoField_SetupFlee` sets its action
+  before checking for the damage action, so a hurt Big Poe's flight restarts; a soul removes the
+  shadow and nothing restores it; the waiting actor keeps the soul's draw (at scale 0).
+- **The helpers' share went as proposed:** `En_Po_Field`, and `En_Ma3` with `En_Ma2`'s adult, in
+  parallel. Each imported its own pack; the main session bumped the format once.
+
+### Known gaps
+
+- The course's laps, the Big Poe's fight and the soul's bottle are the hand test's (the user's
+  calls).
+- The Poe's light doesn't light round it (BACKLOG #80); its lantern's pieces aren't seen (#81).
+- `MESSAGE_POINTS` and `MESSAGE_FISH_INFO` still print 0 (no game needs them yet).
+- Child Malon ignores masks (BACKLOG #112).
+
+### How to check
+
+```
+scripts\run\test-ranch-after.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-ranch-after.bat
+```
+
+### By hand
+
+`scripts\run\game-ranch-after.bat` (menu 187). WASD the stick (Shift walks), Space A, E B, Q Z,
+J/K/L the C buttons, I C-Up, Enter Start.
+
+1. **Empty** (the ranch by day with Epona yours, by Malon at the corral's gate): talk to her: her
+   thanks. Talk again: "play Epona's Song". L, then I J L I J L: Epona comes. Talk to Malon again:
+   the course ("Let's go"): the screen goes, you're on Epona at the start line, the timer counts.
+   Ride two laps over the eight fences in order (high ones need speed: A spurs). Back by Malon she
+   gives your time; under 50 seconds the first time, the record and a present for your house.
+   Try again: a slower time ("train harder"), or a foul (a fence out of order: "you failed").
+2. **`record`** (the course just ridden in 45 seconds): Malon at once: the new record, the
+   present.
+3. **`night`** (the ranch at 22:00 before Epona, by Malon singing): her song is heard. Take out
+   the ocarina (L) and play Epona's Song: a chime, then she asks if you know her mother's song.
+4. **`stable`** (the stable by day before Epona): Malon with her basket; talk: Ingo's changed.
+5. **`field`** (Hyrule Field below the ranch's ramp, Epona yours): call her, ride west to the
+   ramp's foot: a Big Poe appears ahead and flees. Chase it and hit it with the sword (B) from
+   horseback until it falls; get off and touch its soul: "Yes" bottles it ("You caught a Big
+   Poe!"). Ride back there: no Big Poe.

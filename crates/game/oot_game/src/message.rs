@@ -124,6 +124,7 @@ pub const OCARINA_ACTION_PLAYBACK_SUNS: u16 = 0x18;
 pub const OCARINA_ACTION_PLAYBACK_PRELUDE: u16 = 0x14;
 pub const OCARINA_ACTION_CHECK_MINUET: u16 = 0x1C;
 pub const OCARINA_ACTION_CHECK_SARIA: u16 = 0x22;
+pub const OCARINA_ACTION_CHECK_EPONA: u16 = 0x23;
 pub const OCARINA_ACTION_CHECK_LULLABY: u16 = 0x24;
 pub const OCARINA_ACTION_CHECK_TIME: u16 = 0x26;
 pub const OCARINA_ACTION_CHECK_STORMS: u16 = 0x27;
@@ -675,6 +676,83 @@ pub fn item_icon_texture(item: u8) -> Option<(&'static str, u32, u32)> {
         Some(("icon_item_24_static", (item - ITEM_MEDALLION_FOREST) as u32 * 0x900, 24))
     } else {
         None
+    }
+}
+
+// `HighScores` (`save.h`).
+pub const HS_HBA: u8 = 0x00;
+pub const HS_POE_POINTS: u8 = 0x01;
+pub const HS_FISHING: u8 = 0x02;
+pub const HS_HORSE_RACE: u8 = 0x03;
+pub const HS_MARATHON: u8 = 0x04;
+pub const HS_UNK_05: u8 = 0x05;
+pub const HS_DAMPE_RACE: u8 = 0x06;
+
+/// `Message_Decode`'s seconds as minutes and seconds, `mm"ss"` (`MESSAGE_RACE_TIME`,
+/// `MESSAGE_MARATHON_TIME` and the timed high scores).
+fn time_digits(seconds: i32) -> Vec<u8> {
+    let mut digits = [0i32, 0, 0, seconds];
+    while digits[3] >= 60 {
+        digits[1] += 1;
+        if digits[1] >= 10 {
+            digits[0] += 1;
+            digits[1] -= 10;
+        }
+        digits[3] -= 60;
+    }
+    while digits[3] >= 10 {
+        digits[2] += 1;
+        digits[3] -= 10;
+    }
+    let d = |v: i32| (b'0' as i32 + v) as u8;
+    vec![d(digits[0]), d(digits[1]), b'"', d(digits[2]), d(digits[3]), b'"']
+}
+
+/// `Message_Decode`'s `MESSAGE_HIGHSCORE`: `HIGH_SCORE(index)` as a count without leading zeros
+/// (horseback archery, the Poe points, the fish's length) or a time (the horse race, the
+/// marathon, Dampé's race); `HS_UNK_05` writes nothing.
+fn highscore_digits(index: u8, save: &SaveContext) -> Vec<u8> {
+    let mut value = save.high_scores.get(index as usize).copied().unwrap_or(0);
+    if index == HS_FISHING {
+        if !save.adult {
+            // LINK_AGE_IN_YEARS == YEARS_CHILD.
+            value &= 0x7F;
+        } else {
+            value = ((value as u32 & 0xFF00_0000) >> 0x18) as i32;
+            value &= 0x7F;
+        }
+        value = ((value as f32) * (value as f32) * 0.0036 + 0.5) as i32;
+    }
+    match index {
+        HS_HBA | HS_POE_POINTS | HS_FISHING => {
+            let mut digits = [0i32, 0, 0, value];
+            while digits[3] >= 1000 {
+                digits[0] += 1;
+                digits[3] -= 1000;
+            }
+            while digits[3] >= 100 {
+                digits[1] += 1;
+                digits[3] -= 100;
+            }
+            while digits[3] >= 10 {
+                digits[2] += 1;
+                digits[3] -= 10;
+            }
+            let mut load_char = false;
+            let mut out = Vec::new();
+            for (i, &v) in digits.iter().enumerate() {
+                if i == 3 || v != 0 {
+                    load_char = true;
+                }
+                if load_char {
+                    out.push((b'0' as i32 + v) as u8);
+                }
+            }
+            out
+        }
+        HS_HORSE_RACE | HS_MARATHON | HS_DAMPE_RACE => time_digits(value),
+        // HS_UNK_05, and an index past the table (the C's switch has no default).
+        _ => Vec::new(),
     }
 }
 
@@ -1247,8 +1325,7 @@ impl MessageContext {
                 }
                 decoded_buf_pos -= 1;
             } else if matches!(cur_char, MESSAGE_MARATHON_TIME | MESSAGE_RACE_TIME | MESSAGE_POINTS | MESSAGE_TOKENS | MESSAGE_FISH_INFO | MESSAGE_TIME) {
-                // The timers, scores, tokens and the clock: only the clock and the tokens are
-                // kept by the save here.
+                // The timers, scores, tokens and the clock (the points and the fish read 0).
                 for d in &self.number_digits(cur_char, save) {
                     if *d != b' ' {
                         self.font.load_char(d - b' ', char_tex_idx);
@@ -1259,12 +1336,18 @@ impl MessageContext {
                 }
                 decoded_buf_pos -= 1;
             } else if cur_char == MESSAGE_HIGHSCORE {
-                // The save keeps no high scores: every one reads as a score of 0 (HS_UNK_05
-                // would write nothing).
+                // `HIGH_SCORE(index)`, as a count or a time by its kind; HS_UNK_05 writes nothing.
                 self.msg_buf_pos += 1;
-                self.font.load_char(b'0' - b' ', char_tex_idx);
-                char_tex_idx += fs;
-                self.set_decoded(decoded_buf_pos as usize, b'0');
+                let digits = highscore_digits(self.font.byte(self.msg_buf_pos as usize), save);
+                if !digits.is_empty() {
+                    for d in &digits {
+                        self.font.load_char(d - b' ', char_tex_idx);
+                        char_tex_idx += fs;
+                        self.set_decoded(decoded_buf_pos as usize, *d);
+                        decoded_buf_pos += 1;
+                    }
+                    decoded_buf_pos -= 1;
+                }
             } else if cur_char == MESSAGE_ITEM_ICON {
                 decoded_buf_pos += 1;
                 let item = self.font.byte(pos + 1);
@@ -1325,8 +1408,8 @@ impl MessageContext {
     }
 
     /// The characters `Message_Decode` writes for a number: `MESSAGE_TIME` (the clock as
-    /// "hh:mm"), `MESSAGE_TOKENS` (`gsTokens`); the timers and scores the save doesn't keep read
-    /// as 0.
+    /// "hh:mm"), `MESSAGE_TOKENS` (`gsTokens`), `MESSAGE_RACE_TIME` and `MESSAGE_MARATHON_TIME`
+    /// (`timerSeconds` and `subTimerSeconds` as mm"ss"); the points and the fish read as 0.
     fn number_digits(&self, c: u8, save: &SaveContext) -> Vec<u8> {
         let d = |v: i16| b'0' + v as u8;
         match c {
@@ -1366,7 +1449,11 @@ impl MessageContext {
                 }
                 out
             }
-            MESSAGE_MARATHON_TIME | MESSAGE_RACE_TIME => vec![b'0', b'0', b'"', b'0', b'0', b'"'],
+            MESSAGE_MARATHON_TIME | MESSAGE_RACE_TIME => {
+                // "EVENT timer": the timer's seconds as minutes and seconds.
+                let seconds = if c == MESSAGE_RACE_TIME { save.timer_seconds } else { save.sub_timer_seconds };
+                time_digits(seconds as i32)
+            }
             _ => vec![b'0'],
         }
     }
@@ -2780,4 +2867,30 @@ pub fn bakes() -> Vec<SpriteBake> {
         quad: Quad::Rect { s: 16, t: 32 },
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `MESSAGE_RACE_TIME` and the timed high scores print mm"ss"; the counts drop their leading
+    /// zeros; `HS_UNK_05` prints nothing.
+    #[test]
+    fn timers_and_high_scores() {
+        let mut save = SaveContext::new(0, false, 0);
+        save.timer_seconds = 47;
+        save.sub_timer_seconds = 125;
+        save.high_scores[HS_HORSE_RACE as usize] = 180;
+        save.high_scores[HS_POE_POINTS as usize] = 1000;
+        save.high_scores[HS_HBA as usize] = 0;
+        assert_eq!(time_digits(save.timer_seconds as i32), b"00\"47\"".to_vec());
+        assert_eq!(time_digits(save.sub_timer_seconds as i32), b"02\"05\"".to_vec());
+        assert_eq!(highscore_digits(HS_HORSE_RACE, &save), b"03\"00\"".to_vec());
+        assert_eq!(highscore_digits(HS_POE_POINTS, &save), b"1000".to_vec());
+        assert_eq!(highscore_digits(HS_HBA, &save), b"0".to_vec());
+        assert!(highscore_digits(HS_UNK_05, &save).is_empty());
+        // The fish: a child's length in the low bits; the score is length² × 0.0036, rounded.
+        save.high_scores[HS_FISHING as usize] = 50;
+        assert_eq!(highscore_digits(HS_FISHING, &save), b"9".to_vec());
+    }
 }

@@ -885,8 +885,15 @@ horseback, to its start), `ingo-lost`, `ingo-won`, and the presets `ingo-rental`
 **Milestone 3, Epona won and out, is done** (2026-10-26, ADR 0093; hand-tested, committed and
 pushed): **Phase 13's exit is met.** The run `epona-won` (the second race won: Ingo's
 gate scene, a spurred gallop over the shut gate, the field's leap; Epona Link's) ends as the
-preset `epona-won`, **Phase 14's start**. Left in the phase: milestone 4, the ranch after Epona
-and the field's Poes.
+preset `epona-won`, **Phase 14's start**.
+
+**Milestone 4, the ranch after Epona and the field's Poes, is done** (2026-10-26, ADR 0095;
+hand-tested, committed and pushed): `En_Ma3` (Malon's obstacle course: the offer, the results,
+the high score, the cow), `En_Ma2`'s adult (Epona's Song played to her by night) and
+`En_Po_Field` (the field's Big Poes, by day or night) whole; the message box's timers and high scores; the runs
+`malon-course` (to the course's start), `malon-record` (on its debug preset), `malon-song` and
+`big-poe` (it appears and flees). The laps, the fight and the bottle are the hand test's. Every
+milestone of the phase is done.
 
 ## Cross-cutting debts
 

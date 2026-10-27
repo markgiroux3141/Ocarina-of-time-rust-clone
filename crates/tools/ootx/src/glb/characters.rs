@@ -155,6 +155,8 @@ pub const CHARACTERS: &[Character] = &[
     c("Malon (child)", "En_Ma1/eye0", Some(("object_ma1", "gMalonChildSingAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Cow", "En_Cow/body", Some(("object_cow", "gCowBodyChewAnim")), &[], &[], &[]),
     c("Ingo", "En_In/eye0", Some(("object_in", "gIngoStandingAnim")), &[], &[9, 10, 11], &[12, 13, 14]),
+    // GAME-12 milestone 4: En_Ma2's and En_Ma3's.
+    c("Malon (adult)", "En_Ma2/eye0_mouth0", Some(("object_ma2", "gMalonAdultIdleAnim")), &[], &[11, 12, 13], &[14, 15, 16]),
     c("Guay", "En_Crow/skel", Some(("object_crow", "gGuayFlyAnim")), &[], &[], &[]),
     // GAME-09 milestone 2.
     c("Goron", "En_Go2/eye1_mouth0", Some(("object_oF1d_map", "gGoronAnim_0021D0")), &[], &[10, 11, 12], &[13, 14, 15]),
@@ -166,6 +168,9 @@ pub const CHARACTERS: &[Character] = &[
     c("Lizalfos", "En_Zf/lizalfos_opa", Some(("object_zf", "gZfIdleAnim")), &[OPAQUE_0E], &[], &[]),
     c("Dinolfos", "En_Zf/dinolfos_opa", Some(("object_zf", "gZfIdleAnim")), &[OPAQUE_0E], &[], &[]),
     c("Poe", "En_Poh/poe_opa", Some(("object_poh", "gPoeFloatAnim")), &[(0x0E, Env, POE_LIGHT)], &[], &[]),
+    // GAME-12 milestone 4: Hyrule Field's Poes (sPoFieldInfo's envColor on 0x0A).
+    c("Poe (field)", "En_Po_Field/poe_opa", Some(("object_po_field", "gPoeFieldFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [255, 85, 0, 255])], &[], &[]),
+    c("Big Poe", "En_Po_Field/big_poe_opa", Some(("object_po_field", "gPoeFieldFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [160, 0, 255, 255])], &[], &[]),
     c("Poe Composer (Sharp)", "En_Poh/sharp_opa", Some(("object_po_composer", "gPoeComposerFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [75, 20, 25, 255]), (0x0B, Env, [90, 85, 50, 255])], &[], &[]),
     c("Poe Composer (Flat)", "En_Poh/flat_opa", Some(("object_po_composer", "gPoeComposerFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [80, 110, 90, 255]), (0x0B, Env, [100, 90, 100, 255])], &[], &[]),
     c("Armos", "En_Am/skel", Some(("object_am", "gArmosRicochetAnim")), &[(0x0B, Env, [0, 0, 0, 0])], &[], &[]),

@@ -425,6 +425,14 @@ CASES = [
     ("epona_won_over_the_gate", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--frames", "683", "--screenshot", "{shot}"]),
     ("epona_won_leap", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "ingo-second-win", "--script", "epona-won", "--frames", "720", "--screenshot", "{shot}"]),
     ("fence_jump_south", S, ["--entrance", "ENTR_HYRULE_FIELD_11", "--child", "--preset", "ingo-second-win", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
+    # GAME-12 milestone 4: the ranch after Epona and the field's Poes. Malon's course offered and
+    # started, its record, Malon by night, the field's Big Poe.
+    ("malon_course", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "epona-won", "--script", "malon-course", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("malon_course_offer", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "epona-won", "--script", "malon-course", "--frames", "1700", "--screenshot", "{shot}"]),
+    ("malon_record", S, ["--entrance", "ENTR_LON_LON_RANCH_7", "--child", "--preset", "malon-record", "--script", "malon-record", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("malon_song", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--time", "22:00", "--script", "malon-song", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("malon_song_talk", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--time", "22:00", "--script", "malon-song", "--frames", "400", "--screenshot", "{shot}"]),
+    ("big_poe", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona-won", "--script", "big-poe", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

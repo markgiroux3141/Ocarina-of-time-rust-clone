@@ -172,6 +172,8 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Bg_Umajump", "Jumpable horse fence", Group::SetPiece),
     ("Bg_Ingate", "Lon Lon Ranch gate", Group::SetPiece),
     ("En_Horse_Game_Check", "Horse game referee", Group::Trigger),
+    ("En_Ma3", "Malon, adult (obstacle course)", Group::Character),
+    ("En_Po_Field", "Poe (Hyrule Field)", Group::Enemy),
     ("Bg_Mjin", "Warp pad", Group::Door),
     ("En_Heishi3", "Castle sentry", Group::Character),
     ("En_Heishi2", "Gate guard", Group::Character),

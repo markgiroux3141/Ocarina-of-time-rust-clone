@@ -767,6 +767,26 @@ pub enum Step {
     /// In the field after the jump's cutscene (`gHyruleFieldGateEponaJumpCs`), Epona his
     /// (`EVENTCHKINF_EPONA_OBTAINED`), on her.
     EponaWon,
+    /// Adult Malon's thanks over (0x2000: `INFTABLE_B8`).
+    MalonThanked,
+    /// Epona come to her song, within 1,200 of Malon (`EnMa3_GetTextId`'s `Actor_FindNearby`).
+    EponaCame,
+    /// Malon's obstacle course taken (0x2002 into 0x2003, "Let's go", 0x2092): the transition to
+    /// its start (`ENTR_LON_LON_RANCH_0`, `CS_INDEX_0`) started.
+    CourseTaken,
+    /// The course's start: its referee (`En_Horse_Game_Check` type 4) letting Link go
+    /// (`MALONRACE_PLAYER_MOVE`).
+    CourseStarted,
+    /// Malon's record over (0x208F): `EVENTCHKINF_HORSE_RACE_COW_UNLOCK` set, the high score kept.
+    CourseRecord,
+    /// Malon's talk after Epona's Song over (0x2051 into 0x2052:
+    /// `INFTABLE_TALKED_TO_ADULT_MALON_AFTER_SONG`).
+    MalonSang,
+    /// A Big Poe out (`En_Po_Field` params `EN_PO_FIELD_BIG`, `EnPoField_Appear`): Link riding
+    /// within 150 of one of its places.
+    BigPoeAppeared,
+    /// The Big Poe fleeing (`EnPoField_Flee`).
+    BigPoeFleeing,
 }
 
 impl Step {
@@ -1079,6 +1099,14 @@ impl Step {
             Step::GateShut => "gate_shut",
             Step::JumpedOut => "jumped_out",
             Step::EponaWon => "epona_won",
+            Step::MalonThanked => "malon_thanked",
+            Step::EponaCame => "epona_came",
+            Step::CourseTaken => "course_taken",
+            Step::CourseStarted => "course_started",
+            Step::CourseRecord => "course_record",
+            Step::MalonSang => "malon_sang",
+            Step::BigPoeAppeared => "big_poe_appeared",
+            Step::BigPoeFleeing => "big_poe_fleeing",
         }
     }
 }
@@ -1484,6 +1512,21 @@ pub enum Route {
     /// Ingo (`EnIn_GuardingGate`: `ENTR_HYRULE_FIELD_15`), the field's jump cutscene. Its end is
     /// `epona-won` (Phase 14's start).
     EponaWon,
+    /// Malon's obstacle course offered and started (`epona-won`, a debug start by Malon at the
+    /// corral's gate): 0x2000 (her thanks), Epona's Song (Epona near: `Actor_FindNearby` within
+    /// 1,200), 0x2002 into 0x2003, "Let's go", 0x2092; the course's intro (layer 4) to its start.
+    /// The laps are the hand test's (the user's call 6).
+    MalonCourse,
+    /// The course just won in 45 seconds, the first time (`malon-record`, at
+    /// `ENTR_LON_LON_RANCH_7`): Malon at once (0x208F), the cow's unlock, the high score 45.
+    MalonRecord,
+    /// Adult Malon singing in the ranch by night before Epona (`adult-awake` at 22:00, a debug
+    /// start before her): Epona's Song played to her, then 0x2051 into 0x2052.
+    MalonSong,
+    /// Hyrule Field's Big Poe (`epona-won`, `FieldRide`'s debug start at the foot of the ranch's
+    /// ramp): Epona's Song, on her, ridden to the place by the ramp (`En_Po_Field` 0x17); the Big
+    /// Poe appears ahead and flees. The fight and the soul's bottle are the hand test's.
+    BigPoe,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2722,6 +2765,71 @@ fn epona_won_tasks() -> Vec<Task> {
     ]
 }
 
+/// `Step::CourseStarted`'s condition: the course's referee (`En_Horse_Game_Check` made type 4 by
+/// Epona had) letting Link go.
+fn course_started(w: &PlayState) -> bool {
+    use crate::en_horse_game_check::{EnHorseGameCheck, HORSEGAME_MALON_RACE, MALONRACE_PLAYER_MOVE};
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnHorseGameCheck>(h)).any(|g| g.ty == HORSEGAME_MALON_RACE && g.malon.race_flags & MALONRACE_PLAYER_MOVE != 0)
+}
+
+/// `Step::EponaCame`'s condition: Epona within 1,200 of Malon (`En_Ma3`) and standing
+/// (`ENHORSE_ACT_IDLE`), so that she's in no one's way when Link talks.
+fn epona_near_malon(w: &PlayState) -> bool {
+    use crate::en_horse::{ENHORSE_ACT_IDLE, EnHorse, HORSE_EPONA};
+    let Some(m) = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_ma3::EnMa3>(h)).find(|m| !m.actor.killed).map(|m| m.actor.world_pos) else { return false };
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnHorse>(h)).any(|h| h.ty == HORSE_EPONA && !h.actor.killed && h.action == ENHORSE_ACT_IDLE && (h.actor.world_pos.x - m.x).hypot(h.actor.world_pos.z - m.z) < 1200.0)
+}
+
+/// `Route::MalonCourse`'s tasks: Malon (`En_Ma3`, on Ingo 2's spot: the Ingo runs' start and talk
+/// point serve), her thanks; Epona's Song (Epona from the ranch's song point, 1,283 from Malon:
+/// too far for her course until she comes); the course taken; its start.
+fn malon_course_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Talk(Who::AdultMalon, INGO_FRONT, Step::MalonThanked),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Texts(epona_near_malon, Step::EponaCame),
+        Task::Converse(Who::AdultMalon, INGO_FRONT, vec![0], |w| w.transition.trigger != TRANS_TRIGGER_OFF, Step::CourseTaken),
+        Task::Texts(course_started, Step::CourseStarted),
+    ]
+}
+
+/// `Route::MalonSong`'s debug start: 40 before adult Malon by night (`En_Ma2` rot.z 6 at (66, 0,
+/// -402)), facing her: within her 48 (`EnMa2_WaitForOcarina`: `PLAYER_STATE2_23`).
+const BEFORE_NIGHT_MALON: Vec3 = Vec3::new(66.0, 0.0, -362.0);
+
+/// `Route::MalonSong`'s tasks: the ocarina out to her (`OCARINA_ACTION_CHECK_EPONA`), Epona's
+/// Song; 30 frames on she talks (0x2051 into 0x2052).
+fn malon_song_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Texts(|w| w.save.get_inf_table(crate::en_ma2::INFTABLE_TALKED_TO_ADULT_MALON_AFTER_SONG), Step::MalonSang),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::BigPoe`'s goal: the Big Poe's place by the ranch's ramp (`En_Po_Field` params 0x17).
+const POE_PLACE_17: Vec3 = Vec3::new(-1933.0, 104.0, 5455.0);
+
+/// The live `En_Po_Field` (one serves the ten places) a Big Poe in the action.
+fn big_poe_in(w: &PlayState, action: crate::en_po_field::Action) -> bool {
+    use crate::en_po_field::{EN_PO_FIELD_BIG, EnPoField};
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnPoField>(h)).any(|p| !p.actor.killed && p.actor.params == EN_PO_FIELD_BIG && p.action == action)
+}
+
+/// `Route::BigPoe`'s tasks: on Epona (`FieldRide`'s start), at the place until the Big Poe is out
+/// (`EnPoField_WaitForSpawn`: riding, its switch flag clear: no roll), then until it flees.
+fn big_poe_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Ocarina(2, oot_game::audio::ocarina::OCARINA_SONG_EPONAS, Step::EponaSongPlayed),
+        Task::Mount(Step::Mounted),
+        Task::RideUntil(vec![POE_PLACE_17], |w| big_poe_in(w, crate::en_po_field::Action::Appear), Step::BigPoeAppeared),
+        Task::Texts(|w| big_poe_in(w, crate::en_po_field::Action::Flee), Step::BigPoeFleeing),
+    ]
+}
+
 /// `ENTR_LON_LON_RANCH_6` (`entrance_table.h`: 0x4CA): the rental's corral.
 pub const ENTR_LON_LON_RANCH_6: u16 = 0x4CA;
 
@@ -3561,6 +3669,13 @@ impl Route {
             Route::IngoRental | Route::IngoRace => "ENTR_LON_LON_RANCH_0",
             Route::IngoLost => "ENTR_LON_LON_RANCH_8",
             Route::IngoWon | Route::EponaWon => "ENTR_LON_LON_RANCH_7",
+            // The ranch's gateway (spawn 0: Ingo's init clears the race word); the debug starts
+            // move Link to Malon.
+            Route::MalonCourse | Route::MalonSong => "ENTR_LON_LON_RANCH_0",
+            // Where the course's referee sends Link back (Malon beside spawn 7).
+            Route::MalonRecord => "ENTR_LON_LON_RANCH_7",
+            // The field outside the ranch's gate (spawn 6), as FieldRide.
+            Route::BigPoe => "ENTR_HYRULE_FIELD_6",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3635,6 +3750,10 @@ impl Route {
             Route::IngoLost => Some("ingo-race-lost"),
             Route::IngoWon => Some("ingo-first-win"),
             Route::EponaWon => Some("ingo-second-win"),
+            Route::MalonCourse => Some("epona-won"),
+            Route::MalonRecord => Some("malon-record"),
+            Route::MalonSong => Some("adult-awake"),
+            Route::BigPoe => Some("epona-won"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3724,6 +3843,10 @@ impl Route {
             Route::RideEpona => Some((CORRAL_START, CORRAL_START_YAW)),
             Route::FieldRide => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
             Route::IngoRental | Route::IngoRace => Some((BY_INGO, BY_INGO_YAW)),
+            // Malon by day stands on Ingo 2's spot.
+            Route::MalonCourse => Some((BY_INGO, BY_INGO_YAW)),
+            Route::MalonSong => Some((BEFORE_NIGHT_MALON, i16::MIN)),
+            Route::BigPoe => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
             _ => None,
         }
     }
@@ -3848,6 +3971,8 @@ impl Route {
             Route::Ocarina => Some((18, 30)),
             // Dampé is out only after 18:00 (EnTk_Init: dayTime <= CLOCK_TIME(18, 0) kills him).
             Route::Graveyard => Some((18, 30)),
+            // Malon sings in the ranch by night (EnMa2_GetSpawnIndex: IS_NIGHT).
+            Route::MalonSong => Some((22, 0)),
             _ => None,
         }
     }
@@ -3970,6 +4095,10 @@ impl Route {
             Route::IngoLost => "ingo-lost",
             Route::IngoWon => "ingo-won",
             Route::EponaWon => "epona-won",
+            Route::MalonCourse => "malon-course",
+            Route::MalonRecord => "malon-record",
+            Route::MalonSong => "malon-song",
+            Route::BigPoe => "big-poe",
         }
     }
 
@@ -4048,6 +4177,7 @@ impl Route {
             Route::SwordBack | Route::SwordAgain => 2000,
             Route::PreludeWarp => 3000,
             Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoLost | Route::IngoWon | Route::EponaWon => 4000,
+            Route::MalonCourse | Route::MalonRecord | Route::MalonSong | Route::BigPoe => 4000,
             Route::IngoRace => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
@@ -4056,12 +4186,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoRace)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoRace | Route::MalonCourse | Route::MalonSong | Route::BigPoe)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon, Route::MalonCourse, Route::MalonRecord, Route::MalonSong, Route::BigPoe].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -4528,6 +4658,8 @@ enum Who {
     Bonooru,
     /// The ranch's adult Ingo on foot (`En_In` params 2 to 4).
     Ingo,
+    /// Adult Malon by the corral after Epona (`En_Ma3`).
+    AdultMalon,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -4931,6 +5063,10 @@ impl Playthrough {
             ],
             Route::EponaWon => epona_won_tasks(),
             Route::IngoWon => vec![Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.scene_layer == 4, Step::SecondRaceCalled)],
+            Route::MalonCourse => malon_course_tasks(),
+            Route::MalonRecord => vec![Task::Texts(|w| w.save.get_event_chk_inf(crate::en_ma3::EVENTCHKINF_HORSE_RACE_COW_UNLOCK), Step::CourseRecord), Task::Settle(None)],
+            Route::MalonSong => malon_song_tasks(),
+            Route::BigPoe => big_poe_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -9459,6 +9595,7 @@ impl Playthrough {
             Who::Ruto => w.actors.downcast::<crate::en_ru1::EnRu1>(h).is_some_and(|a| !a.actor.killed),
             Who::Bonooru => w.actors.downcast::<crate::en_kakasi3::EnKakasi3>(h).is_some_and(|a| !a.actor.killed),
             Who::Ingo => w.actors.downcast::<crate::en_in::EnIn>(h).is_some_and(|a| !a.actor.killed && (2..=4).contains(&crate::en_in::TYPE.get(a.actor.params))),
+            Who::AdultMalon => w.actors.downcast::<crate::en_ma3::EnMa3>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

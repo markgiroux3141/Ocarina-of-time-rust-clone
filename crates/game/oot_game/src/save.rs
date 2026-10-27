@@ -1042,6 +1042,11 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: epona_won,
     },
     SavePreset {
+        name: "malon-record",
+        about: "epona-won with Malon's obstacle course just ridden in 45 seconds, the first time (her thanks and the course's offer heard: INFTABLE_B8, _B9; EVENTINF_HORSES_0A, timerSeconds 45 and TIMER_STATE_UP_FREEZE, as EnHorseGameCheck_UpdateMalonRace's success leaves them; the race word as Ingo's init clears it at the ranch's gateway): entered at ENTR_LON_LON_RANCH_7, Malon at once: the record (0x208F), the cow's unlock (EVENTCHKINF_HORSE_RACE_COW_UNLOCK), the high score (HS_HORSE_RACE) 45",
+        apply: malon_record,
+    },
+    SavePreset {
         name: "prelude",
         about: "adult-awake with the Forest Medallion's blue warp's EVENTCHKINF_48 and the Forest Medallion (Item_Give, as Door_Warp1's warp out of the Forest Temple's boss room gives it): GAME-11 milestone 3's debug start (the Forest Temple is Phase 14's), at the Temple's entrance: room 0's En_Xc 9 gives the Prelude of Light",
         apply: prelude,
@@ -1600,6 +1605,20 @@ fn ingo_second_win(s: &mut SaveContext) {
 fn epona_won(s: &mut SaveContext) {
     ingo_second_win(s);
     s.set_event_chk_inf(0x18);
+}
+
+/// `malon-record`'s save, a debug start: `epona-won` with the obstacle course just won in 45
+/// seconds (`EnHorseGameCheck_UpdateMalonRace`'s `MALONRACE_SUCCESS`: the timer frozen counting up;
+/// Malon's talks set `INFTABLE_B8` (her thanks, 0x2000), `INFTABLE_B9` (0x2002) and
+/// `EVENTINF_HORSES_0A` (the course taken)). The race word is as `En_In`'s init leaves it at the
+/// ranch's gateway (`sIsObedient`: 0), then bit 0x0A.
+fn malon_record(s: &mut SaveContext) {
+    epona_won(s);
+    s.set_inf_table(0xB8);
+    s.set_inf_table(0xB9);
+    s.event_inf[0] = 1 << 0x0A;
+    s.timer_seconds = 45;
+    s.timer_state = TIMER_STATE_UP_FREEZE;
 }
 
 /// `prelude`'s save, a debug start: `adult-awake` with what the Forest Temple's blue warp gives
