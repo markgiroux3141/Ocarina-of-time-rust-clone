@@ -905,6 +905,24 @@ the high score, the cow), `En_Ma2`'s adult (Epona's Song played to her by night)
 **Phase 13 is done** (2026-10-26) with its exit review (GAME-12's last section): Phase 14
 starts from `epona-won`.
 
+## Phase 14: The Forest Temple (GAME-13)
+
+**Goal:** from `epona-won`, the hookshot from Dampé's race, the Lost Woods past Mido and the
+meadow's Moblins, Sheik's Minuet of Forest, and the Forest Temple: the bow, the Poe sisters, the
+twisted corridors, Phantom Ganon. Exit: the Forest Medallion. See
+[GAME-13](GAME-13-the-forest-temple.md)'s survey. **Surveyed and proposed** (2026-10-27): six
+milestones (the hookshot and Dampé's race; the Lost Woods, the meadow and the Minuet; the
+temple's front and the bow; the courtyards and the twisted corridors; the Poe sisters; Phantom
+Ganon and the Forest Medallion, the exit). About 16,900 lines of C, the temple about 13,500 of
+them: the largest phase yet. Decided 2026-10-27 (every recommendation: `En_Hs` and `En_Mm2` to
+Phase 20, `En_Honotrap` whole, Phantom Ganon's decay as the C, the race and the maze the hand
+test's, the adult bean lift later).
+
+**Milestone 1, the hookshot and Dampé's race, is done** (2026-10-27, ADR 0096; hand-tested,
+committed and pushed): `Arms_Hook` and Player's hookshot whole (the flight, its camera `Camera_Special5`, the
+reticle), `En_Po_Relay` (Dampé's race) and `En_Honotrap` whole; the runs `dampe-race` (to the
+first door) and `hookshot` (Goron City's stone post), and the preset `hookshot`.
+
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:

@@ -433,6 +433,12 @@ CASES = [
     ("malon_song", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--time", "22:00", "--script", "malon-song", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("malon_song_talk", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "adult-awake", "--time", "22:00", "--script", "malon-song", "--frames", "400", "--screenshot", "{shot}"]),
     ("big_poe", S, ["--entrance", "ENTR_HYRULE_FIELD_6", "--child", "--preset", "epona-won", "--script", "big-poe", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    # GAME-13 milestone 1: Dampé's race's start, the hookshot (its aim and reticle, the flight).
+    ("dampe_race", S, ["--entrance", "ENTR_WINDMILL_AND_DAMPES_GRAVE_0", "--child", "--preset", "epona-won", "--script", "dampe-race", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("dampe_race_greeting", S, ["--entrance", "ENTR_WINDMILL_AND_DAMPES_GRAVE_0", "--child", "--preset", "epona-won", "--script", "dampe-race", "--frames", "200", "--screenshot", "{shot}"]),
+    ("hookshot", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("hookshot_aim", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--frames", "36", "--screenshot", "{shot}"]),
+    ("hookshot_fly", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--frames", "48", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

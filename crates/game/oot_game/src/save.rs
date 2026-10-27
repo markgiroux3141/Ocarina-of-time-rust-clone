@@ -1042,6 +1042,11 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: epona_won,
     },
     SavePreset {
+        name: "hookshot",
+        about: "epona-won with Dampé's race run and its chest opened (Dampé's grave, room 4's En_Box 0x1100: chest flag 0, GI_HOOKSHOT): the hookshot, on C-Left (empty in epona-won: where a player puts it), GAME-13 milestone 1's end",
+        apply: hookshot,
+    },
+    SavePreset {
         name: "malon-record",
         about: "epona-won with Malon's obstacle course just ridden in 45 seconds, the first time (her thanks and the course's offer heard: INFTABLE_B8, _B9; EVENTINF_HORSES_0A, timerSeconds 45 and TIMER_STATE_UP_FREEZE, as EnHorseGameCheck_UpdateMalonRace's success leaves them; the race word as Ingo's init clears it at the ranch's gateway): entered at ENTR_LON_LON_RANCH_7, Malon at once: the record (0x208F), the cow's unlock (EVENTCHKINF_HORSE_RACE_COW_UNLOCK), the high score (HS_HORSE_RACE) 45",
         apply: malon_record,
@@ -1605,6 +1610,18 @@ fn ingo_second_win(s: &mut SaveContext) {
 fn epona_won(s: &mut SaveContext) {
     ingo_second_win(s);
     s.set_event_chk_inf(0x18);
+}
+
+/// `hookshot`'s save: `epona-won` with Dampé's chest (`SCENE_WINDMILL_AND_DAMPES_GRAVE`, 0x48:
+/// chest flag 0, `ENBOX_GET_CHEST_FLAG(0x1100)`) opened and its hookshot (`Item_Give`), put on
+/// C-Left (the story leaves the buttons to the player; C-Left is `epona-won`'s empty one).
+fn hookshot(s: &mut SaveContext) {
+    use crate::item::{ITEM_HOOKSHOT, item_give, slot};
+    epona_won(s);
+    s.scene_flags[0x48].chest |= 1 << 0;
+    item_give(s, None, ITEM_HOOKSHOT);
+    s.equips.button_items[1] = ITEM_HOOKSHOT;
+    s.equips.c_button_slots[0] = slot(ITEM_HOOKSHOT) as u8;
 }
 
 /// `malon-record`'s save, a debug start: `epona-won` with the obstacle course just won in 45

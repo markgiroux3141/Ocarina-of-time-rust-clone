@@ -250,6 +250,12 @@ pub enum PlayRequest {
     SpawnHeldExplosive { id: i16, item: u8, pos: Vec3, yaw: i16, expected: ActorHandle },
     /// `func_808359FC`'s `Actor_Spawn(ACTOR_EN_BOOM, ...)`, its `moveTo` and `returnTimer` 20.
     SpawnBoomerang { pos: Vec3, rot: [i16; 3], move_to: Option<ActorHandle> },
+    /// `Player_InitHookshotIA`'s `this->heldActor = Actor_SpawnAsChild(&play->actorCtx,
+    /// &this->actor, play, ACTOR_ARMS_HOOK, world.pos, 0, shape.rot.y, 0, 0)`: the hook on the
+    /// hookshot, Player's child. Applied by Player's update, which sets `heldActor`.
+    SpawnHeldHook { pos: Vec3, yaw: i16 },
+    /// `Actor_Kill(heldActor)` (`Player_DestroyHookshot`): the hook gone.
+    KillHeld(ActorHandle),
     /// `heldActor->parent = NULL`: Player lets go of what he held (`Player_DetachHeldActor`,
     /// `func_808350A4`'s shot).
     ReleaseHeld(ActorHandle),
@@ -473,6 +479,10 @@ const SEG_GAUNTLET_COLOR: u8 = 0x0E;
 const GAUNTLET_COLORS: [[u8; 3]; 2] = [[255, 255, 255], [254, 207, 15]];
 /// `sBootDListGroups`: the iron boots, the hover boots (both feet each, on the limbs' matrices).
 const BOOT_BAKES: [&str; 2] = ["Player/boots_iron", "Player/boots_hover"];
+/// `gLinkAdultHookshotReticleDL` (`Player_DrawHookshotReticle`).
+const RETICLE_BAKE: &str = "Player/hookshot_reticle";
+/// The reticle bake's setup segment (`SETUPDL_7`), one the list doesn't use.
+const SEG_RETICLE_SETUP: u8 = 0x0C;
 
 /// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice, the child's bracelet, the
 /// adult's gauntlet plates and boots, the bottle in hand (`sBottleDLists`, its colour dynamic).
@@ -516,6 +526,18 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
             segments: vec![(0x0D, BakeSegment::SkeletonMatrices { file: "object_link_child".into(), symbol: "gLinkChildSkel".into() })],
             prelude: vec![],
             body: BakeBody::DLists(vec![("object_link_child".into(), "gLinkChildGoronBraceletDL".into())]),
+        },
+        MeshBake {
+            name: RETICLE_BAKE.into(),
+            object: "object_link_boy".into(),
+            // SETUPDL_7 first; the list's own gSPMatrix(0x01000000): the billboard (bone 0).
+            segments: vec![(SEG_RETICLE_SETUP, oot_game::pack::BakeSegment::Commands({
+                let mut d = oot_game::gbi::setup_dl::setup_dl_7();
+                d.end();
+                d.0
+            })), (0x01, oot_game::pack::BakeSegment::Matrix(0))],
+            prelude: vec![SEG_RETICLE_SETUP],
+            body: BakeBody::DLists(vec![boy("gLinkAdultHookshotReticleDL")]),
         },
         MeshBake {
             name: BOTTLE_BAKES[0].into(),
@@ -728,6 +750,8 @@ pub enum Action {
     TimeTravelEnd,
     /// `Player_Action_8084CC98`: riding a horse (`rideActor`).
     Ride,
+    /// `Player_Action_HookshotFly`: pulled through the air to the hookshot's hook.
+    HookshotFly,
     /// `Player_Action_8084D3E4`: getting off the horse.
     Dismount,
     /// `Player_Action_8084E3C4`: the ocarina out and played.
@@ -1014,6 +1038,7 @@ impl Action {
             Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
             Action::TimeTravelEnd => "Player_Action_TimeTravelEnd",
             Action::Ride => "Player_Action_8084CC98",
+            Action::HookshotFly => "Player_Action_HookshotFly",
             Action::Dismount => "Player_Action_8084D3E4",
             Action::Ocarina => "Player_Action_8084E3C4",
             Action::StartWarpSongArrive => "Player_Action_StartWarpSongArrive",
@@ -1520,8 +1545,15 @@ pub struct Player {
     /// `unk_A73`: 4 on a shot (`func_808350A4`) or a boomerang's throw, counted down by
     /// `Player_UpdateCommon`; `EnArrow_Shoot` lets a seed or an arrow fly only while it's set.
     pub unk_A73: u8,
-    /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child), or what he carries.
+    /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child), the hookshot's hook
+    /// (`Arms_Hook`), or what he carries.
     pub held_actor: Option<ActorHandle>,
+    /// `unk_3C8`: the hookshot's point in the right hand (`D_80126184` in the hand's space), set
+    /// at draw time while it's in hand: where `Arms_Hook`'s chain starts and it comes back to.
+    pub unk_3c8: Vec3,
+    /// The hookshot's reticle: where the aim's line meets a surface (`Player_DrawHookshotReticle`,
+    /// in first person), from the last draw.
+    pub hookshot_reticle: Option<Vec3>,
     /// `boomerangActor`: the boomerang thrown (`En_Boom`), the camera's target while it flies.
     pub boomerang_actor: Option<ActorHandle>,
     /// `func_808358F0`'s `AnimTaskQueue_AddCopy` this update: the upper skeleton takes the whole
@@ -1748,6 +1780,8 @@ impl Player {
             unk_A87: 0,
             unk_A73: 0,
             held_actor: None,
+            unk_3c8: Vec3::ZERO,
+            hookshot_reticle: None,
             boomerang_actor: None,
             upper_copies_body: false,
             next_spawn_handle: None,
@@ -2252,8 +2286,11 @@ impl Player {
             return None;
         }
         let mut target = None;
-        // (Flying with the hookshot, CAM_MODE_HOOKSHOT_FLY: the hookshot isn't ported.)
-        let mode = if self.action == Action::KnockedDown {
+        let mode = if self.actor.parent.is_some() && self.state3 & STATE3_7 != 0 {
+            // Flying with the hookshot: the camera at the hook (CAM_VIEW_TARGET).
+            target = self.actor.parent;
+            CAM_MODE_HOOKSHOT_FLY
+        } else if self.action == Action::KnockedDown {
             CAM_MODE_STILL
         } else if self.state2 & STATE2_8 != 0 {
             CAM_MODE_PUSH_PULL
@@ -2367,6 +2404,7 @@ impl Player {
             Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
             Action::TimeTravelEnd => self.action_time_travel_end(env),
             Action::Ride => self.action_8084cc98(env),
+            Action::HookshotFly => self.action_hookshot_fly(env),
             Action::Dismount => self.action_8084d3e4(env),
             Action::Ocarina => self.action_8084e3c4(env),
             Action::StartWarpSongArrive => self.action_start_warp_song_arrive(env),
@@ -3216,6 +3254,39 @@ impl Player {
             let temp = if arg1 < self.unk_878.abs() { (if self.unk_878 >= 0.0 { 1.0 } else { -1.0 }) * arg1 } else { self.unk_878 };
             self.actor.world_pos.y += temp;
             self.unk_878 -= temp;
+        }
+    }
+
+    /// `Player_Action_HookshotFly`: `link_hook_fly_start`, then `_wait` looping; Link moved by his
+    /// velocity (the hook sets it each frame: the step to it). Once the hook is back on the
+    /// hookshot (`func_80834FBC`), he lands: the floor's collision, down to the floor by at most
+    /// 20, level, a speed of 1, `func_80837B9C` (standing or falling on), `PLAYER_STATE1_2`. Until
+    /// then, past the start's fourth frame, no gravity and his pitch turned to the flight's (0x800
+    /// a frame; the rumble isn't ported).
+    fn action_hookshot_fly(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        if self.skel.update(data) {
+            self.skel.play_loop(data, data.anim("link_hook_fly_wait"));
+        }
+        self.actor.world_pos += self.actor.velocity;
+        if self.func_80834fbc() {
+            self.actor.prev_pos = self.actor.world_pos;
+            self.process_scene_collision(env);
+            let temp = (self.actor.world_pos.y - self.actor.floor_height).min(20.0);
+            self.actor.world_rot.x = 0;
+            self.actor.shape_rot.x = 0;
+            self.actor.world_pos.y -= temp;
+            self.linear_velocity = 1.0;
+            self.actor.velocity.y = 0.0;
+            self.func_80837B9C(data);
+            self.state2 &= !STATE2_10;
+            self.actor.bg_check_flags |= BGCHECKFLAG_GROUND;
+            self.state1 |= STATE1_2;
+        } else if self.skel.animation != data.anim("link_hook_fly_start") || 4.0 <= self.skel.cur_frame {
+            self.actor.gravity = 0.0;
+            scaled_step_to_s(&mut self.actor.shape_rot.x, self.actor.world_rot.x, 0x800);
+            // (Player_RequestRumble(this, 100, 2, 100, 0).)
         }
     }
 
@@ -7452,14 +7523,15 @@ impl Player {
 
     /// `Player_PutSwordInHand`: the age's sword (`sSwordItemIds[linkAge]`: the Master Sword for
     /// the adult, the Kokiri Sword for the child) in hand at once, no animation (a cutscene's
-    /// plays): what's held let go (`Player_DetachHeldActor`; the hookshot isn't ported, so
-    /// there's no hook to destroy), the item's action and models (`Player_InitItemAction`), the
+    /// plays): the hook gone (`Player_DestroyHookshot`), what's held let go
+    /// (`Player_DetachHeldActor`), the item's action and models (`Player_InitItemAction`), the
     /// upper body back to it (`func_80834644`); with `play_sfx`, `NA_SE_IT_SWORD_PICKOUT`.
     pub(crate) fn put_sword_in_hand(&mut self, data: &GameData, play_sfx: bool) {
         use oot_game::item::{ITEM_SWORD_KOKIRI, ITEM_SWORD_MASTER};
         let sword = if self.adult { ITEM_SWORD_MASTER } else { ITEM_SWORD_KOKIRI };
         // sItemActions[swordItemId].
         let ap = data.items.item_action_params[sword as usize];
+        self.destroy_hookshot(data);
         self.detach_held_actor(data);
         self.held_item_id = sword;
         self.next_model_group = self.action_to_model_group(data, ap);
@@ -7582,7 +7654,23 @@ impl Player {
     /// upper body (`sUpperBodyLimbCopyMap`), or the whole body when standing on the wait/fidget.
     fn update_upper_body(&mut self, env: &Env) -> bool {
         let data = env.data;
-        // Hookshot flight: not held.
+        // Hookshot has just connected with something Player can fly to (the hook his parent):
+        // the flight.
+        if self.state1 & STATE1_23 == 0 && self.actor.parent.is_some() && self.holds_hookshot(data) {
+            self.setup_action(data, Action::HookshotFly, 1);
+            self.state3 |= STATE3_7;
+            self.skel.play_once(data, data.anim("link_hook_fly_start"));
+            // ANIM_FLAG_UPDATE_XZ | _UPDATE_Y | _ENABLE_MOVEMENT | _ADJUST_STARTING_POS |
+            // _OVERRIDE_MOVEMENT.
+            self.start_anim_movement(0x9B);
+            self.func_80832224();
+            self.current_yaw = self.actor.shape_rot.y;
+            self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
+            self.hover_boots_timer = 0;
+            self.unk_6AE_rot_flags |= UNK6AE_ROT_FOCUS_X | UNK6AE_ROT_FOCUS_Y | UNK6AE_ROT_UPPER_X;
+            self.play_voice_sfx(NA_SE_VO_LI_LASH);
+            return true;
+        }
         if self.can_update_items(data) {
             self.update_items(env);
             if self.action == Action::ThrowNut {
@@ -8362,7 +8450,28 @@ impl Player {
     /// `func_8008F128`: the hookshot in hand with no hook (`heldActor`) on it. Player holds no
     /// actor here (`Arms_Hook` isn't ported).
     fn func_8008f128(&self, data: &GameData) -> bool {
-        self.holds_hookshot(data)
+        self.holds_hookshot(data) && self.held_actor.is_none()
+    }
+
+    /// `Player_HoldsHookshot` without the data at hand (`PLAYER_IA_HOOKSHOT` or `_LONGSHOT`).
+    pub(crate) fn holds_hookshot_ap(&self) -> bool {
+        self.held_item_ap == PLAYER_IA_HOOKSHOT || self.held_item_ap == PLAYER_IA_LONGSHOT
+    }
+
+    /// `PLAYER_IA_HOOKSHOT`.
+    pub(crate) fn ia_hookshot(&self) -> i32 {
+        PLAYER_IA_HOOKSHOT
+    }
+
+    /// `Player_DestroyHookshot`: with the hookshot in hand, its hook killed and let go.
+    fn destroy_hookshot(&mut self, data: &GameData) {
+        if self.holds_hookshot(data)
+            && let Some(h) = self.held_actor
+        {
+            self.play_requests.push(PlayRequest::KillHeld(h));
+            self.actor.child = None;
+            self.held_actor = None;
+        }
     }
 
     /// `func_8008F2BC`: 0 to 2 for the swords (the cutscene's sword is 0), else -1.
@@ -8472,7 +8581,8 @@ impl Player {
                 self.held_item_id = item;
                 self.state1 |= STATE1_8;
             } else {
-                // Player_DestroyHookshot: no hook is held.
+                // Init new held item for use.
+                self.destroy_hookshot(data);
                 self.detach_held_actor(data);
                 self.init_item_action_with_anim(data, item_action);
             }
@@ -8513,10 +8623,10 @@ impl Player {
             self.state1 |= STATE1_3;
             self.unk_860 = if ap != it.ap("SLINGSHOT") { -1 } else { -2 };
         } else if ap == it.ap("HOOKSHOT") || ap == it.ap("LONGSHOT") {
-            // Player_InitHookshotIA: the hook (Arms_Hook) isn't ported.
+            // Player_InitHookshotIA: the hook (Arms_Hook), Player's child, held.
             self.state1 |= STATE1_3;
             self.unk_860 = -3;
-            self.note("Player_InitHookshotIA: Arms_Hook isn't ported");
+            self.play_requests.push(PlayRequest::SpawnHeldHook { pos: self.actor.world_pos, yaw: self.actor.shape_rot.y });
         } else if ap == it.ap("BOMB") || ap == it.ap("BOMBCHU") {
             self.init_explosive_ia(data);
         } else if ap == it.ap("BOOMERANG") {
@@ -12524,6 +12634,48 @@ impl Player {
         })
     }
 
+    /// `this->rightHandType == PLAYER_MODELTYPE_RH_HOOKSHOT` (not holding the shield).
+    pub(crate) fn right_hand_is_hookshot(&self, play: &PlayState) -> bool {
+        if self.holding_shield {
+            return false;
+        }
+        let rules = &play.rules;
+        let name = play.data.items.model_group_names.get(self.model_group).map(String::as_str).unwrap_or("");
+        rules.model_group(name).is_some_and(|g| rules.model_groups[g].right == rules.model_type("RH_HOOKSHOT"))
+    }
+
+    /// `Player_PostLimbDrawGameplay`, `PLAYER_LIMB_R_HAND`, with the hookshot or longshot in hand:
+    /// `unk_3C8` (`D_80126184` in the hand's space); the hook held, at `D_80126190` and turned with
+    /// the hand (`Matrix_RotateZYX(0, -0x4000, -0x4000)`); aiming in first person
+    /// (`func_8002DD78`), the reticle (`Player_DrawHookshotReticle`: the line from (-500, -100, 0)
+    /// to 38,600 ahead, 77,600 for the longshot, against every surface, from 500, 300 along the
+    /// hand).
+    fn post_limb_draw_r_hand_hookshot(&mut self, play: &mut PlayState, hand: glam::Mat4) {
+        self.hookshot_reticle = None;
+        if self.actor.scale.y < 0.0 || !self.holds_hookshot_ap() {
+            return;
+        }
+        let mut mf = oot_game::sys_matrix::MtxF::from_mat4(hand);
+        self.unk_3c8 = mf.mult_vec3f(Vec3::new(100.0, 1500.0, 0.0));
+        let Some(h) = self.held_actor else { return };
+        let pos = mf.mult_vec3f(Vec3::new(100.0, 1640.0, 0.0));
+        mf.rotate_zyx(0, -0x4000, -0x4000);
+        let r = mf.to_yxz_rot_s(false);
+        if let Some(a) = play.actors.actor_mut(h) {
+            a.world_pos = pos;
+            a.world_rot = Rot { x: r[0], y: r[1], z: r[2] };
+            a.shape_rot = a.world_rot;
+        }
+        if self.func_8002dd78() {
+            mf.translate(500.0, 300.0, 0.0);
+            let far = if self.held_item_ap == PLAYER_IA_HOOKSHOT { 38600.0 } else { 77600.0 };
+            let from = mf.mult_vec3f(Vec3::new(-500.0, -100.0, 0.0));
+            let to = mf.mult_vec3f(Vec3::new(-500.0, -100.0, far));
+            // BgCheck_AnyLineTest3: walls, floors, ceilings, one face.
+            self.hookshot_reticle = play.col.any_line_test3(from, to, true, true, true, true).map(|(p, _)| p);
+        }
+    }
+
     fn right_hand_is_shield(&self, play: &PlayState) -> bool {
         if self.holding_shield {
             return true;
@@ -13003,6 +13155,9 @@ mod rs {
     /// `switches`: `currentTunic` and `currentBoots` (`PLAYER_TUNIC_*`, `PLAYER_BOOTS_*`).
     pub const TUNIC: usize = 15;
     pub const BOOTS: usize = 16;
+    /// `switches`: the hookshot's reticle drawn; `values`: its point (x, y, z).
+    pub const RETICLE_ON: usize = 17;
+    pub const RETICLE: usize = 10;
 }
 
 impl LookRotations {
@@ -13183,6 +13338,9 @@ const SEG_BOTTLE_COLOR: u8 = 0x0E;
 /// `PLAYER_IA_BOTTLE` (`player.h`: 0x1E), `_FISH` (0x1F), `_FIRE` (0x20), `_BUG` (0x21), `_FAIRY`
 /// (0x2A).
 pub const PLAYER_IA_BOTTLE: i32 = 0x1E;
+/// `PLAYER_IA_HOOKSHOT` (`player.h`: 0x10), `PLAYER_IA_LONGSHOT` (0x11).
+pub const PLAYER_IA_HOOKSHOT: i32 = 0x10;
+pub const PLAYER_IA_LONGSHOT: i32 = 0x11;
 pub const PLAYER_IA_BOTTLE_FISH: i32 = 0x1F;
 pub const PLAYER_IA_BOTTLE_FIRE: i32 = 0x20;
 pub const PLAYER_IA_BOTTLE_BUG: i32 = 0x21;
@@ -13276,6 +13434,11 @@ impl ActorImpl for Player {
             if let PlayRequest::SpawnHeldArrow { pos, yaw, params } = r {
                 // Actor_SpawnAsChild: Player (the updating actor) its parent, it his child.
                 self.held_actor = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ARROW, pos, [0, yaw, 0], params).map_err(|e| log::debug!("En_Arrow: {e:?}")).ok();
+                continue;
+            }
+            if let PlayRequest::SpawnHeldHook { pos, yaw } = r {
+                // Actor_SpawnAsChild: Player its parent, it his child and held.
+                self.held_actor = play.actor_spawn_as_child(&mut self.actor, crate::arms_hook::ACTOR_ARMS_HOOK, pos, [0, yaw, 0], 0).map_err(|e| log::debug!("Arms_Hook: {e:?}")).ok();
                 continue;
             }
             if let PlayRequest::SpawnHeldExplosive { id, item, pos, yaw, expected } = r {
@@ -13391,6 +13554,7 @@ impl ActorImpl for Player {
         if self.right_hand_is_bow_slingshot(play) {
             self.post_limb_draw_r_hand_string(world[data.limb("R_HAND")]);
         }
+        self.post_limb_draw_r_hand_hookshot(play, world[data.limb("R_HAND")]);
         self.post_limb_draw_r_hand_held(play);
         // PLAYER_LIMB_R_HAND: the shield in hand (sRightHandLimbModelShieldQuadVertices).
         let right_hand_is_shield = self.right_hand_is_shield(play);
@@ -13435,7 +13599,10 @@ impl ActorImpl for Player {
         angles[rs::ROOT_PITCH] = look.root_pitch;
         // Matrix_RotateZYX(0, play->gameplayFrames * 1000, 0) (Player_DrawGetItemImpl).
         angles[rs::GET_ITEM_SPIN] = (self.gameplay_frames as i32).wrapping_mul(1000) as i16;
-        let mut values = vec![0.0f32; 10];
+        let mut values = vec![0.0f32; 13];
+        if let Some(p) = self.hookshot_reticle {
+            values[rs::RETICLE..rs::RETICLE + 3].copy_from_slice(&[p.x, p.y, p.z]);
+        }
         values[rs::SPEED_XZ] = self.actor.speed_xz;
         values[rs::STICK_LENGTH] = self.unk_85c;
         values[rs::STRING] = self.unk_858;
@@ -13444,7 +13611,8 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 17];
+        let mut switches = vec![0u32; 18];
+        switches[rs::RETICLE_ON] = self.hookshot_reticle.is_some() as u32;
         switches[rs::BOOMERANG_THROWN] = (self.state1 & STATE1_25 != 0) as u32;
         switches[rs::LEFT_HAND] = LeftHandDLists::switch(self.left_hand_dlists);
         switches[rs::TUNIC] = self.current_tunic as u32;
@@ -13491,6 +13659,18 @@ impl ActorImpl for Player {
         // Player_Draw draws nothing under PLAYER_STATE2_29.
         if self.inert || st.switches.get(rs::HIDDEN).copied().unwrap_or(0) != 0 {
             return;
+        }
+        // Player_DrawHookshotReticle: gLinkAdultHookshotReticleDL at the aim's hit, 0.08 big within
+        // 200 of the eye along the view (the point's w), larger farther. The C draws it into
+        // OVERLAY_DISP (SETUPDL_7) in the 3D view; here it's the XLU list's.
+        if st.switches.get(rs::RETICLE_ON).copied().unwrap_or(0) != 0 {
+            let p = Vec3::new(st.values[rs::RETICLE], st.values[rs::RETICLE + 1], st.values[rs::RETICLE + 2]);
+            let w = -view.billboard.z_axis.truncate().dot(p - view.eye);
+            let s = if w < 200.0 { 0.08 } else { (w / 200.0) * 0.08 };
+            let mut m = oot_game::sys_matrix::MtxF::set_translate(p.x, p.y, p.z);
+            m.scale(s, s, s);
+            // The list's gSPMatrix(billboard, G_MTX_MUL): the bone is the model times the billboard.
+            out.xlu.push(DrawCmd { mesh: MeshKey::named(oot_game::pack::keys::bake(RETICLE_BAKE)), transform: Mat4::IDENTITY, bones: vec![m.to_mat4() * view.billboard], params: eng_gfx::DrawParams::default() });
         }
         let age = oot_game::player_lib::Age::from_adult(self.adult);
         let Some(joints) = &st.joints else { return };
@@ -14061,7 +14241,12 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             play.title_ctx.clear();
         }
         // Handled by Player's update, which keeps the handle.
-        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } | PlayRequest::SpawnMThunder { .. } | PlayRequest::SpawnBoomerang { .. } => {}
+        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldHook { .. } | PlayRequest::SpawnHeldExplosive { .. } | PlayRequest::SpawnMThunder { .. } | PlayRequest::SpawnBoomerang { .. } => {}
+        PlayRequest::KillHeld(h) => {
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.kill();
+            }
+        }
         PlayRequest::ReleaseHeld(h) => {
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = None;

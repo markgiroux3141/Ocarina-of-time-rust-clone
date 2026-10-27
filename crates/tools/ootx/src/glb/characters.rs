@@ -276,6 +276,9 @@ pub const CHARACTERS: &[Character] = &[
     c("Cucco", "En_Niw/skel", Some(("object_niw", "gCuccoAnim")), &[], &[], &[]),
     c("Guru-Guru", "En_Fu/face0", Some(("object_fu", "gWindmillManPlayStillAnim")), &[], &[], &[]),
     c("Dampe (gravekeeper)", "En_Tk/eye0", Some(("object_tk", "gDampeRestAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
+    // En_Po_Relay: the lantern (limb 14) in a mid lightColor at alpha 128, the halo (limb 8).
+    c("Dampe (ghost)", "En_Tk/eye0", Some(("object_tk", "gDampeFloatAnim")), &[], &[8, 9, 10], &[11, 12, 13])
+        .with(&[part("En_Po_Relay/lantern", 13, &[(0x0E, Env, [240, 205, 175, 128])]), part("En_Po_Relay/halo", 7, &[])]),
     c("Graveyard Kid", "En_Cs/eye0", Some(("object_cs", "gGraveyardKidIdleAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Redead", "En_Rd/redead_opa", Some(("object_rd", "gGibdoRedeadIdleAnim")), &[OPAQUE_0E], &[15, 16, 17], &[19, 20, 21]),
     c("Gibdo", "En_Rd/gibdo_opa", Some(("object_rd", "gGibdoRedeadIdleAnim")), &[OPAQUE_0E], &[15, 16, 17], &[19, 20, 21]),

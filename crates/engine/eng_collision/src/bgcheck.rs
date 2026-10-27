@@ -928,6 +928,26 @@ impl CollisionContext {
         self.check_line(IGNORE_ENTITY, IGNORE_NONE, a, b, 1.0, bcc)
     }
 
+    /// `BgCheck_AnyLineTest3`: `BgCheck_EntityLineTest1` against every poly (`COLPOLY_IGNORE_NONE`):
+    /// the hookshot's reticle.
+    #[allow(clippy::too_many_arguments)]
+    pub fn any_line_test3(&self, a: Vec3, b: Vec3, wall: bool, floor: bool, ceil: bool, one_face: bool) -> Option<(Vec3, PolyId)> {
+        let mut bcc = CHECK_DYNA;
+        if wall {
+            bcc |= CHECK_WALL;
+        }
+        if floor {
+            bcc |= CHECK_FLOOR;
+        }
+        if ceil {
+            bcc |= CHECK_CEILING;
+        }
+        if one_face {
+            bcc |= CHECK_ONE_FACE;
+        }
+        self.check_line(IGNORE_NONE, IGNORE_NONE, a, b, 1.0, bcc)
+    }
+
     /// `BgCheck_EntityLineTest3`: `BgCheck_EntityLineTest1` for an actor, skipping its own bg
     /// actor `own_bg`, with `chk_dist`.
     #[allow(clippy::too_many_arguments)]

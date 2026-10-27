@@ -35,7 +35,7 @@ PHASES = {
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "done"),
     12: ("The Temple of Time and the adult world (GAME-11)", "done"),
     13: ("Epona, Ingo's races and the adult Hyrule Field (GAME-12)", "done"),
-    14: ("The Forest Temple", "planned"),
+    14: ("The Forest Temple", "in progress"),
     15: ("The Fire Temple", "planned"),
     16: ("The Ice Cavern and the Water Temple", "planned"),
     17: ("Kakariko's shadow: the Bottom of the Well and the Shadow Temple", "planned"),
@@ -135,6 +135,9 @@ SCENES = {
 ACTORS = {
     "Item_Ocarina": 11,  # the Ocarina of Time in the moat, after the third stone
     "En_Mm": 20,  # the running man (the mask trade)
+    "En_Mm2": 20,  # the running man in the Lost Woods: killed unless the marathon is on
+    # (EnMm2_Init; GAME-13's call 2)
+    "En_Hs": 20,  # Grog in the Lost Woods: the adult trade (GAME-13's call 2)
     "En_Cow": 9,  # Link's house's (Malon's prize) and the ranch's
     "Obj_Dekujr": 14,  # the Deku Sprout: killed for a child outside a cutscene layer, and without
     # the Forest Medallion (ObjDekujr_Init)

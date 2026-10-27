@@ -609,6 +609,23 @@ pub mod setup_dl {
         d
     }
 
+    /// `SETUPDL_7`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineMode(G_CC_MODULATEIA_PRIM,
+    /// G_CC_MODULATEIA_PRIM)`, `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP
+    /// | G_CYC_1CYCLE | G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_AA_XLU_SURF |
+    /// G_RM_AA_XLU_SURF2)` (no depth compare), `gsSPLoadGeometryMode(G_SHADE | G_LIGHTING |
+    /// G_SHADING_SMOOTH)`: the hookshot's reticle (`Player_DrawHookshotReticle`).
+    pub fn setup_dl_7() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(MODULATEIA_PRIM, MODULATEIA_PRIM);
+        // G_RM_AA_XLU_SURF(2): AA_EN | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL | ZMODE_XLU,
+        // GBL_c(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA) in both cycles.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_49C8));
+        d.0.push((0xD900_0000, G_SHADE | G_LIGHTING | G_SHADING_SMOOTH));
+        d
+    }
+
     /// `SETUPDL_65`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineMode(G_CC_MODULATEIA_PRIM,
     /// G_CC_MODULATEIA_PRIM)`, `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP
     /// | G_CYC_1CYCLE | G_PM_NPRIMITIVE, G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_CLD_SURF |

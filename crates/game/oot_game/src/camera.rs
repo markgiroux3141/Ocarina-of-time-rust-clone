@@ -199,6 +199,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_UNIQ0",
     "CAM_FUNC_UNIQ2",
     "CAM_FUNC_SPEC0",
+    "CAM_FUNC_SPEC5",
     "CAM_FUNC_UNIQ3",
     "CAM_FUNC_UNIQ6",
     "CAM_FUNC_UNIQ7",
@@ -1074,6 +1075,20 @@ struct Keep1Rw {
     unk_16: i16,
 }
 
+/// `Camera_Special5`'s `paramData` (`Special5ReadOnlyData`, `Special5ReadWriteData`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Special5 {
+    y_offset: f32,
+    eye_dist: f32,
+    min_dist_for_rot: f32,
+    fov_target: f32,
+    at_max_lerp_scale: f32,
+    timer_init: i16,
+    pitch: i16,
+    interface_field: i16,
+    anim_timer: i16,
+}
+
 /// `Camera_Special6`'s `paramData` (`Special6ReadOnlyData`, `Special6ReadWriteData`).
 #[derive(Debug, Clone, Copy, Default)]
 struct Special6 {
@@ -1642,6 +1657,7 @@ pub struct GameCamera {
     subj4: Subj4,
     subj3: Subj3,
     fixd: FixedData,
+    spec5: Special5,
     spec6: Special6,
     uniq: UniqueData,
     update_direction: bool,
@@ -1783,6 +1799,7 @@ impl GameCamera {
             subj4: Subj4::default(),
             subj3: Subj3::default(),
             fixd: FixedData::default(),
+            spec5: Special5::default(),
             spec6: Special6::default(),
             uniq: UniqueData::default(),
             update_direction: false,
@@ -3733,6 +3750,7 @@ impl GameCamera {
                 Some("CAM_FUNC_NORM3") => self.normal3(d, col, p, frames),
                 Some("CAM_FUNC_SPEC6") => self.special6(d, col),
                 Some("CAM_FUNC_SPEC0") => self.special0(d, f.target.as_ref()),
+                Some("CAM_FUNC_SPEC5") => self.special5(d, col, p, f.target.as_ref(), rand),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else if self.has_player {
@@ -6120,6 +6138,71 @@ impl GameCamera {
         if self.timer > 0 {
             self.timer -= 1;
         }
+    }
+
+    /// `Camera_Special5` (`CAM_MODE_HOOKSHOT_FLY`: Link pulled by the hookshot): the eye stays
+    /// where it was for `timerInit` frames, then, if the hook (the camera's target) is farther
+    /// from Link than `minDistForRot`, jumps once to a point `eyeDist` from the hook, behind Link
+    /// and off to the side away from the wall the hook is in (a random 30 to 45 degrees), at
+    /// `pitch`. The at follows Link (`Camera_CalcAtDefault`). The `_ALT` data (NORMAL0's) reads
+    /// its values in this order too: its timer is 45, its pitch 60 (`camera.h`'s note).
+    fn special5(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, target: Option<&CamActor>, rand: &mut crate::play::Rand) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let y_normal = Self::y_normal(d, player_height);
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let s = &mut self.spec5;
+            s.y_offset = v(0) as f32 * 0.01 * player_height * y_normal;
+            s.eye_dist = v(1) as f32;
+            s.min_dist_for_rot = v(2) as f32;
+            s.timer_init = v(3);
+            // CAM_DEG_TO_BINANG.
+            s.pitch = (v(4) as f32 * (32768.0 / 180.0)) as i32 as i16;
+            s.fov_target = v(5) as f32;
+            s.at_max_lerp_scale = v(6) as f32 * 0.01;
+            s.interface_field = v(7);
+        }
+        // (sp64, the at to the eye: never used.)
+        let sp5c = diff_to_sph_geo(self.at, self.eye_next);
+        // Actor_GetWorld(camera->target): the hook.
+        let spa8 = target.map(|t| t.world_pos).unwrap_or_default();
+        self.interface_flags = self.spec5.interface_field;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.spec5.anim_timer = self.spec5.timer_init;
+        }
+        if self.spec5.anim_timer > 0 {
+            self.spec5.anim_timer -= 1;
+        } else if self.spec5.anim_timer == 0 {
+            let Some(_) = target.filter(|t| t.alive) else {
+                self.target = None;
+                return;
+            };
+            self.spec5.anim_timer -= 1;
+            if self.spec5.min_dist_for_rot < spa8.distance(p.pos) {
+                // playerPosRot: Link's position and shape rotation.
+                let sp6c = VecSphGeo { r: 20.0, pitch: p.shape_pitch.wrapping_neg(), yaw: p.shape_yaw };
+                let mut sp7c = ColChk { pos: sph_geo_add(spa8, sp6c), ..Default::default() };
+                Self::bg_check_info(col, self.at, &mut sp7c);
+                let sp6c = vec3_to_sph_geo(sp7c.norm);
+                let spa4 = p.shape_yaw.wrapping_sub(sp6c.yaw);
+                let r = rand.zero_one();
+                let side = (0x1553i32 + (r * 2730.0) as i16 as i32) as i16;
+                let yaw = p.shape_yaw.wrapping_sub(0x7FFF).wrapping_add(if spa4 < 0 { side.wrapping_neg() } else { side });
+                let sp74 = VecSphGeo { r: self.spec5.eye_dist, pitch: self.spec5.pitch, yaw };
+                self.eye_next = sph_geo_add(spa8, sp74);
+                self.eye = self.eye_next;
+                let mut eye = self.eye;
+                Self::bg_check(col, spa8, &mut eye);
+                self.eye = eye;
+            }
+        }
+        self.calc_at_default(d, &sp5c, self.spec5.y_offset, false, p);
+        // CAM_FOV_UPDATE_RATE: CAM_DATA_SCALED(R_CAM_FOV_UPDATE_RATE) on the debug ROM.
+        self.fov = lerp_ceil_f(self.spec5.fov_target, self.fov, self.at_lerp_step_scale * d.oreg_s(4), 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, self.spec5.at_max_lerp_scale);
     }
 
     fn special6(&mut self, d: &CameraData, col: &CollisionContext) {

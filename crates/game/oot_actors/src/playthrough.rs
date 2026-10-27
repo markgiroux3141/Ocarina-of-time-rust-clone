@@ -787,6 +787,18 @@ pub enum Step {
     BigPoeAppeared,
     /// The Big Poe fleeing (`EnPoField_Flee`).
     BigPoeFleeing,
+    /// The hookshot raised in first person, the hook on it (`Arms_Hook` held).
+    HookshotRaised,
+    /// The hook in a surface that takes it: Link pulled (`Player_Action_HookshotFly`).
+    HookshotPulled,
+    /// The flight over: Link where the hook held (hanging from a ledge there, or standing).
+    HookshotLanded,
+    /// Up onto the stone post's top from its edge.
+    PostClimbed,
+    /// Dampé's race on (`EnPoRelay_Race`: the timer counting up).
+    DampeRaceStarted,
+    /// Dampé at his eighth point: the first door's switch (0x35) set.
+    DampeFirstDoor,
 }
 
 impl Step {
@@ -1107,6 +1119,12 @@ impl Step {
             Step::MalonSang => "malon_sang",
             Step::BigPoeAppeared => "big_poe_appeared",
             Step::BigPoeFleeing => "big_poe_fleeing",
+            Step::HookshotRaised => "hookshot_raised",
+            Step::HookshotPulled => "hookshot_pulled",
+            Step::HookshotLanded => "hookshot_landed",
+            Step::PostClimbed => "post_climbed",
+            Step::DampeRaceStarted => "dampe_race_started",
+            Step::DampeFirstDoor => "dampe_first_door",
         }
     }
 }
@@ -1527,6 +1545,13 @@ pub enum Route {
     /// ramp): Epona's Song, on her, ridden to the place by the ramp (`En_Po_Field` 0x17); the Big
     /// Poe appears ahead and flees. The fight and the soul's bottle are the hand test's.
     BigPoe,
+    /// The hookshot (`hookshot`, a debug start on Goron City's ledge by its stone post): raised,
+    /// aimed at the post's upper band, shot; Link pulled to it, caught on its top edge, up onto it.
+    Hookshot,
+    /// Dampé's race's start (`epona-won`, Dampé's grave by day, `ENTR_WINDMILL_AND_DAMPES_GRAVE_0`):
+    /// down to him, his greeting, the race on, the first door opened as he passes it. The race to
+    /// the hookshot's chest is the hand test's.
+    DampeRace,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -2068,7 +2093,11 @@ fn jabu_elevator_timer(w: &PlayState) -> Option<i16> {
 /// The C button the slingshot is on (C-Right, where the Deku Tree's runs put it, if it's on none).
 fn slingshot_button(w: &PlayState) -> u16 {
     use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT};
-    match w.save.equips.button_items[1..4].iter().position(|&i| i == oot_game::item::ITEM_SLINGSHOT) {
+    use oot_game::item::{ITEM_BOW, ITEM_HOOKSHOT, ITEM_LONGSHOT, ITEM_SLINGSHOT};
+    let c = &w.save.equips.button_items[1..4];
+    // The slingshot's, else the hookshot's (or longshot's), else the bow's.
+    let on = |item: u8| c.iter().position(|&i| i == item);
+    match on(ITEM_SLINGSHOT).or_else(|| on(ITEM_HOOKSHOT)).or_else(|| on(ITEM_LONGSHOT)).or_else(|| on(ITEM_BOW)) {
         Some(0) => BTN_CLEFT,
         Some(1) => BTN_CDOWN,
         _ => BTN_CRIGHT,
@@ -3676,6 +3705,10 @@ impl Route {
             Route::MalonRecord => "ENTR_LON_LON_RANCH_7",
             // The field outside the ranch's gate (spawn 6), as FieldRide.
             Route::BigPoe => "ENTR_HYRULE_FIELD_6",
+            // Goron City's bottom (spawn 2, room 3); the debug start moves Link to the post's ledge.
+            Route::Hookshot => "ENTR_GORON_CITY_2",
+            // Dampé's grave from the graveyard (spawn 0, room 0, the landing above Dampé).
+            Route::DampeRace => "ENTR_WINDMILL_AND_DAMPES_GRAVE_0",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3754,6 +3787,8 @@ impl Route {
             Route::MalonRecord => Some("malon-record"),
             Route::MalonSong => Some("adult-awake"),
             Route::BigPoe => Some("epona-won"),
+            Route::Hookshot => Some("hookshot"),
+            Route::DampeRace => Some("epona-won"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3847,6 +3882,7 @@ impl Route {
             Route::MalonCourse => Some((BY_INGO, BY_INGO_YAW)),
             Route::MalonSong => Some((BEFORE_NIGHT_MALON, i16::MIN)),
             Route::BigPoe => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
+            Route::Hookshot => Some((BY_THE_POST, 0x4000)),
             _ => None,
         }
     }
@@ -4099,6 +4135,8 @@ impl Route {
             Route::MalonRecord => "malon-record",
             Route::MalonSong => "malon-song",
             Route::BigPoe => "big-poe",
+            Route::Hookshot => "hookshot",
+            Route::DampeRace => "dampe-race",
         }
     }
 
@@ -4178,6 +4216,8 @@ impl Route {
             Route::PreludeWarp => 3000,
             Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoLost | Route::IngoWon | Route::EponaWon => 4000,
             Route::MalonCourse | Route::MalonRecord | Route::MalonSong | Route::BigPoe => 4000,
+            Route::Hookshot => 1500,
+            Route::DampeRace => 2000,
             Route::IngoRace => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
@@ -4191,7 +4231,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon, Route::MalonCourse, Route::MalonRecord, Route::MalonSong, Route::BigPoe].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon, Route::MalonCourse, Route::MalonRecord, Route::MalonSong, Route::BigPoe, Route::Hookshot, Route::DampeRace].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -4660,6 +4700,53 @@ enum Who {
     Ingo,
     /// Adult Malon by the corral after Epona (`En_Ma3`).
     AdultMalon,
+    /// Dampé's ghost in his grave (`En_Po_Relay`).
+    DampeGhost,
+}
+
+/// `Route::DampeRace`'s talk point: down the landing from spawn 0 (-56, -470, -1674), just outside
+/// Dampé's 250 (his home (-63, -530, -2177)); a step on, his greeting (0x5041) opens by itself (his
+/// offer auto-accepted). The landing's floor holds to about z -2050.
+const TO_DAMPE: Vec3 = Vec3::new(-58.0, -470.0, -1915.0);
+
+/// The race (`En_Po_Relay`) in the action.
+fn dampe_in(w: &PlayState, action: crate::en_po_relay::Action) -> bool {
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_po_relay::EnPoRelay>(h)).any(|d| !d.actor.killed && d.action == action)
+}
+
+/// `Route::DampeRace`'s tasks: to Dampé, his greeting (auto-accepted) read through (the race starts
+/// as it closes: `EnPoRelay_Talk`); standing, until he opens the first door (switch 0x35 at his
+/// eighth point). The race itself is the hand test's (the user's call 5).
+fn dampe_race_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Converse(Who::DampeGhost, TO_DAMPE, vec![], |w| dampe_in(w, crate::en_po_relay::Action::Race), Step::DampeRaceStarted),
+        Task::Texts(|w| w.flags.get_switch(crate::en_po_relay::SWITCH_FIRST_DOOR), Step::DampeFirstDoor),
+    ]
+}
+
+/// `Route::Hookshot`'s debug start: Goron City's room 3, on the ledge 200 west of the stone post
+/// (`Obj_Hsblock` 0xFFC0 at (1161, 480, -148)), facing it.
+const BY_THE_POST: Vec3 = Vec3::new(961.0, 480.0, -148.0);
+/// Where the run aims: the post's upper band (its polys from about 550 take the hookshot; the
+/// lower ones throw it back), near its bottom, on its near face: Link pulled there drops to the
+/// ledge.
+const POST_BAND: Vec3 = Vec3::new(1141.0, 562.0, -148.0);
+
+/// The post's top (`gHookshotPostCol`: 100 above its base).
+const POST_TOP: Vec3 = Vec3::new(1161.0, 580.0, -148.0);
+
+/// `Route::Hookshot`'s tasks: the hookshot raised in first person, aimed at the post's band and
+/// shot; pulled to it (`Player_Action_HookshotFly`); the flight over, hanging from its top; up.
+fn hookshot_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::DrawSlingshot(Step::HookshotRaised),
+        Task::ShootUntil(POST_BAND, |w| w.player().action == crate::player::Action::HookshotFly, Step::HookshotPulled),
+        Task::Texts(|w| w.player().action != crate::player::Action::HookshotFly, Step::HookshotLanded),
+        // Caught on the post's top edge (func_80837B9C's ledge grab, as the C): up onto it.
+        Task::ClimbTo(POST_TOP, Step::PostClimbed),
+    ]
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -5067,6 +5154,8 @@ impl Playthrough {
             Route::MalonRecord => vec![Task::Texts(|w| w.save.get_event_chk_inf(crate::en_ma3::EVENTCHKINF_HORSE_RACE_COW_UNLOCK), Step::CourseRecord), Task::Settle(None)],
             Route::MalonSong => malon_song_tasks(),
             Route::BigPoe => big_poe_tasks(),
+            Route::Hookshot => hookshot_tasks(),
+            Route::DampeRace => dampe_race_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),
@@ -9596,6 +9685,7 @@ impl Playthrough {
             Who::Bonooru => w.actors.downcast::<crate::en_kakasi3::EnKakasi3>(h).is_some_and(|a| !a.actor.killed),
             Who::Ingo => w.actors.downcast::<crate::en_in::EnIn>(h).is_some_and(|a| !a.actor.killed && (2..=4).contains(&crate::en_in::TYPE.get(a.actor.params))),
             Who::AdultMalon => w.actors.downcast::<crate::en_ma3::EnMa3>(h).is_some_and(|a| !a.actor.killed),
+            Who::DampeGhost => w.actors.downcast::<crate::en_po_relay::EnPoRelay>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

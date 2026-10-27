@@ -60,6 +60,8 @@ pub trait SurfaceType {
     fn is_ignored_by_projectiles(&self, id: PolyId) -> bool;
     /// `SurfaceType_IsHorseBlocked`: surface data[0] bit 31 (a horse can't step on it).
     fn is_horse_blocked(&self, id: PolyId) -> bool;
+    /// `SurfaceType_CanHookshot`: surface data[1] bit 17 (the hookshot's hook holds in it).
+    fn can_hookshot(&self, id: PolyId) -> bool;
 }
 
 impl SurfaceType for CollisionContext {
@@ -95,6 +97,9 @@ impl SurfaceType for CollisionContext {
     }
     fn conveyor_speed(&self, id: PolyId) -> u32 {
         self.surface_word(id, 1) >> 18 & 7
+    }
+    fn can_hookshot(&self, id: PolyId) -> bool {
+        self.surface_word(id, 1) >> 17 & 1 != 0
     }
     fn conveyor_direction(&self, id: PolyId) -> u32 {
         self.surface_word(id, 1) >> 21 & 0x3F
