@@ -34,7 +34,7 @@ PHASES = {
     10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "done"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "done"),
     12: ("The Temple of Time and the adult world (GAME-11)", "done"),
-    13: ("Epona, Ingo's races and the adult Hyrule Field (GAME-12)", "in progress"),
+    13: ("Epona, Ingo's races and the adult Hyrule Field (GAME-12)", "done"),
     14: ("The Forest Temple", "planned"),
     15: ("The Fire Temple", "planned"),
     16: ("The Ice Cavern and the Water Temple", "planned"),

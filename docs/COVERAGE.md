@@ -22,7 +22,7 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 | 10: Death Mountain, Goron City and Dodongo's Cavern (GAME-09) | done | 33 | 33 | - |
 | 11: Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10) | done | 35 | 35 | - |
 | 12: The Temple of Time and the adult world (GAME-11) | done | 5 | 5 | - |
-| 13: Epona, Ingo's races and the adult Hyrule Field (GAME-12) | in progress | 6 | 6 | - |
+| 13: Epona, Ingo's races and the adult Hyrule Field (GAME-12) | done | 6 | 6 | - |
 | 14: The Forest Temple | planned | 22 | 1 | `Bg_Mori_Bigst`, `Bg_Mori_Elevator`, `Bg_Mori_Hashira4`, `Bg_Mori_Hineri`, `Bg_Mori_Idomizu`, `Bg_Mori_Kaitenkabe`, `Bg_Mori_Rakkatenjo`, `Bg_Po_Event`, `Bg_Po_Syokudai`, `Boss_Ganondrof`, `En_Bb`, `En_Floormas`, `En_Hs`, `En_Mb`, `En_Mm2`, `En_Po_Relay`, `En_Test`, `En_Wallmas`, `Obj_Blockstop`, `Obj_Dekujr`, `Obj_Mure3` |
 | 15: The Fire Temple | planned | 21 | 0 | `Bg_Hidan_Dalm`, `Bg_Hidan_Firewall`, `Bg_Hidan_Fslift`, `Bg_Hidan_Fwbig`, `Bg_Hidan_Hamstep`, `Bg_Hidan_Hrock`, `Bg_Hidan_Kousi`, `Bg_Hidan_Kowarerukabe`, `Bg_Hidan_Rock`, `Bg_Hidan_Sima`, `Bg_Hidan_Syoku`, `Bg_Jya_Ironobj`, `Bg_Spot17_Bakudankabe`, `Bg_Spot17_Funen`, `Boss_Fd`, `Efc_Erupc`, `En_Bw`, `En_Fd`, `En_Ik`, `En_Yukabyun`, `Obj_Warp2block` |
 | 16: The Ice Cavern and the Water Temple | planned | 18 | 0 | `Bg_Haka_Sgami`, `Bg_Ice_Objects`, `Bg_Ice_Shelter`, `Bg_Ice_Shutter`, `Bg_Ice_Turara`, `Bg_Mizu_Movebg`, `Bg_Mizu_Shutter`, `Bg_Mizu_Uzu`, `Bg_Mizu_Water`, `Bg_Spot08_Iceblock`, `Boss_Mo`, `En_Blkobj`, `En_Fz`, `En_Ice_Hono`, `En_Ny`, `En_Ru2`, `En_Stream`, `En_Trap` |

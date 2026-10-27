@@ -255,6 +255,15 @@ and out, the exit, [ADR 0089](adr/0089-the-door-of-time-to-the-chamber-and-out.m
 **Phase 12 is done** with its exit review (2026-10-24, GAME-11's last section): Phase 13 starts
 from `adult-awake`.
 
+Phase 13 (GAME-12, [GAME-12-epona-and-the-adult-field.md](GAME-12-epona-and-the-adult-field.md)):
+surveyed and proposed (2026-10-24), four milestones, every call the recommended one. Milestone 1
+(riding Epona, [ADR 0091](adr/0091-riding-epona.md)), milestone 2 (Ingo, the rental and the
+races, [ADR 0092](adr/0092-ingo-the-rental-and-the-races.md)), milestone 3 (Epona won and out,
+the exit, [ADR 0093](adr/0093-epona-won-and-out.md)) and milestone 4 (the ranch after Epona and
+the field's Poes, [ADR 0095](adr/0095-the-ranch-after-epona-and-the-fields-poes.md)) are done, all
+hand-tested. **Phase 13 is done** with its exit review (2026-10-26, GAME-12's last section): Phase
+14 starts from `epona-won`.
+
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
 the 2026-09-30 deferral: the scripted runs play the cutscenes.
@@ -892,8 +901,9 @@ hand-tested, committed and pushed): `En_Ma3` (Malon's obstacle course: the offer
 the high score, the cow), `En_Ma2`'s adult (Epona's Song played to her by night) and
 `En_Po_Field` (the field's Big Poes, by day or night) whole; the message box's timers and high scores; the runs
 `malon-course` (to the course's start), `malon-record` (on its debug preset), `malon-song` and
-`big-poe` (it appears and flees). The laps, the fight and the bottle are the hand test's. Every
-milestone of the phase is done.
+`big-poe` (it appears and flees). The laps, the fight and the bottle are the hand test's.
+**Phase 13 is done** (2026-10-26) with its exit review (GAME-12's last section): Phase 14
+starts from `epona-won`.
 
 ## Cross-cutting debts
 

@@ -10,7 +10,8 @@ calls' section). The phase starts from the `adult-awake` preset (GAME-11's exit 
 Milestone 1 is done (hand-tested 2026-10-25, committed and pushed). Milestone 2 is done
 (hand-tested 2026-10-25, committed and pushed). Milestone 3 is done (hand-tested 2026-10-26, committed and
 pushed): **the phase's exit is met**, `epona-won` is Phase 14's start. Milestone 4, the phase's
-last, is done (hand-tested 2026-10-26, committed and pushed): every milestone of the phase is.
+last, is done (hand-tested 2026-10-26, committed and pushed). **Phase 13 is done** with its exit
+review (2026-10-26, the last section): Phase 14 starts from `epona-won`.
 
 | # | Milestone | Status |
 |---|---|---|
@@ -807,3 +808,97 @@ J/K/L the C buttons, I C-Up, Enter Start.
    ramp's foot: a Big Poe appears ahead and flees. Chase it and hit it with the sword (B) from
    horseback until it falls; get off and touch its soul: "Yes" bottles it ("You caught a Big
    Poe!"). Ride back there: no Big Poe.
+
+## Phase 13's end (the exit review, 2026-10-26)
+
+**The exit, met:** Epona won (milestone 3: `Route::EponaWon` from the second race won, Ingo's gate
+scene, a spurred gallop over the shut gate, Hyrule Field's leap cutscene: `EVENTCHKINF_EPONA_OBTAINED`).
+Riding before it (milestone 1), Ingo's rental and races (2), and the ranch after with the field's
+Poes (4). Commits: 35e1320 (1), 5699b62 (2), eddf199 (3), d56df2a (4).
+
+### What the phase built
+
+- **Actors, whole** (Phase 18's parts left, each logged, the actor standing): `En_Horse` (Epona and
+  the rental horse, Ingo's race horse, the cutscene horses; not horseback archery, the Gerudo Valley
+  bridge jump, the Gerudo saddle), `Bg_Umajump` (1); `En_In`'s adult, `Bg_Ingate`,
+  `En_Horse_Game_Check` (its type 2, Gerudo archery's start, ported but met in Phase 18) (2);
+  `En_Ma3`, `En_Ma2`'s adult, `En_Po_Field` (4). Every actor the phase's scenes place is ported
+  (COVERAGE: 6 of 6); 227 ported actors at Phase 12's end, 233 at Phase 13's.
+- **Systems:**
+  - Player's riding whole: the mount from either side, riding, talking and checking from horseback,
+    getting off, the exits on horseback and the re-mounting (ADR 0091);
+  - `z_horse.c` whole (`Horse_InitPlayerHorse` from `Play_Init`, the gameplay and cutscene setups,
+    Lake Hylia's fix) and `z_actor.c`'s horse helpers;
+  - the horse camera: `Camera_Normal3`, `Camera_CalcAtForHorse`, `CAM_SET_HORSE`;
+  - the carrots by "Faster" (pack format 35);
+  - `Play_LoadToLastEntrance`'s fence-jump case (ADR 0093);
+  - `Message_Decode`'s timers and high scores (ADR 0095; pack format 36 for milestone 4's bakes);
+  - the run tasks `Mount`, `Ride`, `RideExit`, `RideIn`, `Dismount`, `RideTalk`, `RideUntil`.
+- **Runs** (each a short start, chained by presets; no fights, no scripted race):
+  - milestone 1: `Route::RideEpona` (796 frames, `adult-awake`), `FieldRide` (640, the debug
+    `epona`);
+  - milestone 2: `Route::IngoRental` (1,244, `adult-awake`), `IngoRace` (1,054, `ingo-rental`),
+    `IngoLost` (92, `ingo-race-lost`), `IngoWon` (211, `ingo-first-win`);
+  - milestone 3, the story: `Route::EponaWon` (1,026, `ingo-second-win` to **`epona-won`**);
+  - milestone 4: `Route::MalonCourse` (1,869, `epona-won`), `MalonRecord` (284, the debug
+    `malon-record`), `MalonSong` (597, `adult-awake` at 22:00), `BigPoe` (514, `epona-won`).
+- **Numbers:** 1,811 tests at the phase's start, 1,839 at milestone 3's commit and 1,863 in the
+  working tree at milestone 4's (the level editor session's uncommitted tests among them); goldens 369 hashes and 272 cases
+  (`out/golden_base43`), then 400 and 292 (`out/golden_base47`). Menu entries 178 to 189. Pack
+  formats 35 and 36 (`out/data28`). ADRs 0091 to 0093 and 0095 (0094 is the level editor's).
+
+### Phase 14's start: the `epona-won` preset
+
+The story's save at the phase's end is **`epona-won`** (`Route::EponaWon`'s end; its test checks
+it). Milestone 4's runs are off the story (Malon's course and her song are optional, and
+`malon-record` is a debug start). Read from the preset against `adult-awake` (a probe, applied and
+printed, then removed):
+
+- **Items, equipment, upgrades, quest, buttons, hearts:** all `adult-awake`'s (GAME-11's exit
+  review): the Master Sword, the Hylian Shield, the Kokiri Tunic and Boots; sticks, bombs, the
+  slingshot, the Ocarina of Time, the boomerang, an empty bottle, Zelda's Letter; the three stones,
+  the Light Medallion, five songs (Epona's among them); six hearts. **No bow, no hookshot.**
+- **Flags added:** `EVENTCHKINF_1B` (the first ridden rental over), `EVENTCHKINF_EPONA_OBTAINED`
+  (0x18), `INFTABLE_INGO_TALKED_TO_ADULT_LINK` (0x9A), `INFTABLE_AB` (riding in the first rental).
+- **The race word** (`eventInf[0]`): state 6 with `EVENTINF_INGO_RACE_SECOND_RACE` and `_0F`, as
+  the second win leaves them. `eventInf` isn't part of the saved file, and entering the ranch at its
+  gateway clears it (`En_In`'s `sIsObedient`); a later phase's start can drop it.
+- **Rupees:** 50, a debug start's (`ingo-rental`'s 60, less the second rental's 10; the story's
+  player gathers them).
+- **Epona:** `horseData` the new save's (Hyrule Field, (-1840, 72, 5497)): her song calls her in any
+  field-like scene.
+- **The time:** the preset holds none; a start sets the clock.
+
+**Where Phase 14 starts:** Hyrule Field with Epona, adult, by day. The Forest Temple is reached
+through Kokiri Forest, the Lost Woods and the Sacred Forest Meadow as an adult; the survey reads
+their adult layers.
+
+### What's left, and where
+
+- **Phase 14:** from GAME-11's list, still open: the Forest Medallion in the Chamber (`Demo_Sa` 0 and
+  1, `chamberCutsceneNum`'s first script) and `Door_Warp1`'s adult warps (BACKLOG #110); `En_Xc`'s
+  Minuet (type 6); `Obj_Bean`'s adult lift (#29, Phases 14 to 18); the debug `prelude`, which the
+  Forest Temple's `EVENTCHKINF_48` turns into the story's. New: the bow from horseback (the
+  riding's bow aim waits for the bow).
+- **Phase 17:** Talon back at the stable (`En_Ta` 2 needs `EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO`,
+  set by Kakariko's adult Talon once Epona is had).
+- **Phase 18:** horseback archery (`En_Horse`'s, `En_Horse_Game_Check` 2 met), the Gerudo Valley
+  bridge jump, the Gerudo saddle.
+- **Phase 19:** the credits' horses and the ranch's credits layers (6 to 10: `Demo_Ec`, `En_Light`,
+  `Demo_6K`), `En_Horse`'s credits cutscenes.
+- **Phase 20:** the Big Poe's soul sold (the Poe collector); child Malon's mask reactions (#112,
+  with the mask trade); `MESSAGE_POINTS` and `MESSAGE_FISH_INFO` with their games.
+- **Open from the phase:** BACKLOG #68 (the horses' sound positions), #111 (the camera's swimming
+  speed ratio), #80 and #81 (the Poes' lights and lanterns, with `En_Poh`'s).
+- **Owed:** nothing from Phase 13; still GAME-10 milestone 9's hand test, the frogs and the
+  scarecrows ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)).
+
+### Checked
+
+- ROADMAP (Phase 13 done, in its section and in "Where things stand"), COVERAGE (`coverage.py`'s
+  phase 13 set to done; regenerated: 6 of 6, 233 ported), the ADR index (0091 to 0093, 0095) and
+  BACKLOG (#51 closed; #68 extended; #80, #81 extended; #111, #112 open) agree with this document.
+- The tests and goldens as milestone 4 left them, on its final code (d56df2a; the review changes
+  docs and `coverage.py` only): `cargo test --release --workspace` 1,863 pass, 3 ignored (two the
+  level editor's); `cargo test -p layering` passes; no warnings; `python scripts/golden.py check
+  --bin-dir target/game26/release`: 400 of 400 identical (`out/golden_base47`).
