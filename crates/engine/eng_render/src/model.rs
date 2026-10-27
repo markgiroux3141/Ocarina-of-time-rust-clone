@@ -21,6 +21,11 @@ pub struct GpuModel {
     /// Materials whose uniforms depend on dynamic segments.
     pub(crate) dynamic: Vec<usize>,
     pub(crate) material_buf: wgpu::Buffer,
+    /// What `material_buf` holds (the bytes last written to it): `set_draw_values` writes only
+    /// the materials whose uniforms changed, in one write. Each `write_buffer` has a fixed cost
+    /// (about 0.45 ms on Vulkan on Windows, 2026-10-27), so a write per material per frame
+    /// (Link's 54) dominated the frame.
+    pub(crate) material_shadow: std::cell::RefCell<Vec<u8>>,
     pub(crate) material_bg: wgpu::BindGroup,
     pub(crate) texture_bgs: Vec<wgpu::BindGroup>,
     /// Each texture bind group's slots and filter, and the mesh's texture views: what
@@ -154,6 +159,7 @@ impl Renderer {
             materials: draw.materials.clone(),
             dynamic,
             material_buf,
+            material_shadow: std::cell::RefCell::new(uniforms),
             material_bg,
             texture_bgs,
             tex_keys,
@@ -290,14 +296,27 @@ impl GpuModel {
     /// draw-config colours) for this frame's values, of the lit ones for the draw's point
     /// lights, and of the fogged ones for the draw's fog (`fog_changed`: it differs from the
     /// one they were last written with).
+    /// Only the uniforms that differ from what the buffer holds are written, in one write over
+    /// the range they span (`material_shadow`).
     pub fn set_draw_values(&self, queue: &wgpu::Queue, v: Option<&SegmentValues>, lights: &[eng_gfx::PointLight], fog: Option<&eng_gfx::FogOverride>, fog_changed: bool) {
+        let mut shadow = self.material_shadow.borrow_mut();
+        let stride = MATERIAL_STRIDE as usize;
+        let mut changed: Option<(usize, usize)> = None;
         for (i, m) in self.materials.iter().enumerate() {
             let dynamic = self.dynamic.contains(&i);
             if !(dynamic && v.is_some()) && !m.lit && !(fog_changed && uses_fog(m)) {
                 continue;
             }
             let u = material_uniform_with(m, v.filter(|_| dynamic), lights, fog);
-            queue.write_buffer(&self.material_buf, i as u64 * MATERIAL_STRIDE, bytemuck::bytes_of(&u));
+            let bytes = bytemuck::bytes_of(&u);
+            let held = &mut shadow[i * stride..i * stride + bytes.len()];
+            if held != bytes {
+                held.copy_from_slice(bytes);
+                changed = Some(changed.map_or((i, i), |(lo, _)| (lo, i)));
+            }
+        }
+        if let Some((lo, hi)) = changed {
+            queue.write_buffer(&self.material_buf, (lo * stride) as u64, &shadow[lo * stride..(hi + 1) * stride]);
         }
     }
 

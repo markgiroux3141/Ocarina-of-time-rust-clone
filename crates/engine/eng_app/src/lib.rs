@@ -32,6 +32,12 @@ pub fn run_window<A: eframe::App + 'static>(
     // The renderer's optional features (`eng_render::NON_FEATURES`: the game's NoN
     // microcode), where the adapter has them.
     if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        // On Windows, DirectX 12 unless WGPU_BACKEND says otherwise: wgpu's default there is
+        // Vulkan, whose small buffer writes cost about 0.45 ms each on the NVIDIA driver here
+        // (2026-10-27: a frame of Link and the HUD took 55 ms on Vulkan, 1.7 ms on DirectX 12).
+        if cfg!(windows) && wgpu::Backends::from_env().is_none() {
+            setup.instance_descriptor.backends = wgpu::Backends::DX12;
+        }
         let base = setup.device_descriptor.clone();
         setup.device_descriptor = std::sync::Arc::new(move |adapter| {
             let mut d = base(adapter);
