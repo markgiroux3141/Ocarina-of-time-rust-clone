@@ -44,6 +44,13 @@ in the File menu.
 - **Views:** shading and nodes at the plan's top left, zoom and fit at its bottom right, plan / plan + 3D / 3D at the top
   right. The status bar has the tool's hints, the last message and the point under the pointer.
 
+- **Reference** (top bar): the game's own dungeons and bosses' rooms in place of the level, to orbit a floor at a
+  time: a floor bar from the pause map's floors (each shows its rooms with what's over it cut away), a height cut, a
+  room list (show, hide, solo, frame); the collision coloured by what each surface does (alone or over the rooms) and
+  the water boxes; the actors as the game draws them, with markers to click and the rooms each door joins; a measure
+  tool. Click it again to go back to the level. See ADR 0094 and
+  `docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md`.
+
 The thumbnails are drawn by the editor from the kit's own meshes and the texture library (`app/thumbs.rs`), once per
 piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has them, egui's own fonts elsewhere.
 
@@ -273,6 +280,10 @@ loops crossing) in the plan.
 - `actors.rs`: the actors' catalogue (the port's profiles, the palette's names and groups, the game's placements) and the
   invisible actors' areas. `captures.rs`: the game's captures of the actors (running `oot capture-actors`, reading the
   manifest and the files, the nearest captured configuration, outlines from above, areas as meshes).
+- `reference.rs` (no UI, tested against the pack): the Reference mode's dungeons read from the game's pack (every
+  room's meshes, the floors from the pause map's tables, the collision sorted by surface, the water boxes, the actors,
+  ray tests); `app/reference_ui.rs` its panel
+  and 3D view.
 - `app.rs`: the editor's state, tools, plan and 3D input, drawing the plan, undo, files and Play; its panels in `app/`:
   `chrome.rs` (top bar, tool rail, status bar, view overlays, keys sheet, level settings), `palette.rs`,
   `inspector.rs` (with a rock's shape cards and side view), `outliner.rs`, `widgets.rs` (sections, rows, segmented choices, cards, chips, theme-default fields),

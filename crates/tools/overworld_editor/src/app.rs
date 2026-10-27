@@ -30,6 +30,7 @@ mod icons;
 mod inspector;
 mod outliner;
 mod palette;
+mod reference_ui;
 mod style;
 mod thumbs;
 mod widgets;
@@ -240,6 +241,8 @@ pub struct App {
     actor_found: Vec<Option<(crate::captures::Found, Arc<Vec<[f32; 2]>>)>>,
     /// The level's configurations last asked of the capture.
     actor_wanted: Vec<oot_game::actor_capture::CaptureKey>,
+    /// The Reference mode: the game's dungeons (`reference_ui`).
+    reference: reference_ui::Reference,
 }
 
 /// How ▶ Play starts the game (the menu beside it): Link's age, the time of day (`--time`), and a
@@ -533,6 +536,7 @@ impl App {
             },
             actor_found: vec![],
             actor_wanted: vec![],
+            reference: reference_ui::Reference::new(cc.wgpu_render_state.as_ref()),
         }
     }
 
@@ -2910,12 +2914,33 @@ impl eframe::App for App {
         if self.catalogue.poll() || self.catalogue.reading() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-        self.keys(&ctx);
+        if self.reference.on {
+            self.reference_keys(&ctx);
+        } else {
+            self.keys(&ctx);
+        }
         self.refresh_shapes();
         self.refresh_captures(&ctx);
 
         egui::Panel::top("top").frame(chrome::panel_frame(style::PANEL, egui::Margin::symmetric(10, 6))).show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("status").frame(chrome::panel_frame(style::BG, egui::Margin::symmetric(12, 4))).show(ui, |ui| self.status_bar(ui));
+        if self.reference.on {
+            // the game's dungeons in place of the level (which stays as it is)
+            egui::Panel::left("reference").resizable(true).default_size(320.0).size_range(260.0..=460.0).frame(chrome::panel_frame(style::PANEL, egui::Margin::ZERO)).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("reference").auto_shrink([false, false]).show(ui, |ui| self.reference_panel(ui));
+            });
+            egui::CentralPanel::no_frame().show(ui, |ui| self.reference_view(ui));
+        } else {
+            self.editor_panels(ui);
+        }
+        self.windows(&ctx);
+        self.after_frame(&ctx);
+    }
+}
+
+impl App {
+    /// The editor's panels round the plan and the 3D view, and the views.
+    fn editor_panels(&mut self, ui: &mut egui::Ui) {
         egui::Panel::left("rail").exact_size(54.0).resizable(false).frame(chrome::panel_frame(style::BG, egui::Margin::symmetric(0, 6))).show(ui, |ui| self.rail(ui));
         egui::Panel::left("palette").resizable(true).default_size(284.0).size_range(240.0..=420.0).frame(chrome::panel_frame(style::PANEL, egui::Margin::ZERO)).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("palette").auto_shrink([false, false]).show(ui, |ui| self.palette(ui));
@@ -2950,8 +2975,11 @@ impl eframe::App for App {
             self.layout_overlay(ui, r);
             self.failed_overlay(ui, r);
         });
-        self.windows(&ctx);
+    }
 
+    /// Every frame, in either mode: edits settle into undo steps, the selection is kept valid, the
+    /// level is sent to be built, the window's title.
+    fn after_frame(&mut self, ctx: &egui::Context) {
         // edits settle into one undo step once the mouse is up and no field is being typed in
         if !ctx.input(|i| i.pointer.any_down()) && !ctx.egui_wants_keyboard_input() {
             self.commit();

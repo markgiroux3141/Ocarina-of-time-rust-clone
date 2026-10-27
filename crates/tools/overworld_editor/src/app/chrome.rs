@@ -113,7 +113,7 @@ pub fn tool_info(t: Tool) -> ToolInfo {
 }
 
 /// Controls floating over a view, a row of them with `pivot` at `at`.
-fn overlay(ui: &egui::Ui, id: &str, pivot: Align2, at: Pos2, add: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn overlay(ui: &egui::Ui, id: &str, pivot: Align2, at: Pos2, add: impl FnOnce(&mut egui::Ui)) {
     egui::Area::new(Id::new(("overlay", id))).pivot(pivot).fixed_pos(at).order(egui::Order::Middle).show(ui.ctx(), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -123,12 +123,12 @@ fn overlay(ui: &egui::Ui, id: &str, pivot: Align2, at: Pos2, add: impl FnOnce(&m
 }
 
 /// A translucent frame for controls over a view.
-fn glass() -> egui::Frame {
+pub(super) fn glass() -> egui::Frame {
     egui::Frame::new().fill(Color32::from_rgba_unmultiplied(18, 23, 21, 225)).stroke(Stroke::new(1.0, LINE2)).corner_radius(8.0).inner_margin(Margin::same(2))
 }
 
 /// A button in a glass frame: highlighted when `on`, dimmed when not `enabled`.
-fn glass_button(ui: &mut egui::Ui, text: &str, on: bool, enabled: bool) -> egui::Response {
+pub(super) fn glass_button(ui: &mut egui::Ui, text: &str, on: bool, enabled: bool) -> egui::Response {
     let g = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(12.5), TEXT);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 18.0, 24.0), if enabled { Sense::click() } else { Sense::hover() });
     let p = ui.painter();
@@ -178,6 +178,9 @@ impl App {
                 .on_hover_text(if dirty { "Unsaved changes (Ctrl+S saves)" } else { "Saved" });
             vsep(ui);
             ui.menu_button("File", |ui| self.file_menu(ui));
+            if ui.add(egui::Button::selectable(self.reference.on, "Reference")).on_hover_text("The game's own dungeons, to orbit a floor at a time (the level stays as it is; click again to go back to it)").clicked() {
+                self.reference.on = !self.reference.on;
+            }
             if ui.add(egui::Button::selectable(self.show_level, "Level settings…")).on_hover_text("Detail, edges, walls, how it plays in the game, the edge of the world and sampling").clicked() {
                 self.show_level = !self.show_level;
             }
@@ -516,6 +519,9 @@ impl App {
     // ---- the status bar -----------------------------------------------------------------------
 
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
+        if self.reference.on {
+            return self.reference_status(ui);
+        }
         let info = tool_info(self.tool);
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {

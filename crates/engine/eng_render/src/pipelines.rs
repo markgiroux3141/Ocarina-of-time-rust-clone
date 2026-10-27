@@ -194,6 +194,7 @@ impl Renderer {
 
         Renderer {
             probe: crate::probe::DepthProbe::new(device),
+            clip: [0.0; 4],
             white: white_tex.create_view(&Default::default()),
             shader,
             globals_buf,

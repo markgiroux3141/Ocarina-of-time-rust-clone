@@ -54,6 +54,8 @@ pub struct Renderer {
     pub(crate) samplers: HashMap<(WrapMode, WrapMode, bool), wgpu::Sampler>,
     pub(crate) white: wgpu::TextureView,
     pub(crate) probe: probe::DepthProbe,
+    /// `set_clip`'s plane.
+    pub(crate) clip: [f32; 4],
 }
 
 impl Renderer {

@@ -2462,6 +2462,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "eframe",
+ "eng_collision",
  "eng_gfx",
  "eng_render",
  "glam",
@@ -2469,6 +2470,7 @@ dependencies = [
  "oot_actors",
  "oot_game",
  "overworld",
+ "pollster 0.4.0",
  "rfd",
  "serde_json",
 ]

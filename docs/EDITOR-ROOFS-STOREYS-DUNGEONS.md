@@ -342,3 +342,139 @@ Rebuild the game (the start is new in `oot_import`): `scripts\run\editor.bat` do
    climbs to the loft's height, but its stairwell would cross the loft's edge, so the problems say
    there's none (stairs to a raised floor need the stairwell inside it).
 6. On 2F (the top), a path with Up on: the inspector says there's no storey over it.
+
+## Pivot: a real level viewer first (2026-10-26)
+
+Slice 4 (ladders and vines) is on hold. The test level is too bland to show what the tools need,
+and working from memory is hard, so first a **reference viewer** for the game's own dungeons
+(Master Quest, the ROM's, is fine): orbit the real Deku Tree, Dodongo's Cavern, Jabu-Jabu, the
+Forest, Fire, Water, Shadow and Spirit Temples, one floor at a time, and then rebuild them with
+the editor's tools to find the features missing. Planned as a Reference mode in the editor, in
+three phases: (1) pick a dungeon, orbit it, a floor bar from the pause map's tables, a height cut,
+a room list; (2) collision by surface type, doors and transition actors, actor markers, a measure
+tool; (3) the real level as a ghost in 3D and a backdrop in the plan, to trace while rebuilding.
+
+### Reference mode, phase 1: built (2026-10-26)
+
+[ADR 0094](adr/0094-the-editors-reference-mode.md). The top bar's **Reference** swaps the editor's
+panels and views for a dungeon of the game's; click it again to go back to the level, which is
+left as it was.
+
+- **The dungeons** (the panel's list): the eight the plan names, the Bottom of the Well, the Ice
+  Cavern, the Gerudo Training Ground, Ganon's Castle and Tower, and the nine bosses' rooms. Every
+  room from the pack (`reference::load`: `SceneState::load`, the layer for the dungeon's age at
+  noon), drawn by the game's renderer with the scene's lights and no fog, the draw config's
+  scrolling and changing textures and Jabu-Jabu's pulsing walls running at the game's rate
+  (*Animate*). All 22 load in 0.15 s.
+- **Floors** from the pause map's tables (`MapData`): the floor bar over the view's left side
+  (All, then 3F, 2F, 1F, B1... top down) and in the panel. A floor shows the rooms its map draws,
+  with everything over the floor above's `floorCoordY` cut away (the Deku Tree's 1F: room 0 cut at
+  y 360). *Floors below too* adds the rooms of the floors under it. A room on no floor's map goes on
+  the floor its lowest point is on (none in the ten dungeons with maps); a boss's room is its one
+  floor; the Training Ground and Ganon's Castle and Tower have no map, so no floors.
+- **The height cut:** on with a floor (set to the floor above's height), or by hand; a slider over
+  the dungeon's heights (the game's y). The cut is `eng_render::Renderer::set_clip`, so it cuts the
+  game's meshes, and in the level's own 3D view now cuts the placed actors at a storey's ceiling
+  too.
+- **Rooms:** each room's triangles and floors; a tick to show or hide it, *solo* for it alone,
+  click its name to frame it, hover its row to box it in the view; room numbers over the rooms
+  (*Room numbers*).
+- **The view:** drag (or middle-drag) orbits, right-drag pans, the wheel zooms, a double-click looks
+  at the point under the pointer, F frames what's shown. The status bar has the point under the
+  pointer in the game's axes and the floor the pause map puts it on.
+- Code: `reference.rs` (the list, `load`, `floors`, `floor_at`, `Loaded::raycast`; tests: every
+  dungeon loads with its floors and every room with a mesh is on one, and an ignored headless
+  render of three dungeons a floor at a time, `render_reference_floors`); `app/reference_ui.rs`;
+  `View3d::set_rooms` and `set_room_values`.
+- **Not yet** (phases 2 and 3): collision by surface type, doors and transition actors, actor
+  markers, a measure tool; the real level as a ghost while rebuilding it. The rooms take the
+  scene's lights, not each room's; no fog.
+
+#### By hand
+
+Rebuild and open the editor: `scripts\run\editor.bat` (any level, or none).
+
+1. Click **Reference** in the top bar: the rail, palette and inspector give way to the Reference
+   panel, and the view says to choose a dungeon. Choose *Inside the Deku Tree*: it frames from the
+   south, all 12 rooms, room numbers over them, textured as in the game.
+2. Orbit (drag), pan (right-drag), zoom (wheel); double-click a wall: the view turns round that
+   point. The status bar shows x, y, z under the pointer and the floor ("on 1F").
+3. The floor bar: **1F** shows room 0 alone, cut at y 360 (you look down into the trunk's
+   bottom, the web over the hole); the overlay at the bottom left says "1F: cut at y 360". **2F**:
+   rooms 0, 1, 2, cut at 760. **B1**: the basement rooms. **3F**: rooms 0 and 10, nothing cut (the
+   top floor). PageUp / PageDown step floors, Home is All.
+4. On 2F, *Floors below too*: 1F, B1 and B2's rooms appear under it.
+5. The height cut: drag the slider, the cut follows; turn it off, nothing is cut.
+6. The room list: hover a row (a green box round that room in the view), click a name (it's
+   framed), untick one (it goes), *solo* one (only it; *Show them all again*).
+7. *Inside Jabu-Jabu's Belly*: the walls pulse and the textures move; *Animate* off stops them.
+   *Fire Temple*: five floors, the lava moving. *Shadow Temple*: B1 to B4. *Spirit Temple*,
+   *Water Temple*, *Forest Temple*: their floors look right to you for a reference?
+8. A boss's room (*Gohma's lair*): one floor, B2. *Inside Ganon's Castle*: no floor bar, the
+   panel says to use the height cut.
+9. Click **Reference** again: the level is back as you left it (its views, camera, selection).
+   With storeys (`sketch_storeys.json`), an actor upstairs is now cut away in 3D while you're on
+   1F, like the floor it stands on.
+
+### Reference mode, phase 2: built (2026-10-26)
+
+[ADR 0094](adr/0094-the-editors-reference-mode.md) points 5 to 7. What the level does, over what
+it looks like.
+
+- **Look** (the Show section, or C): *Rooms* as the game draws them; *Collision* alone, each poly
+  coloured by what the game does with it and shaded by how it faces, floors checked every 100
+  units; *Both*: the rooms with the collision's telling surfaces over them, translucent. Culled
+  from behind like the rooms, so from above you see into a room, not onto its ceiling.
+- **Surfaces** (`reference::Surf`): exit (magenta), void (near black), hurts (red), hookshot
+  (cyan), ladder (yellow), climb (green: vines, fences, grates), crawlspace (brown), push / pull
+  (pink), sand (tan), slippery (pale blue), else floor, wall, ceiling. The legend counts them and
+  hides or shows each. Climbing wins over the hookshot: the Deku Tree's vines and ladders carry
+  the hookshot bit too. Point at any surface: the status bar lists every field of its surface
+  type (floor and wall type, floor property, exit and its entrance, hookshot, hurts, slippery,
+  conveyor, camera, sound), named where Player's code shows what it does.
+- **Water boxes:** their surfaces in translucent blue, each in its room.
+- **Actors:** every room's actors and the doors between rooms, drawn as the game draws them (the
+  editor's captures; 205 of the Deku Tree's 224 have one), with markers in the palette's group
+  colours (doors as diamonds labelled with the rooms they join, "3↔5"). Hover one for its name
+  and params; click it for its card (label, group, room or rooms, actor id, params, rotation,
+  position, what the port's docs say of it; *Look at it*). The groups hide or show; *Markers* and
+  *Models* switch each off. Actors over the cut or in rooms not shown aren't drawn.
+- **Measure** (M): click two points on what's drawn (the meshes, else the collision): a line
+  between them with its rise, and the distance, across and up, in the view and the panel. Esc
+  clears; a third click starts again.
+- Collision polys and water boxes belong to a room (the smallest room whose meshes' bounds hold
+  them), so the floors, the room list and *solo* filter them with the rooms.
+- Code: `reference.rs` (`Surf`, `SurfaceBits`, `Poly`, `Water`, `Actor`, `raycast_collision`; tests:
+  the surfaces' sorting and description, every scene's collision, water and actors);
+  `View3d::set_overlay` (`OverlayTri`, `Overlay`), `draw_rooms`; `app/reference_ui.rs`
+  (`Reference::sync_view`, the frame fitted to what's under the cut); a headless render of the
+  Reference view itself, `render_reference_views` (ignored; writes PNGs to `$REF_RENDER_DIR`).
+- **Not yet:** markers aren't hidden behind walls (they're drawn over the view); actors drawn
+  by the nearest captured configuration when theirs wasn't captured; the doors' links as lines
+  between rooms; dynamic collision (the platforms' and blocks' own, `Bg_*`) isn't in the overlay,
+  only their models.
+
+#### By hand
+
+`scripts\run\editor.bat`, then **Reference**.
+
+1. *Inside the Deku Tree*, All. Press C (or Show → Collision): the rooms give way to the collision
+   in plain floors (green, checked), walls and ceilings, seen into from above. The vines' walls
+   green, the exits magenta at the entrance, the water boxes blue in the basement. The Surfaces
+   legend lists Exit, Ladder, Climb, Crawlspace and the plain ones, with counts
+   (no Hookshot: its vines and ladders carry the bit, and climbing wins).
+2. Point at the vine wall in the trunk: the status bar says "wall · wall type 4 (climbable) ·
+   hookshot · camera ... · sound ...". Point at the entrance's magenta floor: "exit 1 (entrance
+   0x....)".
+3. C again (Both): the rooms back, with the telling surfaces over them, translucent. Click
+   *Ladder* in the legend: the ladders go; again: back.
+4. The actors: Deku Babas, pots, the web, chests drawn in place. Hover a marker: its name and
+   params; click it: its card. A door's diamond shows "0↔1" (the rooms it joins). Switch off
+   *Enemies* in the groups: they go. *Models* off: only the markers.
+5. M: click a floor, then a ledge over it: the line, its rise, and "distance · across · up" in the
+   view and the panel. Esc clears; M again stops.
+6. 1F (PageDown from All): the collision, the actors and the markers over the cut are gone, as
+   the rooms' are.
+7. *Shadow Temple* B2, Both: the hookshot targets cyan. *Water Temple*, Collision: the water
+   boxes over the floors, the slippery ice pale blue. *Fire Temple*: the hot floors red.
+8. Back to the level (Reference): its own 3D view as before.

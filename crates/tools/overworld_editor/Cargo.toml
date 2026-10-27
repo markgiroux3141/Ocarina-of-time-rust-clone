@@ -13,6 +13,8 @@ oot_game.workspace = true
 oot_actors.workspace = true
 # The actors' captures drawn as the game draws them (docs/EDITOR-ACTORS.md, ADR 0078).
 eng_gfx.workspace = true
+# The reference dungeons' collision (`reference.rs`).
+eng_collision.workspace = true
 eng_render.workspace = true
 eframe.workspace = true
 image.workspace = true
@@ -21,3 +23,7 @@ bytemuck.workspace = true
 serde_json.workspace = true
 # Open and save dialogs.
 rfd = "0.17"
+
+[dev-dependencies]
+# The headless renders of the Reference mode (`app/reference_ui.rs`).
+pollster.workspace = true

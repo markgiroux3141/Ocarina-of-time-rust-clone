@@ -8,6 +8,7 @@ mod app;
 mod captures;
 mod edit;
 mod profile;
+mod reference;
 mod scene;
 mod text_box;
 mod view3d;

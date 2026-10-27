@@ -3,7 +3,9 @@
 //! camera. Rendered offscreen with the window's own wgpu device and shown as an egui image,
 //! as the OoT Clone's viewer does. The placed actors are their captures (`crate::captures`),
 //! drawn in the same pass by the game's own renderer (`eng_render`: the colour combiner, the
-//! game's lights and fog), as are their thumbnails for the palette.
+//! game's lights and fog), as are their thumbnails for the palette. The Reference mode's rooms
+//! (`crate::reference`: a dungeon of the game's) are drawn by that renderer too, cut at `cut` like
+//! the level.
 
 use crate::scene::Mat;
 use bytemuck::{Pod, Zeroable};
@@ -182,11 +184,47 @@ struct Batch {
     cover: bool,
 }
 
+/// A triangle of an overlay (the Reference mode's collision or water boxes): in the editor's axes,
+/// its colour (alpha under 255: blended, drawn over what's under it), and the room it's in (`None`:
+/// drawn whichever rooms are).
+pub struct OverlayTri {
+    pub room: Option<usize>,
+    pub tri: [Vec3; 3],
+    pub color: [u8; 4],
+}
+
+/// The overlays: the collision, the water boxes.
+#[derive(Clone, Copy)]
+pub enum Overlay {
+    Collision = 0,
+    Water = 1,
+}
+
+/// One room's overlay triangles, opaque or blended.
+struct OverlayBatch {
+    room: Option<usize>,
+    vbuf: wgpu::Buffer,
+    count: u32,
+    blend: bool,
+}
+
+/// One entry list of a reference room, uploaded and posed in the editor's axes.
+struct RoomModel {
+    room: usize,
+    xlu: bool,
+    model: eng_render::GpuModel,
+    /// The list's site matrices' bases (Jabu-Jabu's walls), posed with the draw config's matrix.
+    sites: Vec<Mat4>,
+}
+
 struct Target {
     size: (u32, u32),
     msaa: wgpu::TextureView,
     depth: wgpu::TextureView,
     resolve: wgpu::TextureView,
+    /// `resolve`'s texture, for reading it back (`read_rgba`).
+    #[cfg_attr(not(test), allow(dead_code))]
+    resolve_tex: wgpu::Texture,
 }
 
 pub struct View3d {
@@ -229,6 +267,20 @@ pub struct View3d {
     thumbs: HashMap<ActorKey, egui::TextureId>,
     thumb_target: Option<eng_render::Target>,
     thumb_budget: usize,
+    /// The Reference mode's rooms, which of them are drawn (by room index), the scene's lights
+    /// in the editor's axes, and the draw config's textures they were last given.
+    rooms: Vec<RoomModel>,
+    pub rooms_shown: Vec<bool>,
+    room_light: eng_render::Lighting,
+    room_textures: [Vec<eng_gfx::SourceImage>; 2],
+    /// What's behind everything instead of the sky (the Reference mode's dungeons).
+    pub background: Option<[f64; 3]>,
+    /// The overlays (`Overlay`) and whether each is drawn; whether the rooms' own meshes are.
+    overlays: [Vec<OverlayBatch>; 2],
+    pub show_overlay: [bool; 2],
+    pub draw_rooms: bool,
+    /// The white texture bound for the overlays.
+    white_bind: wgpu::BindGroup,
 }
 
 impl View3d {
@@ -295,6 +347,16 @@ impl View3d {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: globals.as_entire_binding() }],
         });
         let white = upload_texture(device, &rs.queue, &image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255])));
+        let white_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+        let white_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay"),
+            layout: &tex_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&white) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&white_sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&white) },
+            ],
+        });
         View3d {
             rs: rs.clone(),
             shader,
@@ -324,6 +386,15 @@ impl View3d {
             thumbs: HashMap::new(),
             thumb_target: None,
             thumb_budget: THUMBS_PER_FRAME,
+            rooms: vec![],
+            rooms_shown: vec![],
+            room_light: eng_render::Lighting::default(),
+            room_textures: Default::default(),
+            background: None,
+            overlays: Default::default(),
+            show_overlay: [true; 2],
+            draw_rooms: true,
+            white_bind,
         }
     }
 
@@ -371,6 +442,82 @@ impl View3d {
             }
             self.actor_order.push((key, *n));
             *n += 1;
+        }
+    }
+
+    /// The rooms to draw: every room of a dungeon of the game's, each entry's lists uploaded once,
+    /// in the editor's axes; the scene's lights (no fog). All are shown to begin with.
+    pub fn set_rooms(&mut self, l: &crate::reference::Loaded) {
+        let device = self.rs.device.clone();
+        let queue = self.rs.queue.clone();
+        self.rooms.clear();
+        self.room_textures = Default::default();
+        for r in &l.rooms {
+            for (xlu, lists) in [(false, &r.opa), (true, &r.xlu)] {
+                for d in lists {
+                    let model = self.game.upload(&device, &queue, d);
+                    let sites = d.site_bases.iter().map(Mat4::from_cols_array).collect();
+                    self.rooms.push(RoomModel { room: r.index, xlu, model, sites });
+                }
+            }
+        }
+        self.rooms_shown = vec![true; l.rooms.iter().map(|r| r.index + 1).max().unwrap_or(0)];
+        let e = &l.scene.lights;
+        let c = |v: [u8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32) / 255.0;
+        let d = |v: [i8; 3]| GAME_TO_EDITOR.transform_vector3(Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32));
+        self.room_light = eng_render::Lighting { dir: d(e.light1_dir), color: c(e.light1_color), dir2: d(e.light2_dir), color2: c(e.light2_color), ambient: c(e.ambient), fog: None };
+        self.set_room_values(&l.scene, true);
+    }
+
+    /// An overlay's triangles, in place of what it had: a batch per room, opaque and blended apart.
+    pub fn set_overlay(&mut self, which: Overlay, tris: &[OverlayTri]) {
+        // culled from behind, as the game's meshes are: from above you see into a room, not its
+        // ceiling
+        self.pipeline(Kind::Opaque, true, false);
+        self.pipeline(Kind::Blend, true, true);
+        let mut groups: HashMap<(Option<usize>, bool), Vec<Vertex>> = HashMap::new();
+        for t in tris {
+            let g = groups.entry((t.room, t.color[3] < 255)).or_default();
+            for p in t.tri {
+                g.push(Vertex { pos: p.to_array(), uv: [0.0; 2], color: t.color });
+            }
+        }
+        let device = &self.rs.device;
+        self.overlays[which as usize] = groups
+            .into_iter()
+            .map(|((room, blend), vs)| OverlayBatch {
+                room,
+                vbuf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("overlay"), contents: bytemuck::cast_slice(&vs), usage: wgpu::BufferUsages::VERTEX }),
+                count: vs.len() as u32,
+                blend,
+            })
+            .collect();
+    }
+
+    /// The scene draw config's values for this frame (`SceneState::run_draw_config`): the
+    /// scrolling and colours of the rooms' dynamic materials, the textures it points segments at,
+    /// and the site matrices (posed again only when `pose`, or when there are any).
+    pub fn set_room_values(&mut self, s: &oot_game::play_scene::SceneState, pose: bool) {
+        let device = self.rs.device.clone();
+        let queue = self.rs.queue.clone();
+        let textures = s.segment_textures != self.room_textures;
+        for m in &mut self.rooms {
+            let k = m.xlu as usize;
+            if m.model.has_dynamic_materials() {
+                m.model.set_draw_values(&queue, s.segments.as_ref().map(|v| &v[k]), &[], None, false);
+            }
+            if textures {
+                self.game.set_images(&device, &queue, &mut m.model, None, &s.segment_textures[k]);
+            }
+            if pose || !m.sites.is_empty() {
+                // as `submit_rooms` does: the OPA list's sites times the draw config's matrix
+                let sm = if m.xlu { None } else { s.draw.segment_matrix }.unwrap_or(Mat4::IDENTITY);
+                let bones: Vec<Mat4> = m.sites.iter().map(|b| *b * sm).collect();
+                m.model.pose(&bones, GAME_TO_EDITOR);
+            }
+        }
+        if textures {
+            self.room_textures = s.segment_textures.clone();
         }
     }
 
@@ -588,7 +735,7 @@ impl View3d {
                 let (m, o) = fog_factor(f.near, 1000);
                 (f.color.map(|c| c as f64 / 255.0), [m, o, f.far as f32, (self.cam.dist - GAME_EYE).max(0.0)])
             }
-            None => (SKY, [0.0; 4]),
+            None => (self.background.unwrap_or(SKY), [0.0; 4]),
         };
         let g = Globals {
             view_proj: self.cam.view_proj(w as f32 / h as f32).to_cols_array_2d(),
@@ -599,7 +746,9 @@ impl View3d {
             game,
         };
         self.rs.queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&g));
-        if !self.actor_order.is_empty() {
+        // the game's meshes are cut where the level is
+        self.game.set_clip(self.cut.filter(|_| !self.show_above).map(|c| (Vec3::Z, c + 1.0)));
+        if !self.actor_order.is_empty() || !self.rooms.is_empty() {
             // the game's lights turned into the editor's axes; its fog as the level's (measured from
             // the same spot in front of the orbit target)
             let l = &self.capture_light;
@@ -608,7 +757,12 @@ impl View3d {
                 let (m, o) = fog_factor(f.near, 1000);
                 eng_render::Fog { color: Vec3::new(f.color[0] as f32, f.color[1] as f32, f.color[2] as f32) / 255.0, multiplier: m, offset: o, near: 10.0, far: f.far as f32 }
             });
-            let light = eng_render::Lighting { dir: to(l.dir), color: l.color, dir2: to(l.dir2), color2: l.color2, ambient: l.ambient, fog };
+            let mut light = eng_render::Lighting { dir: to(l.dir), color: l.color, dir2: to(l.dir2), color2: l.color2, ambient: l.ambient, fog };
+            // a dungeon's rooms in its own lights (the actors share them: one set of globals)
+            if !self.rooms.is_empty() {
+                let r = &self.room_light;
+                light = eng_render::Lighting { dir: r.dir, color: r.color, dir2: r.dir2, color2: r.color2, ambient: r.ambient, fog: None };
+            }
             let view = glam::camera::rh::view::look_at_mat4(eye, self.cam.target, Vec3::Z);
             let fog_view = Mat4::from_translation(Vec3::new(0.0, 0.0, game[3])) * view;
             self.game.set_view(&self.rs.queue, self.cam.view_proj(w as f32 / h as f32), fog_view, &light);
@@ -643,37 +797,92 @@ impl View3d {
                 pass.set_vertex_buffer(0, b.vbuf.slice(..));
                 pass.draw(0..b.count, 0..1);
             }
-            let models: Vec<&eng_render::GpuModel> = self.actor_order.iter().filter_map(|(k, n)| self.actor_models.get(k).and_then(|l| l.get(*n)).map(|m| &m.0)).collect();
+            // the overlays: opaque before the game's meshes, blended (over them) after
+            let overlay = |pass: &mut wgpu::RenderPass<'_>, blend: bool| {
+                if self.overlays.iter().all(|o| o.is_empty()) {
+                    return;
+                }
+                pass.set_bind_group(0, &self.globals_bg, &[]);
+                pass.set_bind_group(1, &self.white_bind, &[]);
+                pass.set_pipeline(&self.pipelines[&if blend { (Kind::Blend, true, true) } else { (Kind::Opaque, true, false) }]);
+                for (k, batches) in self.overlays.iter().enumerate() {
+                    if !self.show_overlay[k] {
+                        continue;
+                    }
+                    for b in batches.iter().filter(|b| b.blend == blend && b.room.is_none_or(|r| self.rooms_shown.get(r).copied().unwrap_or(false))) {
+                        pass.set_vertex_buffer(0, b.vbuf.slice(..));
+                        pass.draw(0..b.count, 0..1);
+                    }
+                }
+            };
+            overlay(&mut pass, false);
+            // the rooms' OPA lists, the actors, then the rooms' XLU lists, as the game draws them
+            let (rooms, rooms_shown, draw_rooms) = (&self.rooms, &self.rooms_shown, self.draw_rooms);
+            let shown = |xlu: bool| rooms.iter().filter(move |m| draw_rooms && m.xlu == xlu && rooms_shown.get(m.room).copied().unwrap_or(false)).map(|m| &m.model);
+            let mut models: Vec<&eng_render::GpuModel> = shown(false).collect();
+            models.extend(self.actor_order.iter().filter_map(|(k, n)| self.actor_models.get(k).and_then(|l| l.get(*n)).map(|m| &m.0)));
+            models.extend(shown(true));
             if !models.is_empty() {
                 self.game.draw_models(&self.rs.queue, &mut pass, &models);
             }
+            overlay(&mut pass, true);
         }
         self.rs.queue.submit([enc.finish()]);
         *id
     }
 }
 
+/// The last rendered view's pixels, tightly packed RGBA: for the headless tests.
+#[cfg(test)]
+impl View3d {
+    pub fn read_rgba(&self) -> (u32, u32, Vec<u8>) {
+        let (t, _) = self.target.as_ref().expect("rendered");
+        let (w, h) = t.size;
+        let (device, queue) = (&self.rs.device, &self.rs.queue);
+        let row = (w * 4).div_ceil(256) * 256;
+        let buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("readback"), size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let mut enc = device.create_command_encoder(&Default::default());
+        enc.copy_texture_to_buffer(
+            t.resolve_tex.as_image_copy(),
+            wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(h) } },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        queue.submit([enc.finish()]);
+        let slice = buf.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        let data = slice.get_mapped_range().unwrap();
+        let mut out = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            let s = (y * row) as usize;
+            out.extend_from_slice(&data[s..s + (w * 4) as usize]);
+        }
+        (w, h, out)
+    }
+}
+
 fn make_target(device: &wgpu::Device, w: u32, h: u32) -> Target {
     let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
-    let mk = |label, format, samples, usage| {
-        device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size,
-                mip_level_count: 1,
-                sample_count: samples,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage,
-                view_formats: &[],
-            })
-            .create_view(&Default::default())
+    let tex = |label, format, samples, usage| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: samples,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        })
     };
+    let mk = |label, format, samples, usage| tex(label, format, samples, usage).create_view(&Default::default());
+    let resolve_tex = tex("resolve", COLOR, 1, wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
     Target {
         size: (w, h),
         msaa: mk("msaa", COLOR, SAMPLES, wgpu::TextureUsages::RENDER_ATTACHMENT),
         depth: mk("depth", DEPTH, SAMPLES, wgpu::TextureUsages::RENDER_ATTACHMENT),
-        resolve: mk("resolve", COLOR, 1, wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING),
+        resolve: resolve_tex.create_view(&Default::default()),
+        resolve_tex,
     }
 }
 

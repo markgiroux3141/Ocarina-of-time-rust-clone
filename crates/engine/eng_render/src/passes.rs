@@ -25,6 +25,8 @@ pub(crate) struct Globals {
     pub(crate) fog_color: [f32; 4],
     /// x: multiplier, y: offset (the RSP's fm/fo), z: near, w: far of the fog projection.
     pub(crate) fog: [f32; 4],
+    /// `Renderer::set_clip`'s plane: xyz its normal, w its offset (zero xyz: nothing cut).
+    pub(crate) clip: [f32; 4],
 }
 
 /// What a frame draws over the 3D scene.
@@ -79,8 +81,16 @@ impl Renderer {
             ambient: light.ambient.extend(1.0).to_array(),
             fog_color: fog.color.extend(1.0).to_array(),
             fog: [fog.multiplier, fog.offset, fog.near, fog.far],
+            clip: self.clip,
         };
         queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
+    }
+
+    /// A cut through the scene for a tool's view: nothing on the far side of the plane through
+    /// world space (`normal . p > offset`, in the models' posed space) is drawn, or nothing cut
+    /// with `None`. Written with the next frame's globals. The game never sets one.
+    pub fn set_clip(&mut self, plane: Option<(Vec3, f32)>) {
+        self.clip = plane.map_or([0.0; 4], |(n, d)| [n.x, n.y, n.z, d]);
     }
 
     /// Records posed `models`, in order, into a pass of the caller's whose target has the
@@ -155,6 +165,7 @@ impl Renderer {
             ambient: light.ambient.extend(1.0).to_array(),
             fog_color: fog.color.extend(1.0).to_array(),
             fog: [fog.multiplier, fog.offset, fog.near, fog.far],
+            clip: self.clip,
         };
         queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
         // View_ApplyOrthoToOverlay: guOrtho(-160, 160, -120, 120) on a 4:3 screen; x widens with
@@ -170,6 +181,7 @@ impl Renderer {
             ambient: [1.0; 4],
             fog_color: [0.0; 4],
             fog: [0.0, 0.0, 1.0, 2.0],
+            clip: [0.0; 4],
         };
         queue.write_buffer(&self.overlay_globals_buf, 0, bytemuck::bytes_of(&overlay_globals));
         // The pause menu's View_Apply: guPerspective with the target's aspect (the 3D view's

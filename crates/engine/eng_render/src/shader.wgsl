@@ -11,6 +11,9 @@ struct Globals {
     fog_color: vec4<f32>,
     // x: fog multiplier (fm), y: fog offset (fo), z/w: near/far of the game's projection
     fog: vec4<f32>,
+    // A tool's cut (Renderer::set_clip): nothing where dot(xyz, world position) > w is drawn;
+    // zero xyz cuts nothing.
+    clip: vec4<f32>,
 };
 
 struct Material {
@@ -54,6 +57,8 @@ struct VOut {
     @location(3) fog: f32,
     // The clip position's z and w (the far plane's test in fs_main).
     @location(4) zw: vec2<f32>,
+    // The posed (world) position, for the tool's cut.
+    @location(5) world: vec3<f32>,
 };
 
 @vertex
@@ -61,6 +66,7 @@ fn vs_main(v: VIn) -> VOut {
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(v.pos, 1.0);
     o.zw = o.clip.zw;
+    o.world = v.pos;
     let flags = m.flags.x;
     if ((flags & 1u) != 0u) {
         // With G_LIGHTING the vertex colour bytes hold the normal; only alpha is a colour.
@@ -172,6 +178,9 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     // past the far plane a pixel is dropped here. (Without the feature the hardware clips both,
     // and this never fires.)
     if (i.zw.x > i.zw.y) {
+        discard;
+    }
+    if (dot(g.clip.xyz, i.world) > g.clip.w) {
         discard;
     }
     if ((m.flags.x & 8u) != 0u) {
