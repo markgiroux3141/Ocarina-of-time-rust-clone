@@ -3,7 +3,8 @@
 //! awakening's script started), with `EVENTCHKINF_48` and no `_55` (the Prelude given, its script
 //! started), and after (the pedestal block); type 1's actions on their cues; the pedestal block's
 //! text by the hookshot and its talk; type 2's (the Prelude's) actions 29 to 44 on their cues,
-//! with the harp's draws; the other types as placeholders after their checks.
+//! with the harp's draws; type 6's (the Minuet's) trigger, fall and walk (GAME-13 milestone 2); the
+//! other types as placeholders after their checks.
 //!
 //! The Temple of Time is entered at `ENTR_TEMPLE_OF_TIME_4` (room 0, the pedestal's step), where
 //! room 0 places `En_Xc` 9. Sheik's update runs alone (`Actor_UpdateAll`'s call), her cues put on
@@ -302,9 +303,11 @@ fn the_other_types_are_placeholders_after_their_checks() {
         assert!(w.actors.downcast::<EnXc>(h).is_none(), "type {ty} is a placeholder");
         assert!(live(&w, h));
     }
-    // func_80B3CA38 (the Minuet): an adult without EVENTCHKINF_50 stays; with it, gone.
+    // func_80B3CA38 (the Minuet, ported): an adult without EVENTCHKINF_50 stays, hidden; with
+    // it, gone.
     let h = w.actor_spawn(ACTOR_EN_XC, at, [0; 3], SHEIK_TYPE_MINUET).unwrap();
-    assert!(live(&w, h) && w.actors.downcast::<EnXc>(h).is_none());
+    assert!(live(&w, h));
+    assert_eq!((xc(&w, h).action, xc(&w, h).draw_mode), (SHEIK_ACTION_INIT, SHEIK_DRAW_NOTHING));
     w.save.set_event_chk_inf(EVENTCHKINF_50);
     let h = w.actor_spawn(ACTOR_EN_XC, at, [0; 3], SHEIK_TYPE_MINUET).unwrap();
     assert!(!live(&w, h));
@@ -614,4 +617,85 @@ fn type_9s_prelude_runs_type_2s_actions() {
     let pos = xc(&w, h).actor.world_pos;
     update(&mut w, h);
     assert_eq!((xc(&w, h).action, xc(&w, h).actor.world_pos), (SHEIK_ACTION_44, pos));
+}
+
+/// Sacred Forest Meadow (`ENTR_SACRED_FOREST_MEADOW_0`) from `hookshot`, the sound log on, and
+/// room 0's Sheik (`En_Xc` 6 at (-184, 480, -2640)).
+fn meadow(a: &Arc<GameAssets>) -> (PlayState, ActorHandle) {
+    let e = a.scenes.entrance_index("ENTR_SACRED_FOREST_MEADOW_0").expect("entrance");
+    let mut save = SaveContext::new(e, true, oot_game::env::clock_time(10, 0) as u16);
+    save.apply_preset("hookshot").unwrap();
+    let mut w = oot_actors::play_entrance(a.clone(), data().unwrap(), rules().unwrap(), save).expect("Play_Init");
+    settle(&mut w, ACTOR_EN_XC);
+    w.audio.log = Some(oot_game::audio::AudioLog::default());
+    let h = sheiks(&w).into_iter().find(|&h| xc(&w, h).actor.params == SHEIK_TYPE_MINUET && !xc(&w, h).actor.killed).expect("the meadow's Sheik");
+    (w, h)
+}
+
+#[test]
+fn type_6_teaches_the_minuet_past_z_2225_and_drops_on_her_cue() {
+    use oot_actors::PlayExt;
+    use oot_game::item::QUEST_SONG_MINUET;
+    let Some(a) = assets() else { return };
+    let (mut w, h) = meadow(&a);
+    // func_80B3CA38: an adult without EVENTCHKINF_50: SHEIK_ACTION_INIT, drawn as nothing.
+    assert_eq!((xc(&w, h).action, xc(&w, h).draw_mode), (SHEIK_ACTION_INIT, SHEIK_DRAW_NOTHING));
+    // EnXc_ActionFunc0 (EnXc_MinuetCS): Link at z -2200 isn't past -2225: waiting.
+    w.place_player(Vec3::new(0.0, 480.0, -2200.0), i16::MIN);
+    update(&mut w, h);
+    assert_eq!(xc(&w, h).action, SHEIK_ACTION_INIT);
+    assert!(!w.save.get_event_chk_inf(EVENTCHKINF_50));
+    // Past it, no cutscene: gMeadowMinuetCs, cutsceneTrigger 1, EVENTCHKINF_50 and the Minuet
+    // (Item_Give: its quest bit); func_80B3D750 (EnXc_BoleroCS true for type 6): waiting.
+    w.place_player(Vec3::new(0.0, 480.0, -2300.0), i16::MIN);
+    update(&mut w, h);
+    assert!(w.save.get_event_chk_inf(EVENTCHKINF_50));
+    assert_ne!(w.save.inventory.quest_items & (1 << QUEST_SONG_MINUET), 0);
+    assert!(w.cs_ctx.segment.is_some());
+    assert_eq!(w.save.cutscene_trigger, 1);
+    assert_eq!(xc(&w, h).action, SHEIK_ACTION_WAIT);
+    // EnXc_ActionFunc1: cue 1 holds her; cue 2 (gMeadowMinuetCs's at frame 350) drops her at its
+    // start, turned away from Link's cue (func_80B3D48C: 30401 + 0x8000), drawn, falling
+    // (gSheikFallingFromSkyAnim), NA_SE_PL_SKIP (func_80B3D118).
+    let start = IVec3::new(-232, 480, -2889);
+    cue(&mut w, 1, start, 0x4000);
+    update(&mut w, h);
+    assert_eq!(xc(&w, h).action, SHEIK_ACTION_WAIT);
+    w.cs_ctx.link_action = Some(CsCmdActorCue { action: 5, start_frame: 0, end_frame: 100, rot: [0, 30401, 0], start_pos: IVec3::ZERO, end_pos: IVec3::ZERO, normal: IVec3::ZERO });
+    cue(&mut w, 2, start, 0x4000);
+    update(&mut w, h);
+    let x = xc(&w, h);
+    assert_eq!((x.action, x.draw_mode), (SHEIK_ACTION_GRACEFUL_FALL, SHEIK_DRAW_DEFAULT));
+    assert_eq!(x.actor.world_pos, start.as_vec3());
+    assert_eq!(x.actor.shape_rot.y, 30401i16.wrapping_add(i16::MIN));
+    assert!(x.skel.is("gSheikFallingFromSkyAnim"));
+    assert_eq!(sfx(&w, oot_game::audio::sfx::NA_SE_PL_SKIP), 1);
+    // EnXc_GracefulFall: her root's motion moves her (AnimTask_ActorMovement) until the fall's
+    // done (func_80B3D8A4): walking (gSheikWalkingAnim), gravity -13, the root's motion off.
+    let mut n = 0;
+    while xc(&w, h).action == SHEIK_ACTION_GRACEFUL_FALL {
+        update(&mut w, h);
+        oot_game::actor_ctx::ActorImpl::animation_update(xc_mut(&mut w, h));
+        n += 1;
+        assert!(n < 200, "still falling");
+    }
+    let x = xc(&w, h);
+    assert_eq!(x.action, SHEIK_ACTION_ACCEL);
+    assert!(x.skel.is("gSheikWalkingAnim"));
+    assert_eq!((x.actor.gravity, x.actor.min_velocity_y), (-13.0, -13.0));
+    eprintln!("fell {n} frames, to {}", x.actor.world_pos);
+    // EnXc_Accelerate: walking at 1.2 on the 12th frame (EnXc_SetupWalkAction).
+    assert_eq!(run_while(&mut w, h, SHEIK_ACTION_ACCEL), 12);
+    assert_eq!((xc(&w, h).action, xc(&w, h).actor.speed_xz), (SHEIK_ACTION_WALK, 1.2));
+    // EnXc_Walk: on until within 95 of Link (EnXc_SetupHaltAction: idling), then slowing to a
+    // stop, stopped on the 12th frame (EnXc_SetupStoppedAction).
+    xc_mut(&mut w, h).actor.xz_dist_to_player = 96.0;
+    update(&mut w, h);
+    assert_eq!(xc(&w, h).action, SHEIK_ACTION_WALK);
+    xc_mut(&mut w, h).actor.xz_dist_to_player = 95.0;
+    update(&mut w, h);
+    assert_eq!(xc(&w, h).action, SHEIK_ACTION_HALT);
+    assert!(xc(&w, h).skel.is("gSheikIdleAnim"));
+    assert_eq!(run_while(&mut w, h, SHEIK_ACTION_HALT), 12);
+    assert_eq!((xc(&w, h).action, xc(&w, h).actor.speed_xz), (SHEIK_ACTION_STOPPED, 0.0));
 }

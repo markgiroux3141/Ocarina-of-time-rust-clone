@@ -203,6 +203,9 @@ echo   189  sandbox-ranch-after  The four runs' traces and screenshots, into out
 echo   190  game-hookshot        The hookshot and Dampe's race (asks: or post, eyes)
 echo   191  test-hookshot        The hookshot and Dampe runs, Arms_Hook, En_Po_Relay, En_Honotrap (cargo test)
 echo   192  sandbox-hookshot     The two runs' traces and screenshots, into out\run
+echo   193  game-minuet          The Lost Woods, the meadow and the Minuet (asks: or meadow, club, top, warp, rupees)
+echo   194  test-minuet          The Mido, Minuet, warp and temple runs, En_Mb, En_Xc, Obj_Mure3 (cargo test)
+echo   195  sandbox-minuet       The four runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -405,6 +408,9 @@ if "%pick%"=="189" set "script=sandbox-ranch-after"
 if "%pick%"=="190" goto hookshot
 if "%pick%"=="191" set "script=test-hookshot"
 if "%pick%"=="192" set "script=sandbox-hookshot"
+if "%pick%"=="193" goto minuet
+if "%pick%"=="194" set "script=test-minuet"
+if "%pick%"=="195" set "script=sandbox-minuet"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -466,6 +472,14 @@ set "which="
 set /p "which=Which (empty: Dampe's race; post or eyes): "
 call "%~dp0game-hookshot.bat" %which%
 echo game-hookshot finished (exit code %errorlevel%).
+pause
+goto menu
+
+:minuet
+set "which="
+set /p "which=Which (empty: the Lost Woods as an adult; meadow, club, top, warp or rupees): "
+call "%~dp0game-minuet.bat" %which%
+echo game-minuet finished (exit code %errorlevel%).
 pause
 goto menu
 

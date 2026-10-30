@@ -127,6 +127,8 @@ pub const CHARACTERS: &[Character] = &[
     c("Owl (Kaepora Gaebora)", "En_Owl/perching_eye0", Some(("object_owl", "gOwlPerchAnim")), &[], &[], &[]),
     c("Wolfos", "En_Wf/gray_eye0", Some(("object_wf", "gWolfosIdleAnim")), &[], &[18, 19, 20], &[12, 13, 14]),
     c("White Wolfos", "En_Wf/white_eye0", Some(("object_wf", "gWolfosIdleAnim")), &[], &[18, 19, 20], &[12, 13, 14]),
+    c("Moblin (spear)", "En_Mb/spear", Some(("object_mb", "gEnMbSpearStandStillAnim")), &[], &[8, 10, 11], &[13, 15, 16]),
+    c("Moblin (club)", "En_Mb/club", Some(("object_mb", "gEnMbClubStandStillClubDownAnim")), &[], &[8, 10, 11], &[13, 15, 16]),
     c("Skulltula", "En_St/skel", Some(("object_st", "object_st_Anim_000304")), &[(0x08, Env, [0, 0, 0, 0])], &[], &[]),
     c("Gold Skulltula", "En_Sw/gold", Some(("object_st", "object_st_Anim_000304")), &[], &[], &[]),
     c("Queen Gohma", "Boss_Goma/skel", Some(("object_goma", "gGohmaIdleCrouchedAnim")), &[(0x0B, Env, [0, 255, 170, 255])], &[], &[])

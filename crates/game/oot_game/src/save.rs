@@ -1047,6 +1047,11 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: hookshot,
     },
     SavePreset {
+        name: "minuet",
+        about: "hookshot with adult Mido past in the Lost Woods (Saria's Song played to him: EVENTCHKINF_0A) and Sheik's Minuet of Forest at the meadow's top (EnXc_MinuetCS: EVENTCHKINF_50, Item_Give(ITEM_SONG_MINUET)), GAME-13 milestone 2's end: the way up to the Forest Temple's ledge by the hookshot",
+        apply: minuet,
+    },
+    SavePreset {
         name: "malon-record",
         about: "epona-won with Malon's obstacle course just ridden in 45 seconds, the first time (her thanks and the course's offer heard: INFTABLE_B8, _B9; EVENTINF_HORSES_0A, timerSeconds 45 and TIMER_STATE_UP_FREEZE, as EnHorseGameCheck_UpdateMalonRace's success leaves them; the race word as Ingo's init clears it at the ranch's gateway): entered at ENTR_LON_LON_RANCH_7, Malon at once: the record (0x208F), the cow's unlock (EVENTCHKINF_HORSE_RACE_COW_UNLOCK), the high score (HS_HORSE_RACE) 45",
         apply: malon_record,
@@ -1622,6 +1627,16 @@ fn hookshot(s: &mut SaveContext) {
     item_give(s, None, ITEM_HOOKSHOT);
     s.equips.button_items[1] = ITEM_HOOKSHOT;
     s.equips.c_button_slots[0] = slot(ITEM_HOOKSHOT) as u8;
+}
+
+/// `minuet`'s save: `hookshot` with what the Lost Woods and the meadow's top set: Mido let by
+/// (`EnMd_BlockPath` after Saria's Song: `EVENTCHKINF_0A`) and Sheik's lesson
+/// (`EnXc_MinuetCS`: `EVENTCHKINF_50`, `Item_Give(ITEM_SONG_MINUET)`).
+fn minuet(s: &mut SaveContext) {
+    hookshot(s);
+    s.set_event_chk_inf(0x0A);
+    s.set_event_chk_inf(0x50);
+    crate::item::item_give(s, None, crate::item::ITEM_SONG_MINUET);
 }
 
 /// `malon-record`'s save, a debug start: `epona-won` with the obstacle course just won in 45

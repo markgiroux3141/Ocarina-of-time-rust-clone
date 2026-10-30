@@ -923,6 +923,12 @@ committed and pushed): `Arms_Hook` and Player's hookshot whole (the flight, its 
 reticle), `En_Po_Relay` (Dampé's race) and `En_Honotrap` whole; the runs `dampe-race` (to the
 first door) and `hookshot` (Goron City's stone post), and the preset `hookshot`.
 
+**Milestone 2, the Lost Woods, the meadow and the Minuet, is done** (2026-10-29, ADR 0098;
+hand-tested, committed and pushed): `En_Mb` whole (the meadow's Moblins, the Spirit Temple's club Moblin), `En_Xc`
+type 6 (Sheik's Minuet), `Obj_Mure3`; the meadow's tree takes the hookshot (the temple's ledge by
+its branch, as in the original); the runs `lost-woods-adult` (Saria's Song to adult Mido),
+`minuet`, `minuet-warp` and `forest-temple`, and the preset `minuet` (milestone 3's start).
+
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:

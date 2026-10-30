@@ -1461,6 +1461,8 @@ const JUMP3_FLAG_4: i16 = 1 << 4;
 /// `SCENE_ZORAS_DOMAIN` (`scene_table.h`: 0x58), `SCENE_FISHING_POND` (0x49).
 const SCENE_ZORAS_DOMAIN: u16 = 0x58;
 const SCENE_FISHING_POND: u16 = 0x49;
+/// `SCENE_SACRED_FOREST_MEADOW` (`scene_table.h`: 0x56).
+const SCENE_SACRED_FOREST_MEADOW: u16 = 0x56;
 /// `DISTORTION_*` (`camera.h`).
 pub const DISTORTION_HOT_ROOM: i16 = 1 << 0;
 pub const DISTORTION_UNDERWATER_WEAK: i16 = 1 << 1;
@@ -1526,6 +1528,10 @@ pub struct GameCamera {
     /// `camDir`: the eye-to-at direction the last `Camera_Update` ended on.
     pub cam_dir: [i16; 3],
     pub up: Vec3,
+    /// `camera->play->sceneId` and `LINK_IS_ADULT`, as `Camera_RequestSettingImpl` reads them:
+    /// set at creation and by `Play_Init` (`PlayState::reset_cameras`), refreshed each update.
+    pub scene_id: u16,
+    pub link_adult: bool,
     player_pos: Vec3,
     player_rot_y: i16,
     xz_speed: f32,
@@ -1703,6 +1709,8 @@ impl GameCamera {
             input_dir: [0x71C, p.shape_yaw, 0],
             cam_dir: [0x71C, p.shape_yaw, 0],
             up: Vec3::Y,
+            scene_id: 0,
+            link_adult: p.adult,
             player_pos: p.pos,
             player_rot_y: p.shape_yaw,
             xz_speed: 0.0,
@@ -3546,15 +3554,18 @@ impl GameCamera {
     }
 
     /// `Camera_RequestSettingImpl`. Returns the setting, or -1 (already it), -2 (a change of
-    /// higher priority happened this frame), -99 (not a setting).
-    ///
-    /// Not modelled: `-5` for `CAM_SET_MEADOW_BIRDS_EYE` / `_UNUSED` for adult Link in
-    /// `SCENE_SACRED_FOREST_MEADOW` (the Sacred Forest Meadow isn't played yet).
+    /// higher priority happened this frame), -5 (the meadow maze's bird's-eye settings refused
+    /// to an adult), -99 (not a setting).
     pub fn change_setting_flags(&mut self, d: &CameraData, setting: i16, flags: i16) -> i16 {
         let priority = |s: i16| (d.setting_flags(s) & 0x0F00_0000) >> 24;
         if self.behavior_flags & 1 != 0 && priority(self.setting) >= priority(setting) {
             self.behavior_flags |= 0x10;
             return -2;
+        }
+        // The Sacred Forest Meadow maze's overhead camera is a child's: an adult keeps his.
+        if (setting == CAM_SET_MEADOW_BIRDS_EYE || setting == CAM_SET_MEADOW_UNUSED) && self.link_adult && self.scene_id == SCENE_SACRED_FOREST_MEADOW {
+            self.behavior_flags |= 0x10;
+            return -5;
         }
         if setting == CAM_SET_NONE || setting >= CAM_SET_MAX {
             return -99;
@@ -3679,6 +3690,8 @@ impl GameCamera {
         self.interface_flags = g.interface_flags;
         self.interface_alpha = g.interface_alpha;
         self.oob_timer = g.oob_timer;
+        self.scene_id = f.scene_id;
+        self.link_adult = f.player.adult;
         self.update_inner(d, f, letterbox, g, op, rand, quake);
         g.interface_flags = self.interface_flags;
         g.interface_alpha = self.interface_alpha;

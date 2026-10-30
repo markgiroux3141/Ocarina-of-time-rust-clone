@@ -799,6 +799,26 @@ pub enum Step {
     DampeRaceStarted,
     /// Dampé at his eighth point: the first door's switch (0x35) set.
     DampeFirstDoor,
+    /// Saria's Song played to adult Mido in the Lost Woods (`OCARINA_ACTION_CHECK_SARIA`).
+    MidoSong,
+    /// Mido's text read (0x1067): `EVENTCHKINF_0A`, and he's stepping aside.
+    MidoPast,
+    /// Sheik's `gMeadowMinuetCs` running (`EnXc_MinuetCS`: `EVENTCHKINF_50`).
+    MinuetLesson,
+    /// The Minuet of Forest played back in the lesson.
+    MinuetPlayed,
+    /// The lesson's script over, Link free, the song his.
+    MinuetLearned,
+    /// The Minuet of Forest played (the warp's song).
+    MinuetWarpPlayed,
+    /// "Warp?" answered yes: the warp out.
+    MinuetWarpOut,
+    /// At the meadow's warp pad (`ENTR_SACRED_FOREST_MEADOW_2`), the warp-in over.
+    MinuetWarped,
+    /// Down on the ledge before the temple's door.
+    OnTheLedge,
+    /// In the Forest Temple (`ENTR_FOREST_TEMPLE_0`), settled.
+    ForestTempleEntered,
 }
 
 impl Step {
@@ -1125,6 +1145,16 @@ impl Step {
             Step::PostClimbed => "post_climbed",
             Step::DampeRaceStarted => "dampe_race_started",
             Step::DampeFirstDoor => "dampe_first_door",
+            Step::MidoSong => "mido_song",
+            Step::MidoPast => "mido_past",
+            Step::MinuetLesson => "minuet_lesson",
+            Step::MinuetPlayed => "minuet_played",
+            Step::MinuetLearned => "minuet_learned",
+            Step::MinuetWarpPlayed => "minuet_warp_played",
+            Step::MinuetWarpOut => "minuet_warp_out",
+            Step::MinuetWarped => "minuet_warped",
+            Step::OnTheLedge => "on_the_ledge",
+            Step::ForestTempleEntered => "forest_temple_entered",
         }
     }
 }
@@ -1552,6 +1582,20 @@ pub enum Route {
     /// down to him, his greeting, the race on, the first door opened as he passes it. The race to
     /// the hookshot's chest is the hand test's.
     DampeRace,
+    /// The Lost Woods as an adult (`hookshot`, by day, from Kokiri Forest: `ENTR_LOST_WOODS_0`):
+    /// the child's way to room 3, where adult Mido blocks the way north until Saria's Song
+    /// (`EVENTCHKINF_0A`); past him to the meadow (`ENTR_SACRED_FOREST_MEADOW_0`).
+    LostWoodsAdult,
+    /// A debug start on the ramp to the meadow's top (`hookshot`): north past z -2225, Sheik's
+    /// `gMeadowMinuetCs` (`EVENTCHKINF_50`), the Minuet of Forest played back, the script over.
+    Minuet,
+    /// The Minuet of Forest played in Hyrule Field (`minuet`): the warp to the meadow's pad
+    /// (`ENTR_SACRED_FOREST_MEADOW_2`).
+    MinuetWarp,
+    /// A debug start at the meadow's top below the temple's ledge (`minuet`): the hookshot into
+    /// the tree's branch over the ledge, down onto the ledge, along it into the Forest Temple
+    /// (`ENTR_FOREST_TEMPLE_0`).
+    ForestTemple,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -3709,6 +3753,12 @@ impl Route {
             Route::Hookshot => "ENTR_GORON_CITY_2",
             // Dampé's grave from the graveyard (spawn 0, room 0, the landing above Dampé).
             Route::DampeRace => "ENTR_WINDMILL_AND_DAMPES_GRAVE_0",
+            // From Kokiri Forest (spawn 0, room 0), as the child's Meadow route.
+            Route::LostWoodsAdult => "ENTR_LOST_WOODS_0",
+            // The meadow from the Lost Woods (spawn 0); the debug starts move Link up to its top.
+            Route::Minuet | Route::ForestTemple => "ENTR_SACRED_FOREST_MEADOW_0",
+            // The field outside Kakariko's gate, as PreludeWarp.
+            Route::MinuetWarp => "ENTR_HYRULE_FIELD_7",
             // Spawn 0, room 1: Link falls in from room 15.
             Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             // Spawn 0, by the drawbridge (the market's way out); the debug starts move Link.
@@ -3789,6 +3839,8 @@ impl Route {
             Route::BigPoe => Some("epona-won"),
             Route::Hookshot => Some("hookshot"),
             Route::DampeRace => Some("epona-won"),
+            Route::LostWoodsAdult | Route::Minuet => Some("hookshot"),
+            Route::MinuetWarp | Route::ForestTemple => Some("minuet"),
             Route::SwordAgain => Some("child-again"),
             Route::Barinade => Some("jabu-barinade"),
             Route::Sapphire => Some("barinade-beaten"),
@@ -3883,6 +3935,8 @@ impl Route {
             Route::MalonSong => Some((BEFORE_NIGHT_MALON, i16::MIN)),
             Route::BigPoe => Some((RAMP_FOOT, RAMP_FOOT_YAW)),
             Route::Hookshot => Some((BY_THE_POST, 0x4000)),
+            Route::Minuet => Some((MEADOW_RAMP_TOP, i16::MIN)),
+            Route::ForestTemple => Some((BELOW_THE_BRANCH, i16::MIN)),
             _ => None,
         }
     }
@@ -4137,6 +4191,10 @@ impl Route {
             Route::BigPoe => "big-poe",
             Route::Hookshot => "hookshot",
             Route::DampeRace => "dampe-race",
+            Route::LostWoodsAdult => "lost-woods-adult",
+            Route::Minuet => "minuet",
+            Route::MinuetWarp => "minuet-warp",
+            Route::ForestTemple => "forest-temple",
         }
     }
 
@@ -4218,6 +4276,10 @@ impl Route {
             Route::MalonCourse | Route::MalonRecord | Route::MalonSong | Route::BigPoe => 4000,
             Route::Hookshot => 1500,
             Route::DampeRace => 2000,
+            Route::LostWoodsAdult => 6000,
+            Route::Minuet => 4000,
+            Route::MinuetWarp => 3000,
+            Route::ForestTemple => 2000,
             Route::IngoRace => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
@@ -4226,12 +4288,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoRace | Route::MalonCourse | Route::MalonSong | Route::BigPoe)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver | Route::OcarinaOfTime | Route::Frogs | Route::Bonooru | Route::DoorOfTime | Route::Prelude | Route::PreludeWarp | Route::RideEpona | Route::FieldRide | Route::IngoRental | Route::IngoRace | Route::MalonCourse | Route::MalonSong | Route::BigPoe | Route::LostWoodsAdult | Route::Minuet | Route::MinuetWarp)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon, Route::MalonCourse, Route::MalonRecord, Route::MalonSong, Route::BigPoe, Route::Hookshot, Route::DampeRace].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire, Route::Escape, Route::OcarinaOfTime, Route::JabuSwitch, Route::JabuOcto, Route::Frogs, Route::Bonooru, Route::MasterSwordPull, Route::MasterSwordBack, Route::DoorOfTime, Route::FirstPull, Route::Awakening, Route::TempleExit, Route::Ruins, Route::Prelude, Route::SwordBack, Route::SwordAgain, Route::PreludeWarp, Route::RideEpona, Route::FieldRide, Route::IngoRental, Route::IngoRace, Route::IngoLost, Route::IngoWon, Route::EponaWon, Route::MalonCourse, Route::MalonRecord, Route::MalonSong, Route::BigPoe, Route::Hookshot, Route::DampeRace, Route::LostWoodsAdult, Route::Minuet, Route::MinuetWarp, Route::ForestTemple].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -4749,6 +4811,109 @@ fn hookshot_tasks() -> Vec<Task> {
     ]
 }
 
+/// `SCENE_SACRED_FOREST_MEADOW` (`scene_table.h`: 0x56).
+const SCENE_SACRED_FOREST_MEADOW: u16 = 0x56;
+/// `ENTR_SACRED_FOREST_MEADOW_2` (`entrance_table.h`: 0x600): the Minuet's warp pad (spawn 2).
+const ENTR_SACRED_FOREST_MEADOW_2: u16 = 0x600;
+/// `EVENTCHKINF_0A` (Mido let Link by in the Lost Woods), `EVENTCHKINF_50` (the Minuet learned).
+const EVENTCHKINF_0A: u16 = 0x0A;
+const EVENTCHKINF_50: u16 = 0x50;
+
+/// `Route::LostWoodsAdult`'s stop before Mido: room 3's way north, 75 short of his home (1599, 0,
+/// -980). He keeps 60 from it towards Link (`EnMd_BlockPath`), so Link (stopping within 30 of the
+/// point) stands within his 30 plus his cylinder's 36 (`PLAYER_STATE2_23`: the ocarina's for him).
+const BEFORE_MIDO: Vec3 = Vec3::new(1600.0, 0.0, -905.0);
+
+/// `Route::LostWoodsAdult`'s tasks: the child's way (`Route::Meadow`'s) to room 3, with no owl
+/// for an adult in room 2; Saria's Song to Mido (C-Right, the adult's ocarina), his text, and on
+/// by rooms 4, 7 and 8 into the meadow.
+fn lost_woods_adult_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_SARIAS;
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(400.0, 0.0, 0.0),
+            Vec3::new(800.0, 0.0, 0.0),
+            Vec3::new(800.0, 0.0, -400.0),
+            Vec3::new(800.0, 0.0, -800.0),
+            Vec3::new(1200.0, 0.0, -800.0),
+            Vec3::new(1600.0, 0.0, -800.0),
+            BEFORE_MIDO,
+        ]),
+        Task::Settle(None),
+        // EnMd_BlockPath: the ocarina out by him (PLAYER_STATE2_24) starts the check
+        // (OCARINA_ACTION_CHECK_SARIA); Saria's Song: the chime, and his text 0x1067 offered.
+        Task::Ocarina(2, OCARINA_SONG_SARIAS, Step::MidoSong),
+        // Read through: EVENTCHKINF_0A, and he walks off along his path (to (1719, 0, -951)).
+        Task::Texts(|w| w.save.get_event_chk_inf(EVENTCHKINF_0A), Step::MidoPast),
+        Task::Walk(vec![
+            Vec3::new(1600.0, 0.0, -1200.0),
+            Vec3::new(1600.0, 0.0, -1600.0),
+            Vec3::new(1600.0, 0.0, -2000.0),
+            Vec3::new(1600.0, 0.0, -2400.0),
+            Vec3::new(1200.0, 0.0, -2400.0),
+            Vec3::new(800.0, 0.0, -2400.0),
+        ]),
+        Task::Exit("ENTR_SACRED_FOREST_MEADOW_0", Some(Step::MeadowEntered)),
+    ]
+}
+
+/// `Route::Minuet`'s debug start: the ramp's top below the meadow's top (the floor 470 at z
+/// -2200; the top at 480), facing north, short of `EnXc_MinuetCS`'s z -2225.
+const MEADOW_RAMP_TOP: Vec3 = Vec3::new(0.0, 470.0, -2150.0);
+
+/// `Route::Minuet`'s tasks: north past z -2225 (Sheik's trigger); her script (she drops from the
+/// sky, walks to Link, plays: `OCARINA_ACTION_TEACH_MINUET`), the song played back, the script's
+/// end with Link free.
+fn minuet_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(0.0, 480.0, -2260.0)]),
+        Task::Texts(|w| w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE && w.save.get_event_chk_inf(EVENTCHKINF_50), Step::MinuetLesson),
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_MINUET, false, Step::MinuetPlayed),
+        Task::Texts(|w| w.save.check_quest_item(oot_game::item::QUEST_SONG_MINUET) && cs_over(w) && w.player().cs_mode == 0, Step::MinuetLearned),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::MinuetWarp`'s tasks: the ocarina out (C-Right), the Minuet of Forest, "warp?" yes; the
+/// arrival on the meadow's warp pad (`sWarpSongEntrances`: `ENTR_SACRED_FOREST_MEADOW_2`) until
+/// Link is free.
+fn minuet_warp_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::OcarinaHeard(2, oot_game::audio::ocarina::OCARINA_SONG_MINUET, Step::MinuetWarpPlayed),
+        Task::TalkThrough(vec![0], Step::MinuetWarpOut),
+        Task::Texts(
+            |w| w.scene_id == SCENE_SACRED_FOREST_MEADOW && w.save.entrance_index == ENTR_SACRED_FOREST_MEADOW_2 && cs_over(w) && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF,
+            Step::MinuetWarped,
+        ),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::ForestTemple`'s debug start: the meadow's top south of the cliff under the temple's
+/// ledge (its floor at 680 from about z -3025), facing north.
+const BELOW_THE_BRANCH: Vec3 = Vec3::new(-30.0, 480.0, -2850.0);
+/// Where the run aims: the south face of the tree's branch over the ledge (polys 265, 266: x -79
+/// to 18, y 793 to 820, z about -3056; the whole tree takes the hookshot).
+const BRANCH_FACE: Vec3 = Vec3::new(-30.0, 806.0, -3056.0);
+
+/// `Route::ForestTemple`'s tasks: the hookshot raised, shot into the branch's face, pulled; the
+/// flight over, Link drops onto the ledge (680) below the branch; along it (the exit's floor,
+/// polys 447 to 450: x -80 to 80, z -3206 to -3406) into the temple.
+fn forest_temple_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::DrawSlingshot(Step::HookshotRaised),
+        Task::ShootUntil(BRANCH_FACE, |w| w.player().action == crate::player::Action::HookshotFly, Step::HookshotPulled),
+        Task::Texts(|w| w.player().action != crate::player::Action::HookshotFly, Step::HookshotLanded),
+        Task::Settle(Some(Step::OnTheLedge)),
+        Task::Exit("ENTR_FOREST_TEMPLE_0", Some(Step::ForestTempleEntered)),
+    ]
+}
+
 const SETTLE_FRAMES: usize = 10;
 const WAYPOINT_RADIUS: f32 = 30.0;
 /// `Task::Sneak`: how far ahead of Link a step is checked, the margin on a guard's 70, the turn
@@ -5156,6 +5321,10 @@ impl Playthrough {
             Route::BigPoe => big_poe_tasks(),
             Route::Hookshot => hookshot_tasks(),
             Route::DampeRace => dampe_race_tasks(),
+            Route::LostWoodsAdult => lost_woods_adult_tasks(),
+            Route::Minuet => minuet_tasks(),
+            Route::MinuetWarp => minuet_warp_tasks(),
+            Route::ForestTemple => forest_temple_tasks(),
             Route::Barinade => barinade_tasks(),
             Route::Sapphire => sapphire_tasks(),
             Route::Escape => escape_tasks(),

@@ -45,8 +45,7 @@
 //! point's height (`EnPoRelay_CorrectY`).
 //!
 //! The whole overlay is ported. Not ported (the framework's): the point light's shading
-//! (`Lights_BindAll`'s lights aren't drawn). `Item_DropCollectible2` (`z_en_item00.c`) is here
-//! (`item_drop_collectible2`), no other ported actor calling it yet.
+//! (`Lights_BindAll`'s lights aren't drawn). `Item_DropCollectible2` is `en_item00.rs`'s.
 //!
 //! Params: `collectibleFlag` bits 0 to 5 (the piece of heart's collectible flag, 7 as placed; the
 //! init writes the params down to them, `params &= 0x3F`).
@@ -63,7 +62,7 @@ use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{approach_f, cos_s, scaled_step_to_s, sin_s, smooth_step_to_s, step_to_f, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
-use oot_game::actor_ctx::{ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_EN_EXTINCT, SFX_FLAG};
 use oot_game::collision_check::*;
@@ -77,9 +76,8 @@ use oot_game::save::TIMER_STATE_OFF;
 use oot_game::skelanime_std::{Anim, SkelAnimeStd};
 
 use crate::bg_treemouth::actor_is_facing_and_near_player;
-use crate::en_elf::{ACTOR_EN_ELF, FAIRY_HEAL_TIMED};
 use crate::en_honotrap::{ACTOR_EN_HONOTRAP, HONOTRAP_TYPE_FLAME_DROP};
-use crate::en_item00::{ACTOR_EN_ITEM00, ITEM00_FLEXIBLE, ITEM00_HEART_PIECE, ITEM00_RUPEE_RED, func_8001f404};
+use crate::en_item00::{ACTOR_EN_ITEM00, ITEM00_HEART_PIECE, ITEM00_RUPEE_RED, item_drop_collectible2};
 
 /// `ACTOR_EN_PO_RELAY` (`actor_table.h`: 0x0122).
 pub const ACTOR_EN_PO_RELAY: i16 = 0x0122;
@@ -321,36 +319,6 @@ fn actor_model(rs: &RenderState, flags: u32, quake: Vec3) -> Mat4 {
         m.w_axis += quake.extend(0.0);
     }
     m
-}
-
-// shared: Item_DropCollectible2 (z_en_item00.c), here until en_item00.rs takes it.
-/// `Item_DropCollectible2`: `params`'s item (`0x8000`: taken at once) at `spawn_pos`, not moving
-/// (`0x4000`: no gravity, else -0.9), facing anywhere; `ITEM00_FLEXIBLE` without `0x4000` is a
-/// healing fairy 40 up (`EffectSsDeadSound`'s chime isn't ported).
-pub fn item_drop_collectible2(play: &mut PlayState, spawn_pos: Vec3, params: i16) -> Option<ActorHandle> {
-    let param4000 = params & 0x4000;
-    let param8000 = (params as u16 & 0x8000) as i16;
-    let param3f00 = params & 0x3F00;
-    let mut params = params & 0x3FFF;
-    if params & 0x00FF == ITEM00_FLEXIBLE && param4000 == 0 {
-        return play.actor_spawn(ACTOR_EN_ELF, spawn_pos + Vec3::Y * 40.0, [0; 3], FAIRY_HEAL_TIMED).ok();
-    }
-    params = func_8001f404(play, params & 0x00FF);
-    if params == -1 {
-        return None;
-    }
-    let h = play.actor_spawn(ACTOR_EN_ITEM00, spawn_pos, [0; 3], params | param8000 | param3f00).ok()?;
-    if param8000 == 0 {
-        let yaw = play.rand.centered_float(65536.0) as i32 as i16;
-        if let Some(a) = play.actors.actor_mut(h) {
-            a.velocity.y = 0.0;
-            a.speed_xz = 0.0;
-            a.gravity = if param4000 != 0 { 0.0 } else { -0.9 };
-            a.world_rot.y = yaw;
-            a.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
-        }
-    }
-    Some(h)
 }
 
 impl EnPoRelay {

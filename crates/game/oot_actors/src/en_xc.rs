@@ -1,5 +1,26 @@
-//! `En_Xc` (`ovl_En_Xc/z_en_xc.c`): Sheik. Her params pick one of ten uses; this phase ports the
-//! Temple of Time's (types 9, 1 and 2) and the pedestal block they lead to.
+//! `En_Xc` (`ovl_En_Xc/z_en_xc.c`): Sheik. Her params pick one of ten uses; ported: the Temple of
+//! Time's (types 9, 1 and 2), the pedestal block they lead to, and the Minuet's (type 6).
+//!
+//! **Type 6, the Minuet** (Sacred Forest Meadow's top, layers 2 and 3; `func_80B3CA38`): gone for a
+//! child or once `EVENTCHKINF_50` is set. Hidden (`SHEIK_ACTION_INIT`, `EnXc_ActionFunc0`) until
+//! Link is past z -2225 with no cutscene running (`EnXc_MinuetCS`): she sets 0x50, gives the
+//! Minuet of Forest (`Item_Give(ITEM_SONG_MINUET)`) and starts `gMeadowMinuetCs`. Then on channel
+//! 4's cues:
+//! - 1 (`EnXc_ActionFunc1`, `EnXc_SetupFallFromSkyAction`): cue 2 drops her at its start, turned
+//!   away from Link's cue (`func_80B3D48C`), drawn: `gSheikFallingFromSkyAnim` once, her root's
+//!   motion moving her (`func_80B3C964`, `func_80B3C8CC`: `AnimTaskQueue_AddActorMovement`),
+//!   `NA_SE_PL_SKIP` (`func_80B3D118`).
+//! - 2 (`EnXc_GracefulFall`): her landing's step on frame 11 (`EnXc_SetLandingSFX`); the fall
+//!   done (`func_80B3D8A4`), walking (`gSheikWalkingAnim`, morph -8) under gravity -13.
+//! - 3 (`EnXc_Accelerate`): still for 9 frames, then 1.2; walking on the 12th
+//!   (`EnXc_SetupWalkAction`). 4 (`EnXc_Walk`): until within 95 of Link
+//!   (`EnXc_SetupHaltAction`: idling, morph -12). 5 (`EnXc_Stopped`): slowing over 3 frames,
+//!   stopped on the 12th (`EnXc_SetupStoppedAction`). Her steps on frames 11 and 23.
+//! - 6 to 18: the harp, the song, the walk back and the nut (below, as type 2's 31 to 43 run
+//!   them; she's gone on cue 9).
+//!
+//! `EnXc_SetColossusAppearSFX` and `_SetColossusWindSFX` (in actions 0 to 2) act only in the
+//! Desert Colossus's layer 4 (the Requiem, Phase 18): there, logged.
 //!
 //! **Type 9, the Temple of Time** (room 0 of every layer 0 to 3; `EnXc_InitTempleOfTime`): gone for
 //! a child. An adult without `EVENTCHKINF_C5` sets it and starts `gTempleOfTimeFirstAdultCs` (the
@@ -72,11 +93,11 @@
 //! `_CheckAndSetAction`, `func_80B3C7D4`, `_SerenadeCS` (type 2's way), `_SetWalkingSFX`,
 //! `_SetNutThrowSFX`, `_SpawnNut`, `_InitFlame` (outside the crater), `_GetCurrentHarpAnim`,
 //! `_CalcXZAccel`, `func_80B3D644`, `_CalcXZSpeed`, `func_80B3D6F0`, `func_80B3D710`,
-//! `func_80B3D730`, actions 6 to 18 and their setups, `EnXc_SetupDialogueAction`,
+//! `func_80B3D730`, actions 0 to 18 and their setups, `EnXc_SetupDialogueAction`,
 //! `func_80B41798`, `_Update`, `_Init`, `_OverrideLimbDraw`, `_PostLimbDraw`, `_DrawNothing`,
 //! `_DrawDefault`, `_Draw`). **Not ported (the user's call):** the other types, placeholders
-//! chosen at init (`EnXc_Init`'s switch: their checks, then a `log::info!`): 6 (the Minuet, Sacred
-//! Forest Meadow: Phase 14), 7 (the Bolero, Death Mountain Crater: Phase 15), 8 (the Serenade, the
+//! chosen at init (`EnXc_Init`'s switch: their checks, then a `log::info!`): 7 (the Bolero, Death
+//! Mountain Crater: Phase 15; `EnXc_BoleroCS`'s box is theirs), 8 (the Serenade, the
 //! Ice Cavern: Phase 16; `EnXc_SerenadeCS`'s boots check is theirs), 3 (Lake Hylia after the
 //! Water Temple: Phase 16), 5 (the Nocturne, Kakariko: Phase 17), 4 (the reveal, the Temple of
 //! Time's layers 12 and 13: Phase 19), 0 (the songs' scripts on their cutscene layers: Phases 14
@@ -86,9 +107,9 @@
 //! Prelude, 3 Lake Hylia, 4 the reveal, 5 the Nocturne, 6 the Minuet, 7 the Bolero, 8 the
 //! Serenade, 9 the Temple of Time).
 //! Flags: type 9 reads and sets EVENTCHKINF_C5 (the awakening seen) and EVENTCHKINF_55 (the
-//! Prelude learned), reads EVENTCHKINF_48 (the Forest Medallion's warp); type 2 reads none; the
-//! placeholders' checks read EVENTCHKINF_50 (the Minuet learned, type 6), EVENTCHKINF_51 (the
-//! Bolero, 7) and EVENTCHKINF_52 (the Serenade, 8, and the Iron Boots owned).
+//! Prelude learned), reads EVENTCHKINF_48 (the Forest Medallion's warp); type 2 reads none; type
+//! 6 reads and sets EVENTCHKINF_50 (the Minuet learned); the placeholders' checks read
+//! EVENTCHKINF_51 (the Bolero, 7) and EVENTCHKINF_52 (the Serenade, 8, and the Iron Boots owned).
 
 use std::sync::Arc;
 
@@ -99,11 +120,11 @@ use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
 use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
-use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, SfxPos};
+use oot_game::audio::sfx::{NA_SE_PL_SKIP, NA_SE_PL_WALK_GROUND, SfxPos};
 use oot_game::collision_check::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::event_chk_inf;
-use oot_game::item::{EQUIP_INV_BOOTS_IRON, EQUIP_TYPE_BOOTS, ITEM_HOOKSHOT, ITEM_NONE};
+use oot_game::item::{EQUIP_INV_BOOTS_IRON, EQUIP_TYPE_BOOTS, ITEM_HOOKSHOT, ITEM_NONE, ITEM_SONG_MINUET};
 use oot_game::message::TEXT_STATE_CLOSING;
 use oot_game::npc::{NpcTrack, offer_talk_default, process_talk_request, track_point};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
@@ -118,6 +139,10 @@ use crate::en_md::EVENTCHKINF_48;
 pub const NA_SE_VO_SK_SHOUT: u16 = 0x6874;
 /// `SCENE_DEATH_MOUNTAIN_CRATER` (`scene_table.h`: 0x61).
 const SCENE_DEATH_MOUNTAIN_CRATER: u16 = 0x61;
+/// `SCENE_DESERT_COLOSSUS` (`scene_table.h`: 0x5C).
+const SCENE_DESERT_COLOSSUS: u16 = 0x5C;
+/// `EnXc_MinuetCS`: Link past this z (the meadow's top) starts the Minuet's script.
+const MINUET_TRIGGER_Z: f32 = -2225.0;
 
 /// `ACTOR_EN_XC` (`actor_table.h`: 0x0048).
 pub const ACTOR_EN_XC: i16 = 0x0048;
@@ -163,7 +188,7 @@ pub const TYPE: Field = Field::whole(
         (8, "the Ice Cavern: the Serenade"),
         (9, "the Temple of Time: the awakening, the Prelude, the pedestal"),
     ]),
-    "which of Sheik's scenes (1, 2 and 9 ported, the others placeholders)",
+    "which of Sheik's scenes (1, 2, 6 and 9 ported, the others placeholders)",
 );
 
 /// En_Xc's configuration (docs/adr/0066-the-actor-schema.md).
@@ -173,7 +198,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_C5)).reads().sets().note("type 9: the awakening's script seen"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_48)).reads().note("type 9: the Forest Medallion's warp, for the Prelude"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_55)).reads().sets().note("type 9: the Prelude of Light learned"),
-        FlagUse::new(event_chk_inf!(EVENTCHKINF_50)).reads().note("type 6 (a placeholder): the Minuet learned, gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_50)).reads().sets().note("type 6: the Minuet learned (set as its script starts), gone"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_51)).reads().note("type 7 (a placeholder): the Bolero learned, gone"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_52)).reads().note("type 8 (a placeholder): the Serenade learned, gone"),
     ],
@@ -188,6 +213,11 @@ pub const SCHEMA: ActorSchema = ActorSchema {
 
 /// `EnXcAction` (the ported ones).
 pub const SHEIK_ACTION_INIT: i32 = 0;
+pub const SHEIK_ACTION_WAIT: i32 = 1;
+pub const SHEIK_ACTION_GRACEFUL_FALL: i32 = 2;
+pub const SHEIK_ACTION_ACCEL: i32 = 3;
+pub const SHEIK_ACTION_WALK: i32 = 4;
+pub const SHEIK_ACTION_HALT: i32 = 5;
 pub const SHEIK_ACTION_STOPPED: i32 = 6;
 pub const SHEIK_ACTION_7: i32 = 7;
 pub const SHEIK_ACTION_HARP_READY: i32 = 8;
@@ -258,11 +288,13 @@ const FOCUS_OFFSET: Vec3 = Vec3::new(0.0, 10.0, 0.0);
 
 /// `NPC_TRACKING_HEAD_AND_TORSO` (`actor.h`).
 const NPC_TRACKING_HEAD_AND_TORSO: i16 = 2;
-/// `kREG(17) + 0xC`: the tracking preset; `kREG(16) - 3.0`: the eyes' height; `kREG(2)`: 0,
-/// `kREG(5)`: 0 (the debug registers start zeroed).
+/// `kREG(17) + 0xC`: the tracking preset; `kREG(16) - 3.0`: the eyes' height; `kREG(1)`,
+/// `kREG(2)`, `kREG(3)`, `kREG(5)`: 0 (the debug registers start zeroed).
 const TRACKING_PRESET: usize = 0xC;
 const KREG_16: f32 = 0.0;
+const KREG_1: f32 = 0.0;
 const KREG_2: f32 = 0.0;
+const KREG_3: f32 = 0.0;
 const KREG_5: f32 = 0.0;
 
 /// Her mesh (`Gfx_SetupDL_25Opa`; the eye on segments 8 and 9, the draw swapping its texture),
@@ -312,6 +344,8 @@ pub struct EnXc {
     pub interact_info: NpcTrack,
     anims: Anims,
     eyes: Vec<DrawImage>,
+    /// Root motion queued this frame (`AnimTaskQueue_AddActorMovement`).
+    movement_queued: bool,
     logged: bool,
     logged_flame: bool,
 }
@@ -321,6 +355,7 @@ struct Anims {
     idle: Anim,
     arms_crossed: Anim,
     walking: Anim,
+    falling_from_sky: Anim,
     pulling_out_harp: Anim,
     initial_harp: Anim,
     /// `gSheikPlayingHarpAnim`, `_2Anim` .. `_5Anim`.
@@ -335,6 +370,7 @@ impl Anims {
             idle: a("gSheikIdleAnim")?,
             arms_crossed: a("gSheikArmsCrossedIdleAnim")?,
             walking: a("gSheikWalkingAnim")?,
+            falling_from_sky: a("gSheikFallingFromSkyAnim")?,
             pulling_out_harp: a("gSheikPullingOutHarpAnim")?,
             initial_harp: a("gSheikInitialHarpAnim")?,
             playing_harp: [a("gSheikPlayingHarpAnim")?, a("gSheikPlayingHarp2Anim")?, a("gSheikPlayingHarp3Anim")?, a("gSheikPlayingHarp4Anim")?, a("gSheikPlayingHarp5Anim")?],
@@ -360,17 +396,10 @@ impl EnXc {
         let mut actor = actor;
         let ty = TYPE.get(actor.params);
         let what = match ty {
-            SHEIK_TYPE_1 | SHEIK_TYPE_2 | SHEIK_TYPE_9 => None,
+            SHEIK_TYPE_1 | SHEIK_TYPE_2 | SHEIK_TYPE_MINUET | SHEIK_TYPE_9 => None,
             SHEIK_TYPE_3 => Some("func_80B3F3C8: Lake Hylia after the Water Temple (Phase 16)"),
             SHEIK_TYPE_4 => Some("func_80B3FA08: the reveal, the Temple of Time (Phase 19)"),
             SHEIK_TYPE_5 => Some("func_80B40590: the Nocturne, Kakariko (Phase 17)"),
-            SHEIK_TYPE_MINUET => {
-                // func_80B3CA38: an adult without the Minuet, else gone.
-                if !(!play.save.get_event_chk_inf(EVENTCHKINF_50) && play.save.adult) {
-                    actor.kill();
-                }
-                Some("func_80B3CA38: the Minuet, Sacred Forest Meadow (Phase 14)")
-            }
             SHEIK_TYPE_BOLERO => {
                 // func_80B3CB58: an adult without the Bolero, else gone.
                 if !(!play.save.get_event_chk_inf(EVENTCHKINF_51) && play.save.adult) {
@@ -432,6 +461,7 @@ impl EnXc {
             interact_info: NpcTrack::default(),
             anims,
             eyes,
+            movement_queued: false,
             logged: false,
             logged_flame: false,
         };
@@ -441,6 +471,7 @@ impl EnXc {
             SHEIK_TYPE_1 => this.func_80b3ebf0(),
             // The beta Serenade's or the Prelude's.
             SHEIK_TYPE_2 => this.func_80b3ee64(),
+            SHEIK_TYPE_MINUET => this.func_80b3ca38(play),
             _ => this.init_temple_of_time(play),
         }
         Box::new(this)
@@ -501,7 +532,7 @@ impl EnXc {
         }
     }
 
-    /// `EnXc_BgCheck`: walls only.
+    /// `EnXc_BgCheck`: the floor (`UPDBGCHECKINFO_FLAG_2`).
     fn bg_check(&mut self, play: &PlayState) {
         self.actor.update_bg_check_info(&play.col, 75.0, 30.0, 30.0, UPDBGCHECKINFO_FLAG_2);
     }
@@ -595,6 +626,221 @@ impl EnXc {
         self.action = SHEIK_ACTION_BLOCK_PEDESTAL;
         self.draw_mode = SHEIK_DRAW_DEFAULT;
         self.unk_30c = 1;
+    }
+
+    // Type 6, the Minuet (and the songs' shared start: actions 0 to 5).
+
+    /// `func_80B3C8CC`: her root's motion queued while it's at or above its base.
+    fn func_80b3c8cc(&mut self) {
+        if self.skel.joint_table[0][1] >= self.skel.base_transl[1] {
+            self.skel.movement_flags |= ANIM_FLAG_UPDATE_XZ | ANIM_FLAG_UPDATE_Y;
+            self.movement_queued = true;
+        }
+    }
+
+    /// `func_80B3C964`: the root's base and last positions where it is; its motion queued.
+    fn func_80b3c964(&mut self) {
+        self.skel.base_transl = self.skel.joint_table[0];
+        self.skel.prev_transl = self.skel.joint_table[0];
+        self.skel.movement_flags |= ANIM_FLAG_UPDATE_XZ | ANIM_FLAG_UPDATE_Y;
+        self.movement_queued = true;
+    }
+
+    /// `func_80B3C9DC`: her root's motion off.
+    fn func_80b3c9dc(&mut self) {
+        self.skel.movement_flags &= !(ANIM_FLAG_UPDATE_XZ | ANIM_FLAG_UPDATE_Y);
+    }
+
+    /// `func_80B3CA38` (type 6's init): an adult without the Minuet waits; else she's gone.
+    fn func_80b3ca38(&mut self, play: &PlayState) {
+        if !play.save.get_event_chk_inf(EVENTCHKINF_50) && play.save.adult {
+            self.action = SHEIK_ACTION_INIT;
+        } else {
+            self.actor.kill();
+        }
+    }
+
+    /// `EnXc_MinuetCS`: type 6, Link past z -2225 and no cutscene: the Minuet's script
+    /// (`gMeadowMinuetCs`), `EVENTCHKINF_50` and the song (`Item_Give(ITEM_SONG_MINUET)`). True
+    /// then, and always for the other types.
+    fn minuet_cs(&self, play: &mut PlayState) -> bool {
+        if TYPE.get(self.actor.params) != SHEIK_TYPE_MINUET {
+            return true;
+        }
+        if Self::player_pos(play).z < MINUET_TRIGGER_Z && !play.play_in_cs_mode() {
+            play.cs_ctx.segment = play.cutscene_script("gMeadowMinuetCs");
+            play.save.cutscene_trigger = 1;
+            play.save.set_event_chk_inf(EVENTCHKINF_50);
+            oot_game::item::item_give(&mut play.save, Some(&mut play.audio), ITEM_SONG_MINUET);
+            return true;
+        }
+        false
+    }
+
+    /// `EnXc_BoleroCS`: true for any type but 7 (Death Mountain Crater's, a placeholder: never
+    /// here).
+    fn bolero_cs(&self) -> bool {
+        if TYPE.get(self.actor.params) == SHEIK_TYPE_BOLERO {
+            // not ported: type 7's trigger box (gDeathMountainCraterBoleroCs, EVENTCHKINF_51,
+            // ITEM_SONG_BOLERO: Phase 15).
+            return false;
+        }
+        true
+    }
+
+    /// `EnXc_SetColossusAppearSFX` and `EnXc_SetColossusWindSFX`: the Desert Colossus's layer 4
+    /// only (the Requiem's script, Phase 18); nothing anywhere else.
+    fn colossus_sfx(&mut self, play: &PlayState) {
+        if play.save.scene_layer == 4 && play.scene_id == SCENE_DESERT_COLOSSUS && !self.logged_flame {
+            // not ported: the Requiem's sounds (Phase 18).
+            log::warn!("En_Xc: the Desert Colossus's sounds aren't ported");
+            self.logged_flame = true;
+        }
+    }
+
+    /// `func_80B3D118`: `NA_SE_PL_SKIP` as she drops (but in the Desert Colossus's layer 4).
+    fn func_80b3d118(play: &mut PlayState) {
+        if play.save.scene_layer != 4 || play.scene_id != SCENE_DESERT_COLOSSUS {
+            play.audio.play_sfx_centered2(NA_SE_PL_SKIP);
+        }
+    }
+
+    /// `EnXc_SetLandingSFX`: her landing on frame 11 (but in the Desert Colossus's layer 4).
+    fn set_landing_sfx(&mut self, play: &mut PlayState) {
+        if (play.save.scene_layer != 4 || play.scene_id != SCENE_DESERT_COLOSSUS) && self.skel.on_frame(11.0) {
+            // SurfaceType_GetSfxOffset on her floor, landed or not.
+            let offset = play.audio.tables.surface_sfx_id(self.actor.floor_poly.map(|p| play.col.sfx_type(p)).unwrap_or(0));
+            Self::play_sfx(play, NA_SE_PL_WALK_GROUND.wrapping_add(offset));
+        }
+    }
+
+    /// `func_80B3D48C`: turned away from Link's cue (or Link) as she lands.
+    fn func_80b3d48c(&mut self, play: &PlayState) {
+        let yaw = match play.cs_ctx.link_action {
+            Some(cue) => cue.rot[1].wrapping_add(i16::MIN),
+            None => play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_rot.y).unwrap_or(0).wrapping_add(i16::MIN),
+        };
+        self.actor.shape_rot.y = yaw;
+        self.actor.world_rot.y = yaw;
+    }
+
+    /// `func_80B3D750`: once the song's script has started (`EnXc_MinuetCS`, `EnXc_BoleroCS`),
+    /// waiting for her cue.
+    fn func_80b3d750(&mut self, play: &mut PlayState) {
+        if self.minuet_cs(play) && self.bolero_cs() {
+            self.action = SHEIK_ACTION_WAIT;
+        }
+    }
+
+    /// `EnXc_SetupFallFromSkyAction`: cue 2 on channel 4 drops her from its start
+    /// (`gSheikFallingFromSkyAnim` once, her root's motion moving her), drawn.
+    fn setup_fall_from_sky_action(&mut self, play: &mut PlayState) {
+        if play.cs_ctx.state != CS_STATE_IDLE
+            && let Some(cue) = play.cs_ctx.npc_actions[4]
+            && cue.action == 2
+        {
+            self.action = SHEIK_ACTION_GRACEFUL_FALL;
+            self.draw_mode = SHEIK_DRAW_DEFAULT;
+            self.actor.world_pos = Vec3::new(cue.start_pos.x as f32, cue.start_pos.y as f32, cue.start_pos.z as f32);
+            self.func_80b3d48c(play);
+            self.func_80b3c964();
+            self.change_forward(self.anims.falling_from_sky.clone(), ANIMMODE_ONCE, 0.0);
+            Self::func_80b3d118(play);
+        }
+    }
+
+    /// `func_80B3D8A4`: the fall done, walking (`gSheikWalkingAnim`, morph -8) under gravity -13;
+    /// else her root's motion.
+    fn func_80b3d8a4(&mut self, anim_finished: bool) {
+        if anim_finished {
+            self.change_forward(self.anims.walking.clone(), ANIMMODE_LOOP, -8.0);
+            self.action = SHEIK_ACTION_ACCEL;
+            self.timer = 0.0;
+            self.func_80b3c9dc();
+            self.actor.gravity = -(KREG_1 * 0.01 + 13.0);
+            self.actor.min_velocity_y = -(KREG_1 * 0.01 + 13.0);
+        } else {
+            self.func_80b3c8cc();
+        }
+    }
+
+    /// `EnXc_SetupWalkAction`: walking at 1.2 after 12 frames.
+    fn setup_walk_action(&mut self) {
+        self.timer += 1.0;
+        if self.timer >= 12.0 {
+            self.actor.speed_xz = KREG_2 * 0.01 + 1.2;
+            self.action = SHEIK_ACTION_WALK;
+        }
+    }
+
+    /// `EnXc_SetupHaltAction`: within 95 of Link, idling (morph -12).
+    fn setup_halt_action(&mut self) {
+        if self.actor.xz_dist_to_player <= KREG_3 + 95.0 {
+            self.change_forward(self.anims.idle.clone(), ANIMMODE_LOOP, -12.0);
+            self.action = SHEIK_ACTION_HALT;
+            self.timer = 0.0;
+        }
+    }
+
+    /// `EnXc_SetupStoppedAction`: stopped after 12 frames.
+    fn setup_stopped_action(&mut self) {
+        self.timer += 1.0;
+        if self.timer >= 12.0 {
+            self.action = SHEIK_ACTION_STOPPED;
+            self.actor.speed_xz = 0.0;
+        }
+    }
+
+    /// `EnXc_ActionFunc0`: waiting for the song's script.
+    fn action_func0(&mut self, play: &mut PlayState) {
+        self.colossus_sfx(play);
+        self.func_80b3d750(play);
+    }
+
+    /// `EnXc_ActionFunc1`: waiting for her cue to drop.
+    fn action_func1(&mut self, play: &mut PlayState) {
+        self.colossus_sfx(play);
+        self.setup_fall_from_sky_action(play);
+    }
+
+    /// `EnXc_GracefulFall`.
+    fn graceful_fall(&mut self, play: &mut PlayState) {
+        let anim_finished = self.update_skel_anime();
+        self.bg_check(play);
+        self.set_eye_pattern(play);
+        self.set_landing_sfx(play);
+        self.colossus_sfx(play);
+        self.func_80b3d8a4(anim_finished);
+    }
+
+    /// `EnXc_Accelerate`.
+    fn accelerate(&mut self, play: &mut PlayState) {
+        self.calc_xz_accel();
+        self.update_skel_anime();
+        self.bg_check(play);
+        self.set_eye_pattern(play);
+        self.set_walking_sfx(play);
+        self.setup_walk_action();
+    }
+
+    /// `EnXc_Walk` (`func_80B3D644`: `Actor_MoveXZGravity`).
+    fn walk(&mut self, play: &mut PlayState) {
+        self.func_80b3d710();
+        self.update_skel_anime();
+        self.bg_check(play);
+        self.set_eye_pattern(play);
+        self.set_walking_sfx(play);
+        self.setup_halt_action();
+    }
+
+    /// `EnXc_Stopped`.
+    fn stopped(&mut self, play: &mut PlayState) {
+        self.calc_xz_speed();
+        self.update_skel_anime();
+        self.bg_check(play);
+        self.set_eye_pattern(play);
+        self.set_walking_sfx(play);
+        self.setup_stopped_action();
     }
 
     /// `Sfx_PlaySfxAtPos(&this->actor.projectedPos, ..)`.
@@ -1096,8 +1342,14 @@ impl ActorImpl for EnXc {
             return;
         }
         match self.action {
-            // The songs' shared actions (the Minuet's and the Bolero's, placeholders; type 2's
-            // 31 to 43 run them).
+            // The songs' shared actions (the Minuet's; the Bolero's, a placeholder; type 2's 31
+            // to 43 run 6 to 18).
+            SHEIK_ACTION_INIT => self.action_func0(play),
+            SHEIK_ACTION_WAIT => self.action_func1(play),
+            SHEIK_ACTION_GRACEFUL_FALL => self.graceful_fall(play),
+            SHEIK_ACTION_ACCEL => self.accelerate(play),
+            SHEIK_ACTION_WALK => self.walk(play),
+            SHEIK_ACTION_HALT => self.stopped(play),
             SHEIK_ACTION_STOPPED => self.action_func6(play),
             SHEIK_ACTION_7 => self.action_func7(play),
             SHEIK_ACTION_HARP_READY => self.action_func8(play),
@@ -1239,6 +1491,18 @@ impl ActorImpl for EnXc {
                 }
             }
         }
+    }
+
+    /// `AnimTask_ActorMovement` for her queued move (the Minuet's fall): her root's motion, at
+    /// her scale.
+    fn animation_update(&mut self) {
+        if !std::mem::take(&mut self.movement_queued) {
+            return;
+        }
+        let diff = self.skel.update_translation(self.actor.shape_rot.y);
+        self.actor.world_pos.x += diff.x * self.actor.scale.x;
+        self.actor.world_pos.y += diff.y * self.actor.scale.y;
+        self.actor.world_pos.z += diff.z * self.actor.scale.z;
     }
 
     /// `EnXc_PostLimbDraw`: the focus 10 above her head (`EnXc_DrawDefault`'s).

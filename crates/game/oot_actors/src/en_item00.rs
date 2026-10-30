@@ -893,6 +893,35 @@ pub fn item_drop_collectible(play: &mut PlayState, spawn_pos: Vec3, params: i16)
     Some(h)
 }
 
+/// `Item_DropCollectible2`: `params`'s item (`0x8000`: taken at once) at `spawn_pos`, not moving
+/// (`0x4000`: no gravity, else -0.9), facing anywhere; `ITEM00_FLEXIBLE` without `0x4000` is a
+/// healing fairy 40 up (`EffectSsDeadSound`'s chime isn't ported).
+pub fn item_drop_collectible2(play: &mut PlayState, spawn_pos: Vec3, params: i16) -> Option<ActorHandle> {
+    let param4000 = params & 0x4000;
+    let param8000 = (params as u16 & 0x8000) as i16;
+    let param3f00 = params & 0x3F00;
+    let mut params = params & 0x3FFF;
+    if params & 0x00FF == ITEM00_FLEXIBLE && param4000 == 0 {
+        return play.actor_spawn(ACTOR_EN_ELF, spawn_pos + Vec3::Y * 40.0, [0; 3], FAIRY_HEAL_TIMED).ok();
+    }
+    params = func_8001f404(play, params & 0x00FF);
+    if params == -1 {
+        return None;
+    }
+    let h = play.actor_spawn(ACTOR_EN_ITEM00, spawn_pos, [0; 3], params | param8000 | param3f00).ok()?;
+    if param8000 == 0 {
+        let yaw = play.rand.centered_float(65536.0) as i32 as i16;
+        if let Some(a) = play.actors.actor_mut(h) {
+            a.velocity.y = 0.0;
+            a.speed_xz = 0.0;
+            a.gravity = if param4000 != 0 { 0.0 } else { -0.9 };
+            a.world_rot.y = yaw;
+            a.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+        }
+    }
+    Some(h)
+}
+
 /// `Item_DropCollectibleRandom`: a drop from table `params >> 4` (`sItemDropIds`, a random one
 /// of its 16), as many as `sDropQuantities` says. `ITEM00_FLEXIBLE` gives what Link needs most.
 /// A `from_actor` hit by an arrow or magic (its `dropFlag`) drops a fixed entry instead (the

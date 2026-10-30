@@ -678,6 +678,7 @@ impl PlayState {
         if let Some(pv) = self.player_view() {
             self.follow_camera = FollowCamera::behind(pv.pos, pv.shape_yaw, pv.adult);
             self.game_camera = GameCamera::new(&self.data.camera, &pv);
+            self.game_camera.scene_id = self.scene_id;
             if self.scene.is_some() && (self.assets.is_some() || self.play_init_camera) {
                 let room = self.cam_room();
                 self.game_camera.play_init_settings(room);

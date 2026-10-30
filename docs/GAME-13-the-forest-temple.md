@@ -13,7 +13,7 @@ review).
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The hookshot and Dampé's race | done (2026-10-27) |
-| 2 | The Lost Woods, the meadow and the Minuet | |
+| 2 | The Lost Woods, the meadow and the Minuet | done (2026-10-29) |
 | 3 | The temple's front and the bow | |
 | 4 | The courtyards and the twisted corridors | |
 | 5 | The Poe sisters | |
@@ -341,3 +341,142 @@ the C buttons, I C-Up, Enter Start.
    and comes back. Try walls, a pot, a rupee, an enemy.
 3. **`eyes`** (the Shadow Temple's first room, with the hookshot): the eyes open as Link nears and
    shoot fire at him; hit one to break it.
+
+## Milestone 2: The Lost Woods, the meadow and the Minuet
+
+**Status:** done: built 2026-10-27, hand-tested 2026-10-29 (the adult maze's camera fixed on the
+way: "that works"), committed and pushed on the user's ask.
+
+**The answer:**
+- **The Lost Woods as an adult:** Mido stands in room 3's way north and won't let Link by
+  (0x1060, 0x1061) until he hears Saria's Song: "That melody?!" (0x1067); he steps aside
+  (`EVENTCHKINF_0A`) and the way through rooms 4, 7 and 8 leads to the meadow.
+- **The meadow's Moblins** (`En_Mb`, whole): five spear Moblins walk the maze's corridors (paths 0
+  to 4) and charge Link once he's in their corridor (`EnMb_IsPlayerInCorridor`: 37 across, 400
+  along), carrying him along on the spear; the club Moblin on the ramp strikes the ground, the
+  quake and the shock wave running at Link. Hit, a spear Moblin falls; the club Moblin kneels after
+  its strike and stands again. The Spirit Temple's Moblin (room 13) is the club type.
+- **Sheik's Minuet** (`En_Xc` type 6): past z -2225 at the meadow's top her script starts
+  (`gMeadowMinuetCs`); she drops from the sky, walks to Link, plays the Minuet of Forest on her harp
+  and Link plays it back; then she walks back and throws her nut. The song is his
+  (`EVENTCHKINF_50`, `ITEM_SONG_MINUET`); played anywhere, it warps to the meadow's pad.
+- **The temple's ledge:** the tree at the meadow's top takes the hookshot all over; shot into its
+  branch, Link is pulled up and drops onto the ledge under it, 200 over the top, and walks into
+  the temple.
+- **Kokiri Forest's ring of rupees** (`Obj_Mure3`, whole): six green rupees round a red one, 240
+  over the bean's spot, out while the camera's within 1,150; the hookshot drags them in.
+
+ADR 0098. Scripts: `scripts\run\game-minuet.bat` (menu 193: empty, `meadow`, `club`, `top`,
+`warp`, `rupees`), `test-minuet.bat` (194), `sandbox-minuet.bat` (195).
+
+### The survey's open points
+
+- **The meadow tree's hookshot poly:** 73 of the meadow's 768 collision polys take the hookshot
+  (surface word 1, bit 17): the whole tree at the top (polys 232 to 271 and 297 to 300: its trunk
+  at x -145 to -250, z -3022 to -3091, from 480 to 792; its branch east to x 18 at 760 to 820), a
+  stump by the Minuet's platform (272 to 296), and the maze's four target faces. The ledge is a
+  floor at 680 (x -100 to 100 from about z -3025, then a walkway at x 0 to exit 2's polys 447 to
+  450, z -3206 to -3406), under the branch. From z about -2850 the branch's face is about 340
+  away, in the hookshot's reach (13 frames at 20 × 1.5: about 390).
+- **`En_Mb`'s Spirit Temple placement:** room 13, params 0x0000 at (1569, -130, -1453): the club
+  type, as the meadow's. The spear guard (-1) is placed nowhere (ported whole all the same).
+- **How Link reaches the ledge in the original:** by the branch, from the meadow's top; the run
+  does the same.
+
+### What was built
+
+- **`En_Mb`** whole (the helper's, `en_mb.rs`): every function of `z_en_mb.c` (gc-eu-mq-dbg's
+  version branches); `func_800358DC` (the shock wave: `En_Part` -1, action 2) and `func_8002DDE4`
+  as local copies. Two bakes (`En_Mb/spear`, `En_Mb/club`) and two `ootx` characters ("Moblin
+  (spear)", "Moblin (club)"); the editor's "Moblin".
+- **`En_Xc` type 6:** `func_80B3CA38`, `EnXc_MinuetCS`, `EnXc_BoleroCS` (its pass for the other
+  types), `func_80B3D118`, `EnXc_SetLandingSFX`, `func_80B3D48C`, `func_80B3D750`,
+  `EnXc_SetupFallFromSkyAction`, `func_80B3D8A4`, `EnXc_SetupWalkAction`, `_SetupHaltAction`,
+  `_SetupStoppedAction`, `func_80B3C8CC`, `func_80B3C964`, `func_80B3C9DC` and actions 0 to 5;
+  her root's motion as `En_Ru1`'s (`AnimTask_ActorMovement` in `animation_update`).
+- **`Obj_Mure3`** whole; `Item_DropCollectible2` moved from `en_po_relay.rs` to `en_item00.rs`.
+  The editor's "Rupee set".
+- **The runs** (`playthrough.rs`; tests in `minuet_runs.rs`): `Route::LostWoodsAdult`,
+  `Route::Minuet`, `Route::MinuetWarp`, `Route::ForestTemple`. The preset **`minuet`** (`hookshot`
+  with `EVENTCHKINF_0A`, `EVENTCHKINF_50` and the Minuet). Pack format 38 (`out/data30`).
+
+### Results
+
+- The runs (frames):
+  - the Lost Woods (`lost-woods-adult`): 1,577. The ocarina out by Mido 555, Saria's Song 603, his
+    text read and he's off (`EVENTCHKINF_0A`) 976, the meadow 1,577;
+  - the Minuet (`minuet`): 1,845. The script on 56, the song played back 1,154, the script over
+    and Link free 1,845;
+  - the warp (`minuet-warp`): 430. Played 77, "warp?" 231, on the meadow's pad 430;
+  - the temple (`forest-temple`): 193. Raised 45, pulled 74, landed on the ledge 86, settled 107,
+    in the temple 193; `CAM_MODE_HOOKSHOT_FLY` while he flies.
+- The texts: Mido 0x1067, 0x106F, 0x1068; the Minuet 0x106C, 0x0870, 0x086D, 0x0073, 0x106D; the
+  warp 0x0893, 0x088D.
+- Tests: `minuet_runs` (5: the four runs and the maze's camera by age); `en_xc` (13, one new: type 6's trigger, fall and walk; the placeholder
+  test now expects her ported); `obj_mure3` (1); `en_mb` (6, the helper's). 1,895 tests pass, 3
+  ignored (two the level editor session's); `cargo test -p layering` passes; no warnings.
+- Goldens: all 407 of `out/golden_base48`'s hashes the same, checked before recording (no earlier
+  case enters the adult Lost Woods' room 3 or the adult meadow; the adult Kokiri Forest cases'
+  8 frames don't bring the ring into view). 10 new cases (14 hashes): 421 hashes, 307 cases, the
+  same over two runs (`out/golden_base49`). The hand test's camera fix moved one: `meadow_patrols/shot.png` (behind
+  Link, not from above; the rest the same), re-recorded (`out/golden_base50`).
+
+### Corrections and findings
+
+- **The meadow maze's overhead camera is a child's** (the user's hand test, 2026-10-28: the adult
+  maze showed it): its floor asks for bg camera 5 (`CAM_SET_MEADOW_BIRDS_EYE`), which
+  `Camera_RequestSettingImpl` refuses (-5) to an adult in `SCENE_SACRED_FOREST_MEADOW`, so he keeps
+  the camera behind him. The port had left that check out (noted as not modelled since GAME-08's
+  child meadow); now the camera reads the scene and Link's age as the C does. Test:
+  `the_maze_looks_down_on_a_child_only`.
+- **The flight ends on the ledge:** after the pull into the branch's face Link drops straight onto
+  the ledge below (680), as in the original; no climb onto the branch.
+- **Mido's reach for the ocarina is 66** (30 plus his cylinder's 36) from where he stands, 60 from
+  his home towards Link: the run stops 75 short of his home. Played farther off, Saria's Song is
+  Navi's call to Saria (0x00E0).
+- **`Obj_Mure3`'s switch flag is 0x3F in every placement:** a temporary switch, so the set comes
+  back each visit; it's only set when a rupee is carried off (`Actor_HasParent`).
+- **`En_Xc`'s `EnXc_BgCheck`** checks the floor (`UPDBGCHECKINFO_FLAG_2`), not the walls (the
+  module's comment corrected).
+- **Four `@bug (game)`s:** a spear Moblin killed from behind still falls on its back (the unused
+  `gEnMbSpearFallFaceDownAnim` was likely meant); a charge's end lets Link go whoever holds him
+  (only `PLAYER_STATE2_7` checked); the club Moblin's front triangles are registered but never
+  placed (left at the origin); `Obj_Mure3`'s types 3 to 7 call past `spawnFuncs` (none placed).
+- **The helper's share went as proposed** (`En_Mb`, in parallel with `En_Xc` 6 and `Obj_Mure3`).
+
+### Known gaps
+
+- The maze past the Moblins and the fights are the hand test's (the user's call 5).
+- `En_Mb`'s `Rumble_Request` (BACKLOG #60). The club Moblin's shock wave starts from its club's
+  place set at draw time (`EnMb_PostLimbDraw`), as in the C: a club Moblin not drawn doesn't strike.
+- `Obj_Mure3`'s Kokiri Forest ring is the hookshot's for now; the adult bean lift is BACKLOG #29.
+
+### How to check
+
+```
+scripts\run\test-minuet.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-minuet.bat
+```
+
+### By hand
+
+`scripts\run\game-minuet.bat` (menu 193). WASD the stick (Shift walks), Space A, E B, Q Z, J/K/L
+the C buttons, I C-Up, Enter Start.
+
+1. **Empty** (the Lost Woods from Kokiri Forest, `hookshot`): right, north, right to Mido, who
+   blocks the way north. L (C-Right) the ocarina, Saria's Song: his text, and he steps aside. North,
+   left, north: the meadow.
+2. **`meadow`** (the meadow's entrance, `hookshot`): through the maze past the spear Moblins (in a
+   Moblin's corridor it charges; caught, Link is carried), up the ramp past the club Moblin (its
+   strike's shock wave runs along the ground), to the top: Sheik drops in and teaches the Minuet.
+3. **`club`** (below the club Moblin on the ramp): its strike, the quake and the shock wave; fight
+   it (it kneels after a strike).
+4. **`top`** (under the temple's ledge, `minuet`): J (C-Left) the hookshot, aim at the tree's
+   branch over the ledge, let go: pulled up, Link drops onto the ledge; walk north into the temple.
+5. **`warp`** (Hyrule Field, `minuet`): the ocarina, the Minuet of Forest, "warp?" yes: the meadow's
+   pad.
+6. **`rupees`** (Kokiri Forest's spawn 11, `hookshot`): the ring of rupees hanging over the
+   bean's spot north-west of where Link starts; hookshot them in.

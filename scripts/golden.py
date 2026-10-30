@@ -439,6 +439,18 @@ CASES = [
     ("hookshot", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("hookshot_aim", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--frames", "36", "--screenshot", "{shot}"]),
     ("hookshot_fly", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "hookshot", "--script", "hookshot", "--frames", "48", "--screenshot", "{shot}"]),
+    # GAME-13 milestone 2: the Lost Woods past adult Mido, the meadow's Moblins, Sheik's Minuet, its
+    # warp, the hookshot up to the Forest Temple.
+    ("lost_woods_adult", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "hookshot", "--script", "lost-woods-adult", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("lost_woods_mido", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "hookshot", "--script", "lost-woods-adult", "--frames", "660", "--screenshot", "{shot}"]),
+    ("meadow_patrols", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "hookshot", "--at", "300,0,1475,49152", "--script", "idle", "--frames", "60", "--screenshot", "{shot}"]),
+    ("meadow_club", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "hookshot", "--at", "0,160,-1000,32768", "--script", "idle", "--frames", "60", "--screenshot", "{shot}"]),
+    ("minuet", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "hookshot", "--script", "minuet", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("minuet_sheik", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "hookshot", "--script", "minuet", "--frames", "440", "--screenshot", "{shot}"]),
+    ("minuet_lesson", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "hookshot", "--script", "minuet", "--frames", "760", "--screenshot", "{shot}"]),
+    ("minuet_warp", S, ["--entrance", "ENTR_HYRULE_FIELD_7", "--child", "--preset", "minuet", "--script", "minuet-warp", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("forest_temple", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "minuet", "--script", "forest-temple", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("forest_temple_branch", S, ["--entrance", "ENTR_SACRED_FOREST_MEADOW_0", "--child", "--preset", "minuet", "--script", "forest-temple", "--frames", "80", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
